@@ -207,4 +207,24 @@ export default class DriverController {
             return response.badRequest({ message: error.message })
         }
     }
+
+    /**
+     * Upload a global document (User table)
+     */
+    public async uploadDoc(ctx: HttpContext) {
+        const { request, response, auth } = ctx
+        const user = auth.user!
+        const { docType } = request.body()
+
+        if (!user.isDriver) {
+            return response.forbidden({ message: 'Only drivers can upload documents' })
+        }
+
+        try {
+            const result = await DriverService.uploadDocument(ctx, user, docType)
+            return response.created(result)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
 }

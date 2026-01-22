@@ -45,6 +45,12 @@ export default class Order extends BaseModel {
     declare offerExpiresAt: DateTime | null
 
     @column()
+    declare priority: 'LOW' | 'MEDIUM' | 'HIGH'
+
+    @column()
+    declare assignmentAttemptCount: number
+
+    @column()
     declare status: 'PENDING' | 'ACCEPTED' | 'AT_PICKUP' | 'COLLECTED' | 'AT_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED'
 
     @column({

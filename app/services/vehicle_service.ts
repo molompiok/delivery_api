@@ -1,8 +1,9 @@
 import Vehicle, { VehicleOwnerType } from '#models/vehicle'
 import User from '#models/user'
-import FileService from '#services/file_service'
-import { MultipartFile } from '@adonisjs/core/bodyparser'
+import FileManager from '#services/file_manager'
+import File from '#models/file'
 import { DateTime } from 'luxon'
+import { HttpContext } from '@adonisjs/core/http'
 
 export class VehicleService {
     /**
@@ -103,24 +104,21 @@ export class VehicleService {
     }
 
     /**
-     * Upload a document for a vehicle (Insurance, Technical Visit, Registration)
+     * Upload a document for a vehicle using the new FileManager
      * 
-     * Cette méthode :
-     * 1. Valide les dates d'expiration pour les docs sensibles
-     * 2. Upload le fichier via FileService
-     * 3. Crée ou met à jour le Document correspondant
-     * 4. Ajoute l'historique de l'upload
-     * 5. Gère les dates d'expiration
+     * @param ctx - HTTP Context for file extraction
+     * @param vehicle - The vehicle entity
+     * @param docType - Type of document
+     * @param user - The uploading user
+     * @param expiryDate - Optional expiry date
      */
     async uploadDocument(
-        user: User,
-        vehicleId: string,
+        ctx: HttpContext,
+        vehicle: Vehicle,
         docType: 'VEHICLE_INSURANCE' | 'VEHICLE_TECHNICAL_VISIT' | 'VEHICLE_REGISTRATION',
-        file: MultipartFile,
+        user: User,
         expiryDate?: string
     ) {
-        const vehicle = await Vehicle.findOrFail(vehicleId)
-
         // Validation for expiry-sensitive docs
         if (['VEHICLE_INSURANCE', 'VEHICLE_TECHNICAL_VISIT'].includes(docType)) {
             if (!expiryDate) {
@@ -132,54 +130,80 @@ export class VehicleService {
             }
         }
 
-        const metadata = expiryDate ? { expiryDate } : undefined
+        const manager = new FileManager(vehicle, 'Vehicle')
 
-        // Upload le fichier
-        const result = await FileService.upload(file, {
-            tableName: 'Vehicle',
-            tableColumn: docType,
-            tableId: vehicle.id,
-            encrypt: true, // Sensitive docs
-            allowedCategories: ['IMAGE', 'DOCS'],
-            metadata: metadata,
-            allowedCompanyIds: vehicle.ownerType === 'Company' ? [vehicle.ownerId] : undefined,
-            allowedUserIds: vehicle.ownerType === 'User' ? [vehicle.ownerId] : undefined
+        // Determine sharing based on owner type
+        const isCompanyVehicle = vehicle.ownerType === 'Company'
+
+        // Sync the document file (upload new, replace if update_id provided)
+        await manager.sync(ctx, {
+            column: docType,
+            isPublic: false,
+            config: {
+                allowedExt: ['pdf', 'jpg', 'jpeg', 'png'],
+                maxSize: '10MB',
+                maxFiles: 1,
+                encrypt: true
+            }
         })
 
-        // Créer ou mettre à jour le Document
+        // Set up permissions
+        if (isCompanyVehicle) {
+            await manager.share(docType, {
+                read: { companyIds: [vehicle.ownerId] },
+                write: { companyIds: [vehicle.ownerId] }
+            })
+        } else {
+            await manager.share(docType, {
+                read: { userIds: [vehicle.ownerId] },
+                write: { userIds: [vehicle.ownerId] }
+            })
+        }
+
+        // Get the uploaded file info
+        const files = await File.query()
+            .where('tableName', 'Vehicle')
+            .where('tableId', vehicle.id)
+            .where('tableColumn', docType)
+            .orderBy('createdAt', 'desc')
+            .first()
+
+        if (!files) {
+            throw new Error('File upload failed')
+        }
+
+        // Create or update the Document
         const Document = (await import('#models/document')).default
         let doc = await Document.query()
             .where('tableName', 'Vehicle')
-            .where('tableId', vehicleId)
+            .where('tableId', vehicle.id)
             .where('documentType', docType)
             .first()
 
         if (!doc) {
-            // Créer un nouveau Document
             doc = await Document.create({
                 tableName: 'Vehicle',
-                tableId: vehicleId,
+                tableId: vehicle.id,
                 documentType: docType,
-                fileId: result.fileId,
-                status: 'PENDING', // En attente de validation par admin Sublymus
+                fileId: files.id,
+                status: 'PENDING',
                 ownerId: vehicle.ownerId,
                 ownerType: vehicle.ownerType,
                 isDeleted: false,
                 expireAt: expiryDate ? DateTime.fromISO(expiryDate) : null
             })
             doc.addHistory('DOCUMENT_CREATED', user, {
-                fileId: result.fileId,
-                fileName: result.name,
+                fileId: files.id,
+                fileName: files.name,
                 expiryDate
             })
         } else {
-            // Mettre à jour le Document existant
-            doc.fileId = result.fileId
-            doc.status = 'PENDING' // Reset à PENDING pour re-validation
+            doc.fileId = files.id
+            doc.status = 'PENDING'
             doc.expireAt = expiryDate ? DateTime.fromISO(expiryDate) : null
             doc.addHistory('DOCUMENT_UPDATED', user, {
-                fileId: result.fileId,
-                fileName: result.name,
+                fileId: files.id,
+                fileName: files.name,
                 expiryDate,
                 previousStatus: doc.status
             })
@@ -188,7 +212,7 @@ export class VehicleService {
         await doc.save()
 
         return {
-            file: result,
+            file: files,
             document: doc
         }
     }
@@ -225,9 +249,18 @@ export class VehicleService {
     }
 
     /**
+     * Delete a vehicle and all its files
+     */
+    async deleteVehicle(vehicle: Vehicle) {
+        const manager = new FileManager(vehicle, 'Vehicle')
+        await manager.deleteAll()
+        await vehicle.delete()
+    }
+
+    /**
      * Met à jour le statut de vérification du véhicule en fonction de ses documents
      */
-    private async updateVehicleVerificationStatus(vehicleId: string) {
+    public async updateVehicleVerificationStatus(vehicleId: string) {
         const vehicle = await Vehicle.findOrFail(vehicleId)
         const Document = (await import('#models/document')).default
 

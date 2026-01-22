@@ -59,6 +59,9 @@ export default class DriverSetting extends BaseModel {
     @column()
     declare currentMode: WorkMode  // Mode de travail actuel (IDEP, ETP, transitions)
 
+    @column()
+    declare allowChaining: boolean  // Autoriser le chaînage de missions
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 

@@ -20,21 +20,11 @@ export default class extends BaseSchema {
             table.string('active_zone_id').nullable().references('id').inTable('zones').onDelete('SET NULL')
         })
 
-        // 4. Supprimer la table zone_drivers (plus nécessaire avec le nouveau modèle)
-        this.schema.dropTableIfExists('zone_drivers')
+        // NOTE: zone_drivers table is kept for the manyToMany relationship between User and Zone
+        // activeZoneId is used to track the currently active zone, while zone_drivers stores all assigned zones
     }
 
     async down() {
-        // Recréer zone_drivers
-        this.schema.createTable('zone_drivers', (table) => {
-            table.string('id').primary()
-            table.string('zone_id').notNullable().references('id').inTable('zones').onDelete('CASCADE')
-            table.string('driver_id').notNullable().references('id').inTable('users').onDelete('CASCADE')
-            table.timestamp('created_at')
-            table.timestamp('updated_at')
-            table.unique(['zone_id', 'driver_id'])
-        })
-
         // Retirer activeZoneId de company_driver_settings
         this.schema.alterTable('company_driver_settings', (table) => {
             table.dropColumn('active_zone_id')

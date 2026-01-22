@@ -117,9 +117,16 @@ Response: 200 OK
 
 ---
 
-## 2. Flux d'Invitation Complet
+## 2. Flux d'Invitation & Recrutement
 
-### 2.1. Diagramme de Flux Global
+### 2.1. Les Deux Flux de Documents (Double Flux)
+
+Le système sépare les documents en deux catégories pour protéger la vie privée du chauffeur tout en assurant la conformité des entreprises.
+
+1.  **Flux Chauffeur (User Flux)** : Documents personnels enregistrés sur le profil global du chauffeur. Ils sont validés par Sublymus.
+2.  **Flux Entreprise (Company Flux)** : Documents spécifiques à une relation de travail. Ils doivent être validés par le manager de l'entreprise.
+
+### 2.2. Diagramme de Flux Global
 
 ```
 ┌─────────────┐                    ┌──────────────┐                   ┌─────────────┐
@@ -136,6 +143,8 @@ Response: 200 OK
        │                                  │ - User (si nouveau)              │
        │                                  │ - CompanyDriverSetting           │
        │                                  │   (status: PENDING_ACCESS)       │
+       │                                  │ - Sync auto des docs requis      │
+       │                                  │   (depuis standards ETP)         │
        │                                  │                                  │
        │                                  │ ÉTAPE 2: SMS d'invitation        │
        │                                  │─────────────────────────────────>│
@@ -165,30 +174,31 @@ Response: 200 OK
        │                                  │<─────────────────────────────────│
        │                                  │                                  │
        │                                  │ - Status: ACCESS_ACCEPTED        │
-       │                                  │ - Miroir des docs User->CDS      │
+       │                                  │ - Copie des docs User->CDS       │
        │                                  │   (status: PENDING)              │
+       │                                  │ - Miroir des fichiers physiques  │
        │                                  │                                  │
        │ ÉTAPE 5: Notification Manager    │                                  │
        │ "Driver a accepté"               │                                  │
        │<─────────────────────────────────│                                  │
        │                                  │                                  │
-       │ ÉTAPE 6: Manager définit docs    │                                  │
-       │ POST /drivers/:id/required-docs  │                                  │
-       │ { docTypeIds: ["dct_id", ...] }  │                                  │
+       │ [OPTIONNEL] Mise à jour docs     │                                  │
+       │ POST /company/requirements       │                                  │
        │─────────────────────────────────>│                                  │
        │                                  │                                  │
-       │                                  │ Création Documents vides         │
-       │                                  │ (status: PENDING)                │
-       │                                  │                                  │
-       │                                  │ ÉTAPE 7: Driver upload docs      │
-       │                                  │ POST /files/upload               │
+       │ ÉTAPE 6: Driver fournit les docs │                                  │
+       │                                  │ 6a. Upload global (Profil)       │
+       │                                  │ POST /driver/documents/upload    │
+       │                                  │ (status: SUBMITTED sur User)     │
        │                                  │<─────────────────────────────────│
        │                                  │                                  │
-       │ ÉTAPE 8: Notification Manager    │                                  │
-       │ "Nouveau document uploadé"       │                                  │
-       │<─────────────────────────────────│                                  │
+       │                                  │ 6b. Soumission à l'ETP           │
+       │                                  │ PATCH /documents/:docId/submit   │
+       │                                  │ { fileId: "fil_xxx" }            │
+       │                                  │ (status: SUBMITTED sur CDS)      │
+       │                                  │<─────────────────────────────────│
        │                                  │                                  │
-       │ ÉTAPE 9: Manager valide/rejette  │                                  │
+       │ ÉTAPE 7: Manager valide/rejette  │                                  │
        │ POST /documents/:id/validate     │                                  │
        │ { status: "APPROVED/REJECTED",   │                                  │
        │   comment: "..." }               │                                  │
@@ -197,40 +207,40 @@ Response: 200 OK
        │                                  │ - Mise à jour Document.status    │
        │                                  │ - Sync docsStatus global         │
        │                                  │                                  │
-       │                                  │ ÉTAPE 10: Notif Driver           │
-       │                                  │ (si REJECTED: re-upload)         │
+       │                                  │ ÉTAPE 8: Notif Driver            │
+       │                                  │ (si REJECTED: re-soumettre)      │
        │                                  │─────────────────────────────────>│
        │                                  │                                  │
-       │ [Boucle 7-10 jusqu'à tout APPROVED]                                │
+       │ [Boucle 6-8 jusqu'à tout APPROVED]                                  │
        │                                  │                                  │
-       │ ÉTAPE 11: Invitation finale      │                                  │
+       │ ÉTAPE 9: Invitation finale       │                                  │
        │ POST /drivers/:id/invite-to-fleet│                                  │
        │─────────────────────────────────>│                                  │
        │                                  │                                  │
        │                                  │ - Vérif: tous docs APPROVED      │
        │                                  │ - Status: PENDING_FLEET          │
        │                                  │                                  │
-       │                                  │ ÉTAPE 12: SMS final              │
+       │                                  │ ÉTAPE 10: SMS final              │
        │                                  │ "Félicitations ! Docs validés..."│
        │                                  │─────────────────────────────────>│
        │                                  │                                  │
-       │                                  │ ÉTAPE 13: Driver accepte         │
+       │                                  │ ÉTAPE 11: Driver accepte         │
        │                                  │ POST /invitations/:id/accept-fleet
        │                                  │<─────────────────────────────────│
        │                                  │                                  │
        │                                  │ - Status: ACCEPTED               │
-       │                                  │ - DriverSetting.currentCompanyId │
        │                                  │ - Driver rejoint la flotte !     │
        │                                  │                                  │
 ```
 
-### 2.2. Description Détaillée des Étapes
+### 2.3. Description Détaillée des Étapes
 
 #### ÉTAPE 1: Manager envoie une demande d'accès
 - **Action** : Le manager de l'ETP saisit le numéro de téléphone du driver
 - **Backend** :
-  - Crée ou trouve le `User` correspondant au téléphone
-  - Crée ou met à jour `CompanyDriverSetting` avec `status: 'PENDING_ACCESS'`
+  - Crée ou trouve le `User`.
+  - Crée `CompanyDriverSetting` avec `status: 'PENDING_ACCESS'`.
+  - **Auto-Sync** : Copie les documents requis depuis les **Standards de l'Entreprise** (`metaData.documentRequirements`).
   - Envoie un SMS d'invitation au driver
 
 #### ÉTAPE 2-3: Driver reçoit le SMS et ouvre l'app
@@ -254,34 +264,30 @@ Response: 200 OK
 - **Action** : Driver clique sur "Accepter" pour une invitation
 - **Endpoint** : `POST /v1/driver/invitations/:invitationId/accept-access`
 - **Backend** :
-  - Change status à `ACCESS_ACCEPTED`
-  - **Miroir des documents** : Copie les fichiers de `User` vers `CompanyDriverSetting`
-  - Les documents copiés ont **toujours** `status: PENDING` (le manager doit re-valider)
+  - Change status à `ACCESS_ACCEPTED`.
+  - **Mirroring** : Si le chauffeur possède déjà ces documents validés sur son profil global, ils sont liés à la relation entreprise.
+  - **IMPORTANT** : Un "hard-link" du fichier est créé et les permissions sont mises à jour pour que le manager de l'entreprise puisse voir le fichier.
 
-#### ÉTAPE 6: Manager définit les documents requis
-- **Action** : Manager sélectionne les types de documents obligatoires
-- **Endpoint** : `POST /v1/company/drivers/:driverId/required-docs`
-- **Données** : `{ docTypeIds: ["dct_drivers_license", "dct_id_card", "dct_vaccine_card"] }`
-- **Backend** :
-  - Crée des entrées `Document` vides pour chaque type requis
-  - Supprime (soft delete) les documents non requis
+#### ÉTAPE 5: Notification Manager
+- **Action** : Le manager reçoit une notification que le driver a accepté la demande d'accès.
 
-#### ÉTAPE 7: Driver upload les documents
-- **Action** : Driver upload chaque document requis via l'app
-- **Endpoint** : `POST /v1/files/upload`
-- **Backend** :
-  - Stocke le fichier physiquement
-  - Met à jour `Document.fileId` et `Document.status = 'SUBMITTED'`
+#### ÉTAPE 6: Fourniture des documents (Double Flux)
+Un document manquant doit suivre deux étapes :
+1.  **Upload Global** (`POST /v1/driver/documents/upload`) : Ajoute le fichier au profil du chauffeur.
+2.  **Soumission Ciblée** (`PATCH /v1/documents/:docId/submit`) : Lie ce fichier spécifique à la demande de l'entreprise.
 
-#### ÉTAPE 9: Manager valide ou rejette
-- **Endpoint** : `POST /v1/company/documents/:fileId/validate`
+#### ÉTAPE 7: Manager valide ou rejette
+- **Endpoint** : `POST /v1/company/documents/:id/validate`
 - **Données** : `{ status: "APPROVED" | "REJECTED", comment: "Photo floue" }`
 - **Backend** :
   - Met à jour `Document.status`
   - Recalcule `CompanyDriverSetting.docsStatus` (global)
   - Notifie le driver
 
-#### ÉTAPE 11: Invitation finale à la flotte
+#### ÉTAPE 8: Notification Driver
+- **Action** : Le driver est notifié du statut de ses documents. Si rejeté, il doit re-soumettre.
+
+#### ÉTAPE 9: Invitation finale à la flotte
 - **Condition** : Tous les documents requis sont `APPROVED`
 - **Endpoint** : `POST /v1/company/drivers/:driverId/invite-to-fleet`
 - **Backend** :
@@ -289,12 +295,20 @@ Response: 200 OK
   - Change status à `PENDING_FLEET`
   - Envoie SMS de félicitations au driver
 
-#### ÉTAPE 13: Driver accepte l'invitation finale
+#### ÉTAPE 10: SMS final
+- **Action** : Le driver reçoit un SMS de félicitations.
+
+#### ÉTAPE 11: Driver accepte l'invitation finale
 - **Endpoint** : `POST /v1/driver/invitations/:invitationId/accept-fleet`
 - **Backend** :
   - Change status à `ACCEPTED`
   - Met à jour `DriverSetting.currentCompanyId`
   - **Le driver fait maintenant partie de la flotte !**
+
+#### Gestion des Standards de l'Entreprise
+Les entreprises peuvent définir une liste de documents standards via les paramètres du dashboard.
+- **Modification** : `POST /v1/company/requirements`
+- **Synchronisation** : Pour mettre à jour un chauffeur déjà existant, utiliser `POST /v1/company/drivers/:driverId/sync-requirements`.
 
 ---
 

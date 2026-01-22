@@ -10,10 +10,10 @@ export default class DriversSeeder extends BaseSeeder {
         console.log('  FastDelivery Drivers:')
 
         // Driver 1: Fully active and verified
+        console.log('    Attempting to register Driver 1...')
         const driver1Fast = await createUserWithPhone('+2250700000101', {
             email: 'driver1.fast@delivery.ci',
             fullName: 'Kofi Mensah',
-
         })
         if (!driver1Fast.isDriver) {
             await DriverService.register(driver1Fast, {

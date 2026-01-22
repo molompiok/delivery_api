@@ -35,7 +35,7 @@ const createOrderValidator = vine.compile(
         ).minLength(2),
         ref_id: vine.string().trim().optional(),
         assignment_mode: vine.enum(['GLOBAL', 'INTERNAL', 'TARGET']).optional(),
-        priority: vine.enum(['low', 'medium', 'high'] as const).optional(),
+        priority: vine.enum(['LOW', 'MEDIUM', 'HIGH'] as const).optional(),
         note: vine.string().trim().optional(),
     })
 )
@@ -65,6 +65,7 @@ export default class OrdersController {
                 ...payload,
                 ref_id: payload.ref_id,
                 assignment_mode: payload.assignment_mode,
+                priority: payload.priority,
             })
             return response.created({
                 message: 'Order created successfully',

@@ -37,6 +37,11 @@ export default class Company extends BaseModel {
     })
     declare settings: any
 
+    @column({
+        prepare: (value: any) => value ? JSON.stringify(value) : JSON.stringify({}),
+    })
+    declare metaData: any
+
     @belongsTo(() => User, { foreignKey: 'ownerId' })
     declare owner: BelongsTo<typeof User>
 

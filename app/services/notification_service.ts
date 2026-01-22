@@ -1,18 +1,14 @@
 import User from '#models/user'
 import { DateTime } from 'luxon'
+import env from '#start/env'
+import admin from 'firebase-admin'
 
 /**
  * NotificationService
  * 
- * Service provisoire pour gérer les notifications.
+ * Gère l'envoi de notifications Push (FCM) et SMS.
  * 
- * TODO: Implémenter Firebase Cloud Messaging (FCM) ou autre système de push notifications
- * 
- * Pour le moment, ce service utilise :
- * - L'envoi de SMS via le service SMS existant (à brancher)
- * - Les logs système pour tracer les événements
- * 
- * L'architecture est prête pour être remplacée par un vrai système de push
+ * L'architecture permet de basculer entre différents canaux de communication
  * sans modifier les appels dans le reste du code.
  */
 
@@ -22,7 +18,42 @@ export interface NotificationPayload {
     data?: Record<string, any>
 }
 
+export type SendNotificationResult =
+    | { success: true; messageId: string }
+    | { success: false; error: any; code?: string; isTokenInvalid?: boolean }
+
 export class NotificationService {
+    private isFirebaseInitialized = false
+
+    private async initializeFirebaseApp() {
+        if (this.isFirebaseInitialized) return
+
+        try {
+            const serviceAccount = {
+                type: env.get('FIREBASE_TYPE'),
+                project_id: env.get('FIREBASE_PROJECT_ID'),
+                private_key_id: env.get('FIREBASE_PRIVATE_KEY_ID'),
+                private_key: env.get('FIREBASE_PRIVATE_KEY')?.replace(/\\n/g, '\n'),
+                client_email: env.get('FIREBASE_CLIENT_EMAIL'),
+                client_id: env.get('FIREBASE_CLIENT_ID'),
+                auth_uri: env.get('FIREBASE_AUTH_URI'),
+                token_uri: env.get('FIREBASE_TOKEN_URI'),
+                auth_provider_x509_cert_url: env.get('FIREBASE_AUTH_PROVIDER_X509_CERT_URL'),
+                client_x509_cert_url: env.get('FIREBASE_CLIENT_X509_CERT_URL'),
+                universe_domain: env.get('FIREBASE_UNIVERSE_DOMAIN'),
+            }
+
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+            })
+
+            this.isFirebaseInitialized = true
+            console.log('[NOTIFICATION] Firebase Admin SDK initialisé.')
+        } catch (error) {
+            console.error('[NOTIFICATION] Erreur initialisation Firebase Admin SDK:', error)
+        }
+    }
+
     /**
      * Envoie une notification de changement de mode de travail
      */
@@ -34,7 +65,7 @@ export class NotificationService {
                 type: 'MODE_SWITCH',
                 newMode,
                 timestamp: DateTime.now().toISO(),
-                ...details
+                ...(details || {})
             }
         }
 
@@ -77,31 +108,129 @@ export class NotificationService {
 
     /**
      * Méthode centrale d'envoi
-     * 
-     * TODO: Remplacer par Firebase Cloud Messaging (FCM)
-     * 
-     * Implémentation provisoire :
-     * 1. Log la notification
-     * 2. Envoie un SMS si le user a un téléphone
      */
     private async send(user: User, payload: NotificationPayload) {
-        // Log pour debug
-        console.log(`[NOTIFICATION] User ${user.id} (${user.fullName || user.phone}):`, {
-            title: payload.title,
-            body: payload.body,
-            data: payload.data
-        })
+        console.log(`[NOTIFICATION] Sending to User ${user.id} (${user.fullName || user.phone})`)
 
-        // TODO: Envoyer via FCM
-        // await this.sendViaPush(user.fcmToken, payload)
+        // 1. Essayer l'envoi par Push si un token est disponible
+        if (user.fcmToken) {
+            const result = await this.sendViaPush(user.fcmToken, payload)
+            if (result.success) {
+                console.log(`[PUSH] Sent successfully to ${user.id}`)
+            } else if (result.isTokenInvalid) {
+                console.warn(`[PUSH] Invalid token for user ${user.id}, removing it.`)
+                await this.removeInvalidToken(user)
+            }
+        }
 
-        // Provisoire : Envoyer par SMS si numéro disponible
+        // 2. Fallback SMS si configuré (provisoire)
         if (user.phone) {
             await this.sendViaSMS(user.phone, payload.body)
         }
 
-        // Persister la notification en base pour historique
+        // 3. Persister en base pour historique
         await this.saveToDatabase(user.id, payload)
+    }
+
+    /**
+     * Envoi réel via FCM
+     */
+    private async sendViaPush(fcmToken: string, payload: NotificationPayload): Promise<SendNotificationResult> {
+        await this.initializeFirebaseApp()
+
+        if (!this.isFirebaseInitialized) {
+            return { success: false, error: new Error('Firebase not initialized'), code: 'FIREBASE_NOT_INIT' }
+        }
+
+        const isHighPriority = payload.data?.type === 'NEW_MISSION_OFFER' ||
+            payload.data?.type === 'MISSION_UPDATE' ||
+            payload.data?.type === 'SHIFT_REMINDER'
+
+        const androidChannelId = isHighPriority
+            ? env.get('ANDROID_HIGH_PRIORITY_CHANNEL_ID', 'high_priority_channel')
+            : env.get('ANDROID_DEFAULT_CHANNEL_ID', 'default_channel')
+
+        const soundAndroid = isHighPriority
+            ? env.get('FCM_OFFER_SOUND_ANDROID', 'custom_offer_sound')
+            : env.get('FCM_DEFAULT_SOUND_ANDROID', 'default')
+
+        const soundIOS = isHighPriority
+            ? env.get('FCM_OFFER_SOUND_IOS', 'custom_offer_sound.wav')
+            : env.get('FCM_DEFAULT_SOUND_IOS', 'default')
+
+        const message: admin.messaging.Message = {
+            notification: {
+                title: payload.title,
+                body: payload.body
+            },
+            android: {
+                priority: isHighPriority ? 'high' : 'normal',
+                notification: {
+                    channelId: androidChannelId,
+                    sound: soundAndroid,
+                    visibility: 'public',
+                    notificationCount: 1,
+                },
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        sound: soundIOS,
+                        badge: 1,
+                    },
+                },
+                headers: {
+                    'apns-priority': isHighPriority ? '10' : '5',
+                    'apns-push-type': 'alert'
+                },
+            },
+            token: fcmToken,
+            data: payload.data ? this.stringifyDataPayload(payload.data) : {},
+        }
+
+        try {
+            const response = await admin.messaging().send(message)
+            return { success: true, messageId: response }
+        } catch (error: any) {
+            const errorCode = error.code
+            const isTokenInvalid =
+                errorCode === 'messaging/registration-token-not-registered' ||
+                errorCode === 'messaging/invalid-registration-token'
+
+            return {
+                success: false,
+                error: error,
+                code: errorCode,
+                isTokenInvalid
+            }
+        }
+    }
+
+    /**
+     * Convertit toutes les valeurs du data payload en string (requis par FCM)
+     */
+    private stringifyDataPayload(data: Record<string, any>): Record<string, string> {
+        const stringified: Record<string, string> = {}
+        for (const [key, value] of Object.entries(data)) {
+            if (typeof value === 'string') {
+                stringified[key] = value
+            } else {
+                stringified[key] = JSON.stringify(value)
+            }
+        }
+        return stringified
+    }
+
+    /**
+     * Supprime un token invalide de la base
+     */
+    private async removeInvalidToken(user: User) {
+        try {
+            user.fcmToken = null
+            await user.save()
+        } catch (error) {
+            console.error(`[NOTIFICATION] Error removing token for user ${user.id}:`, error)
+        }
     }
 
     /**
@@ -109,37 +238,25 @@ export class NotificationService {
      */
     private async sendViaSMS(phone: string, message: string) {
         try {
-            // TODO: Intégrer avec le SmsService existant
-            // const SmsService = (await import('#services/sms_service')).default
-            // await SmsService.send(phone, message)
-
-            console.log(`[SMS] ${phone}: ${message}`)
+            // TODO: Intégrer avec le SmsService existant si besoin réel
+            console.log(`[SMS] To ${phone}: ${message}`)
         } catch (error) {
             console.error('[SMS] Error sending SMS:', error)
         }
     }
 
     /**
-     * Sauvegarde en base de données (pour historique et consultation depuis l'app)
+     * Sauvegarde en base de données
      */
-    private async saveToDatabase(_userId: string, _payload: NotificationPayload) {
+    private async saveToDatabase(userId: string, payload: NotificationPayload) {
         try {
-            // TODO: Créer un modèle Notification si besoin d'historique
-            // await Notification.create({
-            //     userId,
-            //     title: payload.title,
-            //     body: payload.body,
-            //     data: payload.data,
-            //     readAt: null
-            // })
+            // TODO: Créer un modèle Notification si besoin d'historique persistant
+            console.log(`[DB] Logged notification for User ${userId}: ${payload.title}`)
         } catch (error) {
             console.error('[NOTIFICATION] Error saving to database:', error)
         }
     }
 
-    /**
-     * Helpers pour générer les messages
-     */
     private getModeSwitchTitle(newMode: string): string {
         const titles: Record<string, string> = {
             'ETP': 'Shift commencé',

@@ -1,23 +1,18 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const FileController = () => import('#controllers/file_controller')
 const ScheduleController = () => import('#controllers/schedule_controller')
 const AddressController = () => import('#controllers/address_controller')
 const VehicleController = () => import('#controllers/vehicle_controller')
 const VehicleDocumentController = () => import('#controllers/vehicle_document_controller')
+const StorageController = () => import('#controllers/storage_controller')
+
+// Public File Access (permission check handled inside controller)
+router.get('/fs/:filename', [StorageController, 'serve'])
 
 router.group(() => {
-    // File Management Routes
-    router.get('/files/categories', [FileController, 'categories'])
-    router.post('/files/upload', [FileController, 'upload'])
-    router.post('/files/upload-multiple', [FileController, 'uploadMultiple'])
-    router.get('/files/:fileId/download', [FileController, 'download'])
-    router.get('/files/:fileId/view', [FileController, 'view'])
-    router.put('/files/:fileId/permissions', [FileController, 'updatePermissions'])
-    router.delete('/files/:fileId', [FileController, 'delete'])
-    router.get('/files/:tableName/:tableId', [FileController, 'listFor'])
-    router.delete('/files/:tableName/:tableId/all', [FileController, 'deleteFor'])
+    // Get temporary access token for a file
+    router.get('/fs/token/:filename', [StorageController, 'getToken'])
 
     // Schedules (Universal)
     router.get('/schedules', [ScheduleController, 'index'])

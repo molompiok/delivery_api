@@ -6,7 +6,7 @@ export default class extends BaseSeeder {
     async run() {
         // Define admin users
         const admins = [
-            { phone: '+2250759929515', fullName: 'Opus' },
+            { phone: '+2250759929512', fullName: 'Opus' },
             { phone: '+2250759091098', fullName: 'Messah' },
         ]
 

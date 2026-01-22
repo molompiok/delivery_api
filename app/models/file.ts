@@ -19,7 +19,9 @@ export default class File extends BaseModel {
 
     @beforeCreate()
     static assignId(file: File) {
-        file.id = generateId('fil')
+        if (!file.id) {
+            file.id = generateId('fil')
+        }
     }
 
     @column()
@@ -51,33 +53,12 @@ export default class File extends BaseModel {
     @column()
     declare fileCategory: FileCategory
 
-    /** Metadata (JSONB) for storing extra info like expiryDate, docNumber */
-    @column()
+    /** Metadata (JSONB) for storing extra info like dimensions, duration, etc. */
+    @column({
+        prepare: (value: any) => JSON.stringify(value || {}),
+        consume: (value: any) => typeof value === 'string' ? JSON.parse(value) : value
+    })
     declare metadata: Record<string, any> | null
-
-    @column()
-    declare validationStatus: 'PENDING' | 'APPROVED' | 'REJECTED'
-
-    @column()
-    declare validationComment: string | null
-
-    // --- PERMISSIONS ---
-
-    /** If true, file is accessible by anyone without authentication */
-    @column()
-    declare isPublic: boolean
-
-    /** List of user IDs who can access this file */
-    @column({
-        prepare: (value: string[]) => JSON.stringify(value || []),
-    })
-    declare allowedUserIds: string[]
-
-    /** List of company IDs whose managers can access this file */
-    @column({
-        prepare: (value: string[]) => JSON.stringify(value || []),
-    })
-    declare allowedCompanyIds: string[]
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

@@ -68,9 +68,13 @@ export class CompanyService {
             }
         )
 
+
         await relation.save()
 
-        // 3. Send SMS notification
+        // 3. Initialize documents from Company metadata requirements
+        await this.syncRequiredDocsFromMetadata(user, driver.id)
+
+        // 4. Send SMS notification
         const company = await Company.findOrFail(user.companyId)
         await SmsService.send({
             to: phone,
@@ -78,6 +82,21 @@ export class CompanyService {
         })
 
         return relation
+    }
+
+    /**
+     * Sync required documents from Company metadata
+     */
+    async syncRequiredDocsFromMetadata(user: User, driverId: string) {
+        if (!user.companyId) throw new Error('Company access required')
+
+        const company = await Company.findOrFail(user.companyId)
+        const requirements = company.metaData?.documentRequirements || []
+
+        if (requirements.length === 0) return
+
+        const docTypeIds = requirements.map((r: any) => r.id)
+        return await this.setRequiredDocs(user, driverId, docTypeIds)
     }
 
     /**
@@ -355,10 +374,154 @@ export class CompanyService {
             })
         }
 
-        return {
-            ...relation.serialize(),
-            documents: docs.map(d => d.serialize())
+    }
+
+
+    /**
+     * Upload a document for a driver (ETP Doc specific to company)
+     */
+    async uploadDocument(ctx: any, user: User, relationId: string, docType: string) {
+        if (!user.companyId) throw new Error('Company access required')
+
+        const relation = await CompanyDriverSetting.query()
+            .where('id', relationId)
+            .where('companyId', user.companyId)
+            .firstOrFail()
+
+        const FileManager = (await import('#services/file_manager')).default
+        const manager = new FileManager(relation, 'CompanyDriverSetting')
+
+        const typeKey = docType.replace('dct_', '')
+
+        // 1. Sync with FileManager
+        await manager.sync(ctx, {
+            column: docType,
+            config: { encrypt: true }
+        })
+
+        // 2. Get the file record
+        const File = (await import('#models/file')).default
+        const file = await File.query()
+            .where('tableName', 'CompanyDriverSetting')
+            .where('tableId', relation.id)
+            .where('tableColumn', docType)
+            .orderBy('createdAt', 'desc')
+            .first()
+
+        if (!file) throw new Error('File upload failed')
+
+        // 3. Link to Document record
+        const Document = (await import('#models/document')).default
+        let doc = await Document.query()
+            .where('tableName', 'CompanyDriverSetting')
+            .where('tableId', relation.id)
+            .where('documentType', typeKey)
+            .first()
+
+        if (!doc) {
+            doc = await Document.create({
+                tableName: 'CompanyDriverSetting',
+                tableId: relation.id,
+                documentType: typeKey,
+                ownerId: user.companyId,
+                ownerType: 'Company',
+                status: 'PENDING',
+                isDeleted: false
+            })
         }
+
+        doc.fileId = file.id
+        doc.status = 'PENDING' // Driver submission or manager upload
+        doc.addHistory('FILE_UPLOADED', user, { fileId: file.id })
+        await doc.save()
+
+        // 4. Update the global relation status
+        await this.syncDocsStatus(relation.id)
+
+        return { file, document: doc }
+    }
+
+    /**
+     * Upload a document for the company itself (K-bis, insurance...)
+     */
+    async uploadCompanyDocument(ctx: any, user: User, docType: string) {
+        if (!user.companyId) throw new Error('Company access required')
+
+        const company = await Company.findOrFail(user.companyId)
+        const FileManager = (await import('#services/file_manager')).default
+        const manager = new FileManager(company, 'Company')
+
+        const typeKey = docType.replace('dct_', '')
+
+        // 1. Sync with FileManager
+        await manager.sync(ctx, {
+            column: docType,
+            config: { encrypt: true }
+        })
+
+        // 2. Get the file record
+        const File = (await import('#models/file')).default
+        const file = await File.query()
+            .where('tableName', 'Company')
+            .where('tableId', company.id)
+            .where('tableColumn', docType)
+            .orderBy('createdAt', 'desc')
+            .first()
+
+        if (!file) throw new Error('File upload failed')
+
+        // 3. Link to Document record
+        const Document = (await import('#models/document')).default
+        let doc = await Document.query()
+            .where('tableName', 'Company')
+            .where('tableId', company.id)
+            .where('documentType', typeKey)
+            .first()
+
+        if (!doc) {
+            doc = await Document.create({
+                tableName: 'Company',
+                tableId: company.id,
+                documentType: typeKey,
+                ownerId: company.id,
+                ownerType: 'Company',
+                status: 'PENDING',
+                isDeleted: false
+            })
+        }
+
+        doc.fileId = file.id
+        doc.status = 'PENDING'
+        doc.addHistory('FILE_UPLOADED', user, { fileId: file.id })
+        await doc.save()
+
+        return { file, document: doc }
+    }
+
+    /**
+     * Get Company Document Requirements from metaData
+     */
+    async getDocumentRequirements(user: User) {
+        if (!user.companyId) throw new Error('Company access required')
+        const company = await Company.findOrFail(user.companyId)
+        return company.metaData?.documentRequirements || []
+    }
+
+    /**
+     * Update Company Document Requirements in metaData
+     * Overwrites ONLY the documentRequirements field
+     */
+    async updateDocumentRequirements(user: User, requirements: any[]) {
+        if (!user.companyId) throw new Error('Company access required')
+        const company = await Company.findOrFail(user.companyId)
+
+        const metaData = { ...(company.metaData || {}) }
+        metaData.documentRequirements = requirements
+
+        company.metaData = metaData
+        await company.save()
+
+        return company.metaData.documentRequirements
     }
 }
 

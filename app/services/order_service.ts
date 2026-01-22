@@ -66,7 +66,9 @@ export default class OrderService {
             newOrder.clientId = clientId
             newOrder.status = 'PENDING'
             newOrder.refId = payload.ref_id // New Advanced Dispatch Field
-            newOrder.assignmentMode = payload.assignment_mode || 'GLOBAL' // New Advanced Dispatch Field
+            newOrder.assignmentMode = payload.assignment_mode || 'GLOBAL'
+            newOrder.priority = payload.priority || 'MEDIUM'
+            newOrder.assignmentAttemptCount = 0
             newOrder.pickupAddressId = processedWaypoints.find(w => w.type === 'pickup').addressId
             newOrder.deliveryAddressId = [...processedWaypoints].reverse().find(w => w.type === 'delivery').addressId
 

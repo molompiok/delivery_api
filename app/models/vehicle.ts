@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, belongsTo, hasMany } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, belongsTo, hasMany, computed } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Company from '#models/company'
 import User from '#models/user'
@@ -106,4 +106,28 @@ export default class Vehicle extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    // --- Computed Document Properties ---
+
+    @computed()
+    get vehicleInsurance() {
+        return (this.$extras.VEHICLE_INSURANCE || []).map((name: string) => `fs/${name}`)
+    }
+
+    @computed()
+    get vehicleTechnicalVisit() {
+        return (this.$extras.VEHICLE_TECHNICAL_VISIT || []).map((name: string) => `fs/${name}`)
+    }
+
+    @computed()
+    get vehicleRegistration() {
+        return (this.$extras.VEHICLE_REGISTRATION || []).map((name: string) => `fs/${name}`)
+    }
+
+    async loadDocuments() {
+        const FileManager = (await import('#services/file_manager')).default
+        this.$extras.VEHICLE_INSURANCE = await FileManager.getPathsFor('Vehicle', this.id, 'VEHICLE_INSURANCE')
+        this.$extras.VEHICLE_TECHNICAL_VISIT = await FileManager.getPathsFor('Vehicle', this.id, 'VEHICLE_TECHNICAL_VISIT')
+        this.$extras.VEHICLE_REGISTRATION = await FileManager.getPathsFor('Vehicle', this.id, 'VEHICLE_REGISTRATION')
+    }
 }

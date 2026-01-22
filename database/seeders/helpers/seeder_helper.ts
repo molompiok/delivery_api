@@ -53,7 +53,8 @@ export function createFakeFileContent(category: 'IMAGE' | 'PDF' | 'JSON'): Buffe
 }
 
 /**
- * Helper to upload a fake file using FileService
+ * Helper to upload a fake file using FileManager
+ * Creates the file directly in the File model without going through HTTP context
  */
 export async function uploadFakeFile(
     tableName: string,
@@ -68,46 +69,45 @@ export async function uploadFakeFile(
         allowedCompanyIds?: string[]
     } = {}
 ): Promise<string> {
-    const FileService = (await import('#services/file_service')).default
+    const File = (await import('#models/file')).default
     const fs = await import('node:fs/promises')
     const path = await import('node:path')
     const os = await import('node:os')
+    const crypto = await import('node:crypto')
 
     const category = options.category || 'PDF'
-    const fileName = options.fileName || `fake_${category.toLowerCase()}.${category === 'IMAGE' ? 'png' : category === 'PDF' ? 'pdf' : 'json'}`
+    const ext = category === 'IMAGE' ? 'png' : category === 'PDF' ? 'pdf' : 'json'
+    const mimeType = category === 'IMAGE' ? 'image/png' : category === 'PDF' ? 'application/pdf' : 'application/json'
+    const fileName = options.fileName || `fake_${category.toLowerCase()}.${ext}`
 
-    // Create temp file
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'seeder-'))
-    const tmpPath = path.join(tmpDir, fileName)
+    // Create content
     const content = createFakeFileContent(category)
-    await fs.writeFile(tmpPath, content)
 
-    // Create fake MultipartFile
-    const fakeFile = {
-        tmpPath,
-        clientName: fileName,
-        size: content.length,
-        type: category === 'IMAGE' ? 'image' : category === 'PDF' ? 'application' : 'application',
-        subtype: category === 'IMAGE' ? 'png' : category === 'PDF' ? 'pdf' : 'json',
-        extname: category === 'IMAGE' ? 'png' : category === 'PDF' ? 'pdf' : 'json',
-        hasErrors: false,
-        errors: [],
-    } as any
+    // Generate unique filename
+    const uniqueName = `${crypto.randomBytes(16).toString('hex')}.${ext}`
 
-    const result = await FileService.upload(fakeFile, {
+    // Storage path
+    const storagePath = path.join(process.cwd(), 'storage', 'uploads')
+    await fs.mkdir(storagePath, { recursive: true })
+    const filePath = path.join(storagePath, uniqueName)
+
+    // Write file to disk
+    await fs.writeFile(filePath, content)
+
+    // Create File record
+    const file = await File.create({
         tableName,
         tableColumn,
         tableId,
-        encrypt: options.encrypt || false,
-        isPublic: options.isPublic || false,
-        allowedUserIds: options.allowedUserIds,
-        allowedCompanyIds: options.allowedCompanyIds,
+        name: uniqueName,
+        path: filePath,
+        mimeType,
+        size: content.length,
+        isEncrypted: options.encrypt || false,
+        fileCategory: 'OTHER',
     })
 
-    // Cleanup
-    await fs.rm(tmpDir, { recursive: true, force: true })
-
-    return result.fileId
+    return file.id
 }
 
 export default class SeederHelper extends BaseSeeder {

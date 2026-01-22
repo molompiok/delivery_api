@@ -90,7 +90,7 @@ export default class VehicleController {
         }
 
         await vehicle.load('assignedDriver')
-        await vehicle.load('files')
+        await vehicle.loadDocuments()
         return response.ok(vehicle)
     }
 
@@ -144,7 +144,8 @@ export default class VehicleController {
             return response.forbidden({ message: 'Permission denied' })
         }
 
-        await vehicle.delete()
+        // Use VehicleService to delete vehicle and all associated files
+        await VehicleService.deleteVehicle(vehicle)
         return response.noContent()
     }
 
@@ -376,19 +377,16 @@ export default class VehicleController {
     /**
      * Upload a document for the vehicle
      */
-    async uploadDoc({ params, request, response, auth }: HttpContext) {
+    async uploadDoc(ctx: HttpContext) {
+        const { params, request, response, auth } = ctx
         const vehicle = await Vehicle.find(params.id)
         if (!vehicle) {
             return response.notFound({ message: 'Vehicle not found' })
         }
 
         const user = auth.user!
-        const file = request.file('file')
         const { docType, expiryDate } = request.body()
 
-        if (!file) {
-            return response.badRequest({ message: 'File is required' })
-        }
         if (!['VEHICLE_INSURANCE', 'VEHICLE_TECHNICAL_VISIT', 'VEHICLE_REGISTRATION'].includes(docType)) {
             return response.badRequest({ message: 'Invalid docType' })
         }
@@ -404,7 +402,8 @@ export default class VehicleController {
                 })
             }
 
-            const result = await VehicleService.uploadDocument(user, vehicle.id, docType, file, expiryDate)
+            // Use new FileManager-based upload
+            const result = await VehicleService.uploadDocument(ctx, vehicle, docType, user, expiryDate)
             return response.created(result)
         } catch (error) {
             return response.badRequest({ message: error.message })

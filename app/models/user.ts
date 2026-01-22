@@ -11,6 +11,9 @@ import Schedule from '#models/schedule'
 import ApiKey from '#models/api_key'
 import Zone from '#models/zone'
 import DriverSetting from '#models/driver_setting'
+import { computed } from '@adonisjs/lucid/orm'
+import FileManager from '#services/file_manager'
+
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -67,6 +70,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column()
   declare currentCompanyManaged: string | null
 
+  @column()
+  declare fcmToken: string | null
+
   @belongsTo(() => Company)
   declare company: BelongsTo<typeof Company>
 
@@ -94,6 +100,26 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+
+  // --- VIRTUAL FILE COLUMNS ---
+
+  @computed()
+  get photos() {
+    return (this.$extras.photos || []).map((name: string) => `fs/${name}`)
+  }
+
+  @computed()
+  get addressPhotos() {
+    return (this.$extras.address_photos || []).map((name: string) => `fs/${name}`)
+  }
+
+  /**
+   * Helper to load files into extras
+   */
+  async loadFiles() {
+    this.$extras.photos = await FileManager.getPathsFor('User', this.id, 'photos')
+    this.$extras.address_photos = await FileManager.getPathsFor('User', this.id, 'address_photos')
+  }
 
   static accessTokens = DbAccessTokensProvider.forModel(User)
 }

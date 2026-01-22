@@ -31,6 +31,8 @@ router.group(() => {
     // User Profile
     router.get('/auth/me', [AuthController, 'me'])
     router.put('/auth/me', [AuthController, 'updateProfile'])
+    router.put('/auth/fcm-token', [AuthController, 'updateFcmToken'])
+    router.patch('/profile', [AuthController, 'updateFcmToken']) // Compatibility with d_driver
 })
     .prefix('/v1')
     .use(middleware.auth())

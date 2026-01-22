@@ -2,14 +2,27 @@
 
 ## 🎯 Vue d'ensemble
 
-Ce document décrit le flux complet de validation des documents des drivers par les administrateurs **Sublymus Admin**. Ce flux est distinct de la validation par les managers ETP (décrite dans FLUX_INVITATION.md).
+Ce document décrit le flux complet de validation des documents des drivers par les administrateurs **Sublymus Admin**. Ce flux est distinct de la validation par les managers ETP (décrite dans [FLUX_INVITATION.md](FLUX_INVITATION.md)).
 
-### Différence clé : Validation Sublymus vs Validation ETP
+### 🔄 L'Architecture "Double Flux"
 
-- **Validation Sublymus Admin** : Valide les documents **globaux** du driver (stockés sur la table `User`)
-- **Validation ETP Manager** : Valide les documents **spécifiques** pour l'entreprise (stockés sur `CompanyDriverSetting`)
+Sublymus utilise une architecture de documents en deux niveaux pour concilier **Vie Privée** et **Conformité** :
 
-Les deux validations sont **indépendantes** et **obligatoires**.
+1.  **Le Flux Utilisateur (User Flux)** :
+    *   **Propriétaire** : Le Chauffeur (`User`).
+    *   **Usage** : Documents d'identité et de conduite "globaux".
+    *   **Validateur** : Admin Sublymus.
+    *   **Visibilité** : Uniquement le chauffeur et Sublymus.
+
+2.  **Le Flux Entreprise (Company Flux)** :
+    *   **Propriétaire** : L'Entreprise (`Company`).
+    *   **Usage** : Documents requis par une entreprise spécifique pour une mission ou une flotte.
+    *   **Validateur** : Manager de l'entreprise.
+    *   **Visibilité** : Le chauffeur et l'entreprise concernée.
+
+### Fonctionnement du Partage
+Lorsqu'un chauffeur accepte une invitation d'entreprise, le système effectue un **Mirroring** : 
+Il lie les fichiers déjà validés sur le profil `User` aux placeholders de la `Company`, tout en créant un "hard-link" physique pour garantir l'accès visuel au manager sans compromettre la sécurité du fichier original.
 
 ---
 
@@ -80,17 +93,17 @@ Documents requis pour les drivers indépendants ou pour validation globale Subly
        │ 4. GET /driver/documents         │                                  │
        │─────────────────────────────────>│                                  │
        │                                  │                                  │
-       │ 5. Liste vide (pas encore de docs)                                 │
+       │ 5. Liste des documents requis                                      │
        │<─────────────────────────────────│                                  │
        │                                  │                                  │
-       │ 6. Upload documents              │                                  │
-       │  POST /files/upload              │                                  │
-       │  (crée automatiquement Document) │                                  │
+       │ 6. Upload fichier physique       │                                  │
+       │  POST /v1/files/upload           │                                  │
+       │  (retourne fileId)               │                                  │
        │─────────────────────────────────>│                                  │
        │                                  │                                  │
-       │                                  │ Création Document entries        │
-       │                                  │ (status: PENDING)                │
-       │                                  │                                  │
+       │ 7. Liaison au document           │                                  │
+       │  PATCH /v1/documents/:id/submit  │                                  │
+       │  {fileId: "fil_xxx"}             │                                  │
        │ 7. Vérifier mes documents        │                                  │
        │  GET /driver/documents           │                                  │
        │─────────────────────────────────>│                                  │
@@ -177,11 +190,13 @@ Documents requis pour les drivers indépendants ou pour validation globale Subly
 1. **Driver se connecte** via OTP SMS
 2. **Driver s'enregistre** comme driver (vehicleType, vehiclePlate)
 3. **DriverSetting créé** avec `verificationStatus: PENDING`
+4. **Placeholders de Documents créés** automatiquement pour le driver (Permis, CNI, etc.)
 
 #### **Phase 2: Soumission Documents**
-4. **Driver upload ses documents** (permis, CNI, assurance, etc.)
-5. Pour chaque fichier uploadé, une entrée `Document` est créée avec `status: PENDING`
-6. Driver peut voir ses documents et leur statut
+5. **Driver upload le fichier physique** sur `/v1/files/upload` et reçoit un `fileId`
+6. **Driver lie le fichier au document** via `PATCH /v1/documents/:docId/submit`
+7. Le `Document` passe en `status: PENDING`
+8. Driver peut voir ses documents et leur statut
 
 #### **Phase 3: Validation Admin**
 7. **Admin se connecte** via OTP

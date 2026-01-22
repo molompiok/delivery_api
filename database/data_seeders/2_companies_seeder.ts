@@ -7,7 +7,7 @@ export default class CompaniesSeeder extends BaseSeeder {
         console.log('🏢 Seeding Companies...')
 
         // Owner 1
-        const owner1 = await createUserWithPhone('+2250101010101', {
+        const owner1 = await createUserWithPhone('+2250759929515', {
             fullName: 'Manager FastDelivery',
             email: 'manager@fastdelivery.ci'
         })

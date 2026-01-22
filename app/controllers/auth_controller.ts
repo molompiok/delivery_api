@@ -32,6 +32,12 @@ const updateProfileValidator = vine.compile(
     })
 )
 
+const updateFcmTokenValidator = vine.compile(
+    vine.object({
+        fcm_token: vine.string().trim(),
+    })
+)
+
 export default class AuthController {
     /**
      * Google OAuth Redirect
@@ -178,6 +184,21 @@ export default class AuthController {
                 isDriver: user.isDriver,
                 isAdmin: user.isAdmin,
             }
+        })
+    }
+
+    /**
+     * Update Current User FCM Token
+     */
+    public async updateFcmToken({ auth, request, response }: HttpContext) {
+        const user = auth.user!
+        const { fcm_token } = await request.validateUsing(updateFcmTokenValidator)
+
+        user.fcmToken = fcm_token
+        await user.save()
+
+        return response.ok({
+            message: 'FCM Token updated successfully',
         })
     }
 

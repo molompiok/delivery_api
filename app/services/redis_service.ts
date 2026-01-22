@@ -1,4 +1,4 @@
-import Redis from '@adonisjs/lucid/services/db'
+import redis from '@adonisjs/redis/services/main'
 import { WorkMode } from '#constants/work_mode'
 
 /**
@@ -10,15 +10,35 @@ import { WorkMode } from '#constants/work_mode'
 export interface CondensedDriverState {
     id: string
     mode: WorkMode
-    status: 'ONLINE' | 'OFFLINE' | 'BUSY' | 'PAUSE'
+    status: 'ONLINE' | 'OFFLINE' | 'BUSY' | 'PAUSE' | 'OFFERING'
     last_lat?: number
     last_lng?: number
     active_company_id?: string
     active_zone_id?: string
     active_vehicle_id?: string
-    current_order_id?: string
+
+    // Chaining Support
+    current_orders: string[]  // Liste des ordres en cours (remplace current_order_id)
+    allow_chaining: boolean   // Autoriser le chaînage
+    next_destination?: { lat: number, lng: number }  // Prochain point de livraison prévu
+
     updated_at: string
 }
+
+/**
+ * TODO [CHAINING EVOLUTION]:
+ * Quand les critères de sélection seront plus avancés, ajouter ici:
+ * - remaining_capacity_kg?: number   // Poids restant disponible dans le véhicule
+ * - remaining_volume_m3?: number     // Volume restant disponible
+ * - product_categories?: string[]    // Catégories de produits actuellement transportés (pour compatibilité)
+ * 
+ * Ces champs permettront de filtrer les livreurs éligibles au chaînage
+ * en fonction de la capacité réelle et de la compatibilité des produits.
+ * À ce moment, maxConcurrentMissions pourra devenir configurable par les ETP/IDEP.
+ */
+
+// Constante globale (modifiable uniquement par Admin pour l'instant)
+export const MAX_CONCURRENT_MISSIONS = 2
 
 export class RedisService {
     private readonly PREFIX = 'sublymus:driver:'
@@ -30,7 +50,7 @@ export class RedisService {
         const key = `${this.PREFIX}${driverId}:state`
 
         // 1. Récupérer l'état actuel
-        const currentStateStr = await (Redis.connection() as any).get(key)
+        const currentStateStr = await redis.get(key)
         let state: CondensedDriverState
 
         if (currentStateStr) {
@@ -41,16 +61,18 @@ export class RedisService {
                 id: driverId,
                 mode: WorkMode.IDEP,
                 status: 'OFFLINE',
+                current_orders: [],
+                allow_chaining: true,
                 updated_at: new Date().toISOString(),
                 ...data
             }
         }
 
-        // 2. Sauvegarder dans Redis (sans expiration pour l'état critique)
-        await (Redis.connection() as any).set(key, JSON.stringify(state))
+        // 2. Sauvegarder dans Redis
+        await redis.set(key, JSON.stringify(state))
 
-        // 3. Nettoyage automatique du geo-index si OFFLINE ou PAUSE
-        if (state.status === 'OFFLINE' || state.status === 'PAUSE') {
+        // 3. Nettoyage automatique du geo-index si incapacité de recevoir
+        if (state.status === 'OFFLINE' || state.status === 'PAUSE' || state.status === 'BUSY' || state.status === 'OFFERING') {
             await this.removeDriverFromGeoIndex(driverId)
         }
 
@@ -62,7 +84,7 @@ export class RedisService {
      */
     async getDriverState(driverId: string): Promise<CondensedDriverState | null> {
         const key = `${this.PREFIX}${driverId}:state`
-        const data = await (Redis.connection() as any).get(key)
+        const data = await redis.get(key)
         return data ? JSON.parse(data) : null
     }
 
@@ -74,7 +96,7 @@ export class RedisService {
 
         // On peut aussi stocker dans un GeoSet Redis pour recherche par proximité
         const geoKey = 'sublymus:drivers:locations'
-        await (Redis.connection() as any).geoadd(geoKey, lng, lat, driverId)
+        await redis.geoadd(geoKey, lng, lat, driverId)
     }
 
     /**
@@ -82,8 +104,81 @@ export class RedisService {
      */
     async removeDriverFromGeoIndex(driverId: string): Promise<void> {
         const geoKey = 'sublymus:drivers:locations'
-        await (Redis.connection() as any).zrem(geoKey, driverId)
+        await redis.zrem(geoKey, driverId)
         console.log(`[REDIS] Removed driver ${driverId} from geo-index`)
+    }
+
+    /**
+     * Recherche des drivers à proximité
+     * @returns Liste des driverIds avec leur distance
+     */
+    async findDriversNearby(lng: number, lat: number, radiusKm: number, limit: number = 50): Promise<{ id: string, distance: number }[]> {
+        const geoKey = 'sublymus:drivers:locations'
+        // GEORADIUS is deprecated in some redis versions, using GEOSEARCH
+        try {
+            const results = await redis.geosearch(geoKey, 'FROMLONLAT', lng, lat, 'BYRADIUS', radiusKm, 'km', 'ASC', 'WITHDIST', 'COUNT', limit)
+            return results.map((r: any) => ({
+                id: r[0],
+                distance: parseFloat(r[1])
+            }))
+        } catch (err) {
+            console.error('[REDIS] geosearch failed, trying fallback georadius', err)
+            // Fallback for older redis
+            const results = await (redis as any).georadius(geoKey, lng, lat, radiusKm, 'km', 'WITHDIST', 'ASC', 'COUNT', limit)
+            return results.map((r: any) => ({
+                id: r[0],
+                distance: parseFloat(r[1])
+            }))
+        }
+    }
+
+    /**
+     * Ajoute un ordre à la liste des ordres en cours d'un driver.
+     * Met à jour le statut à BUSY si le driver était ONLINE.
+     */
+    async addOrderToDriver(driverId: string, orderId: string, nextDestination?: { lat: number, lng: number }): Promise<void> {
+        const state = await this.getDriverState(driverId)
+        if (!state) return
+
+        const currentOrders = state.current_orders || []
+        if (!currentOrders.includes(orderId)) {
+            currentOrders.push(orderId)
+        }
+
+        await this.updateDriverState(driverId, {
+            current_orders: currentOrders,
+            status: 'BUSY',
+            next_destination: nextDestination
+        })
+    }
+
+    /**
+     * Retire un ordre de la liste des ordres en cours d'un driver.
+     * Remet le statut à ONLINE si la liste devient vide.
+     */
+    async removeOrderFromDriver(driverId: string, orderId: string): Promise<void> {
+        const state = await this.getDriverState(driverId)
+        if (!state) return
+
+        const currentOrders = (state.current_orders || []).filter(id => id !== orderId)
+
+        // Déterminer le nouveau statut
+        const newStatus = currentOrders.length === 0 ? 'ONLINE' : 'BUSY'
+
+        await this.updateDriverState(driverId, {
+            current_orders: currentOrders,
+            status: newStatus,
+            // Effacer la destination si plus de commandes
+            next_destination: currentOrders.length === 0 ? undefined : state.next_destination
+        })
+    }
+
+    /**
+     * Vérifie si un driver peut accepter une nouvelle mission chaînée.
+     */
+    canAcceptChainedMission(state: CondensedDriverState): boolean {
+        if (!state.allow_chaining) return false
+        return (state.current_orders?.length || 0) < MAX_CONCURRENT_MISSIONS
     }
 
     /**
@@ -92,7 +187,7 @@ export class RedisService {
      */
     async acquireLock(resource: string, ttlSeconds: number = 5): Promise<boolean> {
         const lockKey = `sublymus:lock:${resource}`
-        const result = await (Redis.connection() as any).set(lockKey, 'locked', 'EX', ttlSeconds, 'NX')
+        const result = await redis.set(lockKey, 'locked', 'EX', ttlSeconds, 'NX')
         return result === 'OK'
     }
 
@@ -101,7 +196,7 @@ export class RedisService {
      */
     async releaseLock(resource: string): Promise<void> {
         const lockKey = `sublymus:lock:${resource}`
-        await (Redis.connection() as any).del(lockKey)
+        await redis.del(lockKey)
     }
 
     /**
@@ -150,6 +245,7 @@ export class RedisService {
         await this.updateDriverState(userId, {
             mode: driver.currentMode,
             status: driver.status,
+            allow_chaining: driver.allowChaining ?? true, // Default to true
             last_lat: driver.currentLat || undefined,
             last_lng: driver.currentLng || undefined,
             active_company_id: etpRelation?.companyId || undefined,

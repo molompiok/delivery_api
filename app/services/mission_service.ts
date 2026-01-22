@@ -5,8 +5,14 @@ import Mission from '#models/mission'
 import OrderStatusUpdated from '#events/order_status_updated'
 import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
+import RedisService from '#services/redis_service'
+import { inject } from '@adonisjs/core'
+import DispatchService from '#services/dispatch_service'
 
+@inject()
 export default class MissionService {
+    constructor(protected dispatchService: DispatchService) { }
+
     /**
      * Driver accepts a mission.
      */
@@ -19,7 +25,7 @@ export default class MissionService {
                 throw new Error('Mission is no longer available')
             }
 
-            // Document Compliance Check
+            // Document Compliance Check (Lazy loading CompanyDriverSetting/DriverSetting is fine here)
             const CompanyDriverSetting = (await import('#models/company_driver_setting')).default
             const DriverSetting = (await import('#models/driver_setting')).default
             const ds = await DriverSetting.findBy('userId', driverId)
@@ -38,6 +44,7 @@ export default class MissionService {
             // Assign driver and update status
             order.driverId = driverId
             order.offeredDriverId = null
+            order.offerExpiresAt = null
             order.status = 'ACCEPTED'
             await order.useTransaction(trx).save()
 
@@ -52,17 +59,21 @@ export default class MissionService {
             mission.startAt = DateTime.now()
             await mission.useTransaction(trx).save()
 
-            // Update driver availability if needed (simplified for now)
-            // In a real app, we might check how many active missions they have
+            // Add order to driver's active missions in Redis
+            await order.load('deliveryAddress')
+            await RedisService.addOrderToDriver(driverId, orderId, {
+                lat: order.deliveryAddress.lat,
+                lng: order.deliveryAddress.lng
+            })
 
             await trx.commit()
 
-                // Emit Real-time Event
-                ; (emitter as any).emit(new OrderStatusUpdated({
-                    orderId: order.id,
-                    status: order.status,
-                    clientId: order.clientId
-                }))
+            // Emit Real-time Event
+            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                orderId: order.id,
+                status: order.status,
+                clientId: order.clientId
+            }))
 
             return order
         } catch (error) {
@@ -78,9 +89,26 @@ export default class MissionService {
     async refuseMission(driverId: string, orderId: string) {
         const order = await Order.find(orderId)
         if (order && order.offeredDriverId === driverId) {
+            // 1. Register rejection to avoid offering again
+            await this.dispatchService.registerRejection(orderId, driverId)
+
+            // 2. Clear offer
             order.offeredDriverId = null
             order.offerExpiresAt = null
             await order.save()
+
+            // 3. Clear driver's current order from Redis
+            // Note: En refus d'offre, le driver n'a pas encore officiellement cette commande
+            // On s'assure simplement qu'il repasse ONLINE (géré via removeOrderFromDriver si besoin)
+            const state = await RedisService.getDriverState(driverId)
+            if (state && state.status === 'OFFERING') {
+                await RedisService.updateDriverState(driverId, { status: 'ONLINE' })
+            }
+
+            // 4. Trigger next dispatch attempt immediately
+            this.dispatchService.dispatch(order).catch(err => {
+                logger.error({ err, orderId }, 'Dispatch failed after refusal')
+            })
         }
         return true
     }
@@ -101,7 +129,7 @@ export default class MissionService {
                 throw new Error('Order not found or not assigned to you')
             }
 
-            // Validate transitions (simplified)
+            // Validate transitions
             const allowedTransitions: Record<string, string[]> = {
                 'ACCEPTED': ['AT_PICKUP', 'CANCELLED'],
                 'AT_PICKUP': ['COLLECTED', 'FAILED'],
@@ -131,17 +159,22 @@ export default class MissionService {
                 await mission.useTransaction(trx).save()
             }
 
-            // Log the event (Audit log could go here)
+            // Remove order from driver's active list in Redis if terminal state
+            if (['DELIVERED', 'FAILED', 'CANCELLED'].includes(status)) {
+                await RedisService.removeOrderFromDriver(driverId, orderId)
+            }
+
+            // Log the event
             logger.info({ orderId, status, driverId }, 'Mission status updated')
 
             await trx.commit()
 
-                // Emit Real-time Event
-                ; (emitter as any).emit(new OrderStatusUpdated({
-                    orderId: order.id,
-                    status: order.status,
-                    clientId: order.clientId
-                }))
+            // Emit Real-time Event
+            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                orderId: order.id,
+                status: order.status,
+                clientId: order.clientId
+            }))
 
             return order
         } catch (error) {
