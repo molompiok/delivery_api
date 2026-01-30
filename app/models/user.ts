@@ -11,6 +11,7 @@ import Schedule from '#models/schedule'
 import ApiKey from '#models/api_key'
 import Zone from '#models/zone'
 import DriverSetting from '#models/driver_setting'
+import Document from '#models/document'
 import { computed } from '@adonisjs/lucid/orm'
 import FileManager from '#services/file_manager'
 
@@ -95,6 +96,12 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @hasOne(() => DriverSetting)
   declare driverSetting: HasOne<typeof DriverSetting>
 
+  @hasMany(() => Document, {
+    foreignKey: 'tableId',
+    onQuery: (query) => query.where('tableName', 'User').where('isDeleted', false),
+  })
+  declare documents: HasMany<typeof Document>
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
@@ -111,6 +118,11 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @computed()
   get addressPhotos() {
     return (this.$extras.address_photos || []).map((name: string) => `fs/${name}`)
+  }
+
+  @computed()
+  get effectiveCompanyId() {
+    return this.currentCompanyManaged || this.companyId
   }
 
   /**

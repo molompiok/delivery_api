@@ -3,7 +3,9 @@ import { BaseModel, beforeCreate, column, belongsTo } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Order from '#models/order'
 import User from '#models/user'
-import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import Task from '#models/task'
+import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
+import { hasMany } from '@adonisjs/lucid/orm'
 
 export default class Mission extends BaseModel {
     @column({ isPrimary: true })
@@ -29,11 +31,32 @@ export default class Mission extends BaseModel {
     @column.dateTime()
     declare completedAt: DateTime | null
 
+    @column({
+        prepare: (v) => v ? JSON.stringify(v) : null,
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare optimizedData: any
+
+    @column()
+    declare estimatedDuration: number | null
+
+    @column()
+    declare estimatedDistance: number | null
+
+    @column({
+        prepare: (v) => v ? JSON.stringify(v) : null,
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare routeGeometry: any
+
     @belongsTo(() => Order)
     declare order: BelongsTo<typeof Order>
 
     @belongsTo(() => User, { foreignKey: 'driverId' })
     declare driver: BelongsTo<typeof User>
+
+    @hasMany(() => Task)
+    declare tasks: HasMany<typeof Task>
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

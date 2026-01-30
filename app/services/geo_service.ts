@@ -3,6 +3,7 @@ import logger from '@adonisjs/core/services/logger'
 import polyline from '@mapbox/polyline'
 
 import { WaypointStatus, WaypointSummaryItem, CalculationEngine } from '../types/logistics.js'
+import { apiConfig } from '#config/api_config'
 
 
 export interface LegManeuver {
@@ -68,6 +69,83 @@ interface ValhallaTrip {
 
 class GeoService {
     private valhallaUrl = env.get('VALHALLA_URL') || 'http://localhost:8002'
+
+    /**
+     * Search for places (autocomplete/suggestions) via Nominatim.
+     */
+    async searchPlaces(query: string): Promise<Array<{ display_name: string, lat: string, lon: string, type: string, source: 'nominatim' }> | null> {
+        try {
+            // Use Nominatim for search
+            const countryCode = apiConfig.search_place.countryCode || 'ci'
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&countrycodes=${countryCode}`
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'SublymusDelivery/1.0',
+                    'Accept-Language': 'fr-CI,fr;q=0.9',
+                },
+            })
+
+            if (!response.ok) return null
+
+            const data = await response.json() as any[]
+            return data.map(item => ({
+                display_name: item.display_name,
+                lat: item.lat,
+                lon: item.lon,
+                type: item.type,
+                source: 'nominatim'
+            }))
+
+        } catch (error) {
+            logger.error({ err: error, query }, 'Place search failed')
+            return null
+        }
+    }
+
+    /**
+     * Search for places via Google Places API (Fallback).
+     */
+    async searchPlacesGoogle(query: string): Promise<Array<{ display_name: string, lat: string, lon: string, type: string, source: 'google' }> | null> {
+        const apiKey = env.get('GOOGLE_MAPS_KEY')
+        if (!apiKey) {
+            logger.warn('Google Search skipped: Missing GOOGLE_MAPS_KEY env variable')
+            return null
+        }
+
+        try {
+            // Using Text Search (New) or Autocomplete API
+            // For simple search: https://places.googleapis.com/v1/places:searchText
+            // Or legacy: https://maps.googleapis.com/maps/api/place/textsearch/json
+
+            const countryCode = apiConfig.search_place.countryCode || 'ci'
+            const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${apiKey}&region=${countryCode}`
+
+            logger.info({ url: url.replace(apiKey, 'HIDDEN_KEY') }, 'Calling Google Places API')
+
+            const response = await fetch(url)
+
+            if (!response.ok) return null
+
+            const data = await response.json() as any
+
+            if (data.status !== 'OK') {
+                logger.warn({ status: data.status, errorMessage: data.error_message, url: url.replace(apiKey, 'HIDDEN') }, 'Google Places API returned non-OK status')
+                return null
+            }
+
+            return data.results.map((item: any) => ({
+                display_name: item.formatted_address,
+                lat: item.geometry.location.lat.toString(),
+                lon: item.geometry.location.lng.toString(),
+                type: item.types ? item.types[0] : 'unknown',
+                source: 'google'
+            }))
+
+        } catch (error) {
+            logger.error({ err: error, query }, 'Google Place search failed')
+            return null
+        }
+    }
 
     /**
      * Geocodes an address string to [lon, lat] coordinates via Nominatim (OSM).

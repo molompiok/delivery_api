@@ -221,7 +221,7 @@ export class RedisService {
     }
 
     /**
-     * Synchronise un driver spécifique de SQL vers Redis
+     *TODO:OPTIMISER Synchronise un driver spécifique de SQL vers Redis
      */
     async syncDriverToRedis(userId: string): Promise<void> {
         const DriverSetting = (await import('#models/driver_setting')).default

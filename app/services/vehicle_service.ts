@@ -34,7 +34,7 @@ export class VehicleService {
         }
 
         // Strict Check: Manager must own this vehicle (via Company)
-        if (!manager.companyId || vehicle.ownerId !== manager.companyId) {
+        if (!manager.effectiveCompanyId || vehicle.ownerId !== manager.effectiveCompanyId) {
             throw new Error('You do not own this vehicle')
         }
 
@@ -69,10 +69,10 @@ export class VehicleService {
 
         // Strict Check: Driver must belong to the same company
         // Check direct companyId OR check CompanyDriverSetting
-        if (driver.companyId !== manager.companyId) {
+        if (driver.companyId !== manager.effectiveCompanyId) {
             const CompanyDriverSetting = (await import('#models/company_driver_setting')).default
             const companyRelation = await CompanyDriverSetting.query()
-                .where('companyId', manager.companyId!)
+                .where('companyId', manager.effectiveCompanyId!)
                 .where('driverId', driver.id)
                 .where('status', 'ACCEPTED')
                 .first()
@@ -119,7 +119,8 @@ export class VehicleService {
         user: User,
         expiryDate?: string
     ) {
-        // Validation for expiry-sensitive docs
+        /* 
+        // Validation for expiry-sensitive docs (Optional now)
         if (['VEHICLE_INSURANCE', 'VEHICLE_TECHNICAL_VISIT'].includes(docType)) {
             if (!expiryDate) {
                 throw new Error(`${docType} requires an expiry date`)
@@ -129,6 +130,7 @@ export class VehicleService {
                 throw new Error('Invalid or past expiry date')
             }
         }
+        */
 
         const manager = new FileManager(vehicle, 'Vehicle')
 

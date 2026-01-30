@@ -18,14 +18,14 @@ export default class ScheduleController {
 
         // 3. Manager accessing Company schedule?
         if (ownerType === 'Company') {
-            if (user.companyId === ownerId && user.currentCompanyManaged) return true;
+            if (user.effectiveCompanyId === ownerId && user.currentCompanyManaged) return true;
         }
 
         // 4. Manager accessing Driver schedule?
         if (ownerType === 'User') {
             const driver = await User.find(ownerId)
             // If checking a driver who belongs to my company
-            if (driver && driver.companyId === user.companyId && user.currentCompanyManaged) return true;
+            if (driver && driver.companyId === user.effectiveCompanyId && user.currentCompanyManaged) return true;
         }
 
         return false;
@@ -39,13 +39,13 @@ export default class ScheduleController {
 
         // 2. Manager managing company schedule
         if (ownerType === 'Company') {
-            if (user.companyId === ownerId && user.currentCompanyManaged) return true;
+            if (user.effectiveCompanyId === ownerId && user.currentCompanyManaged) return true;
         }
 
         // 3. Manager managing driver schedule
         if (ownerType === 'User') {
             const driver = await User.find(ownerId)
-            if (driver && driver.companyId === user.companyId && user.currentCompanyManaged) return true;
+            if (driver && driver.companyId === user.effectiveCompanyId && user.currentCompanyManaged) return true;
         }
 
         return false;

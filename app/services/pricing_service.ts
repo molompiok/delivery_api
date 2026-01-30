@@ -101,7 +101,21 @@ class PricingService {
 
             logger.info(`Calculated Fees - Client: ${clientFee} XOF, Driver: ${driverRemuneration} XOF`)
 
-            return { clientFee, driverRemuneration }
+            return {
+                clientFee,
+                driverRemuneration,
+                currency: 'XOF',
+                breakdown: {
+                    baseFee: BASE_FEE,
+                    distanceFee: Math.round(distanceKm * PER_KM_FEE),
+                    durationFee: Math.round(durationMinutes * PER_MINUTE_FEE),
+                    surcharges: {
+                        weight: totalWeightG > WEIGHT_SURCHARGE_THRESHOLD_G ? Math.round(((totalWeightG - WEIGHT_SURCHARGE_THRESHOLD_G) / 1000) * WEIGHT_SURCHARGE_PER_KG_OVER) : 0,
+                        volume: totalVolumeM3 > VOLUME_SURCHARGE_THRESHOLD_M3 ? VOLUME_SURCHARGE_AMOUNT : 0,
+                        fragile: hasFragile ? FRAGILE_SURCHARGE : 0
+                    }
+                }
+            }
         } catch (error) {
             logger.error({ err: error, distanceMeters, durationSeconds }, 'Error calculating fees')
             throw new Error('Pricing calculation failed')

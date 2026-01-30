@@ -63,7 +63,8 @@ export default defineConfig({
   preloads: [
     () => import('./start/routes.js'),
     () => import('./start/kernel.js'),
-    () => import('./start/init.js')
+    () => import('./start/init.js'),
+    () => import('./start/ws.js')
   ],
 
   /*

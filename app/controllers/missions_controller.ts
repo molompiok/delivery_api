@@ -2,17 +2,12 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import MissionService from '#services/mission_service'
 import vine from '@vinejs/vine'
-import Mission from '#models/mission'
+import OrderLeg from '#models/order_leg'
+import { isValidCodeFormat } from '#utils/verification_code'
 
-/**
- * Validates mission status update requests.
- */
-const updateMissionStatusValidator = vine.compile(
+const verifyCodeValidator = vine.compile(
     vine.object({
-        status: vine.enum(['ACCEPTED', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY', 'DELIVERED', 'FAILED'] as const),
-        latitude: vine.number().optional(),
-        longitude: vine.number().optional(),
-        reason: vine.string().trim().optional(),
+        code: vine.string().trim().minLength(6).maxLength(6),
     })
 )
 
@@ -21,84 +16,140 @@ export default class MissionsController {
     constructor(protected missionService: MissionService) { }
 
     /**
-     * Driver accepts a mission.
+     * Verify a pickup or delivery code
      */
-    async accept({ params, response, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        if (!user.isDriver) {
-            return response.forbidden({ message: 'Only drivers can accept missions' })
-        }
+    async verifyCode({ request, response, params, auth }: HttpContext) {
+        auth.getUserOrFail()
+        const orderId = params.id
+        const { code } = await request.validateUsing(verifyCodeValidator)
 
         try {
-            const order = await this.missionService.acceptMission(user.id, params.id)
+            // Validate code format
+            if (!isValidCodeFormat(code)) {
+                return response.badRequest({
+                    message: 'Invalid code format. Must be 6 digits.',
+                })
+            }
+
+            // Find the leg with this code for this order
+            const leg = await OrderLeg.query()
+                .where('orderId', orderId)
+                .where('verificationCode', code)
+                .where('isVerified', false)
+                .first()
+
+            if (!leg) {
+                return response.badRequest({
+                    message: 'Invalid or already used verification code',
+                })
+            }
+
+            // Mark as verified
+            leg.isVerified = true
+            await leg.save()
+
+            return response.ok({
+                message: 'Code verified successfully',
+                leg: {
+                    id: leg.id,
+                    sequence: leg.sequence,
+                    isVerified: leg.isVerified,
+                },
+            })
+        } catch (error) {
+            return response.internalServerError({
+                message: 'Code verification failed',
+                error: error.message,
+            })
+        }
+    }
+
+    /**
+     * Accept a mission
+     */
+    async accept({ response, params, auth }: HttpContext) {
+        const user = auth.getUserOrFail()
+        const orderId = params.id
+
+        try {
+            const order = await this.missionService.acceptMission(user.id, orderId)
             return response.ok({
                 message: 'Mission accepted successfully',
-                order: order.serialize()
+                order: order.serialize(),
             })
         } catch (error) {
-            return response.badRequest({ message: error.message })
+            return response.badRequest({
+                message: error.message,
+            })
         }
     }
 
     /**
-     * Driver refuses a mission.
+     * Refuse a mission
      */
-    async refuse({ params, response, auth }: HttpContext) {
+    async refuse({ params, auth, response }: HttpContext) {
         const user = auth.getUserOrFail()
-        if (!user.isDriver) {
-            return response.forbidden({ message: 'Only drivers can refuse missions' })
-        }
-
-        await this.missionService.refuseMission(user.id, params.id)
-        return response.ok({ message: 'Mission refused successfully' })
-    }
-
-    /**
-     * Driver updates mission status.
-     */
-    async updateStatus({ params, request, response, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        if (!user.isDriver) {
-            return response.forbidden({ message: 'Only drivers can update mission statuses' })
-        }
-
-        const payload = await request.validateUsing(updateMissionStatusValidator)
+        const orderId = params.id
 
         try {
-            const order = await this.missionService.updateStatus(params.id, user.id, payload.status, {
-                latitude: payload.latitude,
-                longitude: payload.longitude,
-                reason: payload.reason
-            })
+            await this.missionService.refuseMission(user.id, orderId)
             return response.ok({
-                message: `Mission status updated to ${payload.status}`,
-                order: order.serialize()
+                message: 'Mission refused',
             })
         } catch (error) {
-            return response.badRequest({ message: error.message })
+            return response.badRequest({
+                message: error.message,
+            })
         }
     }
 
     /**
-     * Show active mission for the driver.
+     * Update mission status
      */
-    async show({ response, auth }: HttpContext) {
+    async updateStatus({ request, response, params, auth }: HttpContext) {
         const user = auth.getUserOrFail()
-        const activeMission = await (Mission.query() as any)
-            .where('driverId', user.id)
-            .whereIn('status', ['ASSIGNED', 'IN_PROGRESS'])
-            .preload('order', (q: any) => {
-                q.preload('legs')
-                q.preload('packages')
-                q.preload('pickupAddress')
-                q.preload('deliveryAddress')
+        const orderId = params.id
+        const { status, latitude, longitude, reason } = request.all()
+
+        try {
+            const order = await this.missionService.updateStatus(orderId, user.id, status, {
+                latitude,
+                longitude,
+                reason,
             })
-            .first()
-
-        if (!activeMission) {
-            return response.notFound({ message: 'No active mission found' })
+            return response.ok({
+                message: 'Status updated successfully',
+                order: order.serialize(),
+            })
+        } catch (error) {
+            return response.badRequest({
+                message: error.message,
+            })
         }
+    }
 
-        return response.ok(activeMission.serialize())
+    /**
+     * List missions for the authenticated driver
+     */
+    async list({ auth, response }: HttpContext) {
+        const user = auth.getUserOrFail()
+        const Order = (await import('#models/order')).default
+
+        try {
+            const missions = await Order.query()
+                .where('driverId', user.id)
+                .orWhere('offeredDriverId', user.id)
+                .preload('pickupAddress')
+                .preload('deliveryAddress')
+                .preload('packages')
+                .orderBy('createdAt', 'desc')
+
+            return response.ok(missions)
+        } catch (error) {
+            return response.internalServerError({
+                message: 'Failed to fetch missions',
+                error: error.message,
+            })
+        }
     }
 }

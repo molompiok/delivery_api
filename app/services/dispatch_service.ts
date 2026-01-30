@@ -89,12 +89,14 @@ export default class DispatchService {
         let companyId = forcedCompanyId
         if (!companyId) {
             await order.load('client')
-            companyId = order.client.companyId || undefined
+            companyId = (order.client as any).effectiveCompanyId || undefined
         }
 
         if (!companyId) {
-            logger.warn({ orderId: order.id }, 'Internal dispatch failed: No company context. Falling back to Global.')
-            return this.handleGlobalDispatch(order)
+            logger.error({ orderId: order.id }, 'INTERNAL dispatch requires company context')
+            order.status = 'NO_DRIVER_AVAILABLE'
+            await order.save()
+            throw new Error('INTERNAL dispatch requires company context')
         }
 
         // Trouver les drivers de l'entreprise qui sont ONLINE dans Redis
@@ -116,8 +118,11 @@ export default class DispatchService {
             }
         }
 
-        logger.warn({ orderId: order.id, companyId }, 'Internal dispatch: No drivers available in company right now.')
-        // Ne bascule PAS en global automatiquement pour "INTERNE" (règle utilisateur)
+        logger.warn({ orderId: order.id, companyId }, 'INTERNAL dispatch: No drivers available in company fleet')
+        order.status = 'NO_DRIVER_AVAILABLE'
+        await order.save()
+        // TODO: Notify client that no driver is available
+        // Ne bascule PAS en global automatiquement pour "INTERNE" (règle métier stricte)
     }
 
     /**

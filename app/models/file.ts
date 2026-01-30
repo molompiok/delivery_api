@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, computed } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 
 /**
@@ -65,4 +65,9 @@ export default class File extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @computed()
+    get url() {
+        return `/fs/${this.name}`
+    }
 }

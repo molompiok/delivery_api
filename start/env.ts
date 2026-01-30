@@ -54,6 +54,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   SMS_API_KEY: Env.schema.string(),
 
   VALHALLA_URL: Env.schema.string.optional(),
+  VROOM_URL: Env.schema.string.optional(),
 
   /*
   |----------------------------------------------------------

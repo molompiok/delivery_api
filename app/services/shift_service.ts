@@ -261,20 +261,16 @@ export class ShiftService {
     /**
      * Vérifie si le driver a une mission active
      * 
-     * TODO: Brancher sur le modèle Order quand il sera créé
      */
-    private async hasActiveMission(_userId: string): Promise<boolean> {
+    private async hasActiveMission(userId: string): Promise<boolean> {
         try {
-            // TODO: Implémenter quand Order sera disponible
-            // const Order = (await import('#models/order')).default
-            // const activeOrder = await Order.query()
-            //     .where('driverId', userId)
-            //     .whereIn('status', ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'])
-            //     .first()
-            // return !!activeOrder
+            const Order = (await import('#models/order')).default
+            const activeOrder = await Order.query()
+                .where('driverId', userId)
+                .whereIn('status', ['ACCEPTED', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+                .first()
 
-            // Provisoire : toujours false
-            return false
+            return !!activeOrder
         } catch (error) {
             console.error('[SHIFT] Error checking active mission:', error)
             return false

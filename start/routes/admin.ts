@@ -11,11 +11,16 @@ router.group(() => {
 
     // Verification Endpoints (Admin)
     router.group(() => {
-        router.get('/drivers/pending', [VerificationController, 'pendingDrivers'])
-        router.get('/drivers/:driverId/documents', [VerificationController, 'getDriverDocuments'])
+        // Verifications (Sublymus Admin)
+        router.get('/verifications/drivers', [VerificationController, 'pendingDrivers'])
+        router.get('/verifications/drivers/:driverId', [VerificationController, 'getDriverDetail'])
+        router.get('/verifications/vehicles', [VerificationController, 'pendingVehicles'])
+        router.get('/verifications/companies', [VerificationController, 'pendingCompanies'])
+        router.get('/companies', [VerificationController, 'listCompanies'])
+        router.get('/companies/:companyId', [VerificationController, 'getCompanyDetail'])
+        router.post('/companies/:companyId/impersonate', [VerificationController, 'impersonate'])
         router.post('/drivers/documents/:docId/validate', [VerificationController, 'validateDocument'])
         router.post('/drivers/:driverId/verify', [VerificationController, 'verifyDriver'])
-        router.get('/companies/pending', [VerificationController, 'pendingCompanies'])
         router.post('/companies/:companyId/verify', [VerificationController, 'verifyCompany'])
     }).prefix('/admin').use(({ auth, response }, next) => {
         if (!auth.user?.isAdmin) {

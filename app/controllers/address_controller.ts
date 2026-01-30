@@ -34,7 +34,7 @@ export default class AddressController {
 
         // 2. Company address
         if (ownerType === 'Company') {
-            if (user.companyId === ownerId && user.currentCompanyManaged) return true;
+            if (user.effectiveCompanyId === ownerId && user.currentCompanyManaged) return true;
         }
 
         return false;

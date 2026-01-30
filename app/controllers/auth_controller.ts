@@ -177,13 +177,7 @@ export default class AuthController {
 
         return response.ok({
             message: 'Profile updated successfully',
-            user: {
-                id: user.id,
-                email: user.email,
-                fullName: user.fullName,
-                isDriver: user.isDriver,
-                isAdmin: user.isAdmin,
-            }
+            user: user
         })
     }
 

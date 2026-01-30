@@ -7,49 +7,67 @@ export class DriverService {
     /**
      * Register as driver
      */
-    async register(user: User, data: { vehicleType: string, vehiclePlate: string }) {
-        const existingSetting = await DriverSetting.query()
+    async register(user: User, data: { vehicleType?: string, vehiclePlate?: string }) {
+        let driverSetting = await DriverSetting.query()
             .where('userId', user.id)
             .first()
 
-        if (existingSetting) {
-            throw new Error('User is already registered as a driver')
-        }
-
-        const driverSetting = await DriverSetting.create({
-            userId: user.id,
-            ...data,
-        })
-
-        user.isDriver = true
-        await user.save()
-
-        // Create document placeholders for the driver (linked to User)
-        const Document = (await import('#models/document')).default
-        const { REQUIRED_DRIVER_DOCUMENTS } = await import('#constants/required_documents')
-
-        for (const docRequirement of REQUIRED_DRIVER_DOCUMENTS) {
-            await Document.create({
-                tableName: 'User',
-                tableId: user.id,
-                documentType: docRequirement.type,
-                status: 'PENDING',
-                ownerId: user.id,
-                ownerType: 'User',
-                isDeleted: false,
-                metadata: {
-                    history: [{
-                        timestamp: DateTime.now().toISO(),
-                        action: 'DOCUMENT_REQUIRED',
-                        actorId: 'system',
-                        actorTable: 'System',
-                        note: `Document requis pour l'inscription IDEP: ${docRequirement.label}`
-                    }]
-                }
+        if (driverSetting) {
+            // Idempotent: Update existing setting if it somehow exists
+            driverSetting.merge({
+                vehicleType: data.vehicleType || driverSetting.vehicleType || 'MOTORCYCLE',
+                vehiclePlate: data.vehiclePlate || driverSetting.vehiclePlate || 'PENDING',
+            })
+            await driverSetting.save()
+        } else {
+            driverSetting = await DriverSetting.create({
+                userId: user.id,
+                vehicleType: data.vehicleType || 'MOTORCYCLE',
+                vehiclePlate: data.vehiclePlate || 'PENDING',
             })
         }
 
+        if (!user.isDriver) {
+            user.isDriver = true
+            await user.save()
+            await this.ensureRequiredDocuments(user)
+        }
+
         return driverSetting
+    }
+
+    /**
+     * Ensure all required documents exist for a driver (creates placeholders if missing)
+     */
+    async ensureRequiredDocuments(user: User) {
+        if (!user.isDriver) return
+
+        const { REQUIRED_DRIVER_DOCUMENTS } = await import('#constants/required_documents')
+        const Document = (await import('#models/document')).default
+
+        for (const req of REQUIRED_DRIVER_DOCUMENTS) {
+            const typeKey = req.type.replace('dct_', '')
+
+            // We use updateOrCreate but we DON'T update the status if it already exists
+            // To be safer, we can check existence first
+            const existing = await Document.query()
+                .where('tableName', 'User')
+                .where('tableId', user.id)
+                .where('documentType', typeKey)
+                .first()
+
+            if (!existing) {
+                await Document.create({
+                    tableName: 'User',
+                    tableId: user.id,
+                    documentType: typeKey,
+                    ownerId: user.id,
+                    ownerType: 'User',
+                    status: 'PENDING',
+                    isDeleted: false
+                })
+            }
+        }
     }
 
     /**
@@ -63,6 +81,7 @@ export class DriverService {
         return await DriverSetting.query()
             .where('userId', user.id)
             .preload('currentCompany')
+            .preload('user')
             .firstOrFail()
     }
 

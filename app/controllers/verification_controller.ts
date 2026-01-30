@@ -5,9 +5,12 @@ export default class VerificationController {
     /**
      * List pending driver verifications
      */
-    async pendingDrivers({ response }: HttpContext) {
+    async pendingDrivers({ request, response }: HttpContext) {
         try {
-            const drivers = await VerificationService.listPendingDrivers()
+            const page = request.input('page', 1)
+            const limit = request.input('limit', 20)
+            const status = request.input('status', 'all')
+            const drivers = await VerificationService.listPendingDrivers(page, limit, status)
             return response.ok(drivers)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -15,11 +18,25 @@ export default class VerificationController {
     }
 
     /**
-     * Get driver documents for admin review
+     * List pending vehicle verifications
      */
-    async getDriverDocuments({ params, response }: HttpContext) {
+    async pendingVehicles({ request, response }: HttpContext) {
         try {
-            const result = await VerificationService.getDriverDocuments(params.driverId)
+            const page = request.input('page', 1)
+            const limit = request.input('limit', 20)
+            const vehicles = await VerificationService.listPendingVehicles(page, limit)
+            return response.ok(vehicles)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Get full driver detailama
+     */
+    async getDriverDetail({ params, response }: HttpContext) {
+        try {
+            const result = await VerificationService.getDriverDetail(params.driverId)
             return response.ok(result)
         } catch (error: any) {
             if (error.message.includes('not found')) {
@@ -75,15 +92,40 @@ export default class VerificationController {
     }
 
     /**
-     * List pending company verifications
+     * List all companies (Admin)
      */
-    async pendingCompanies({ response }: HttpContext) {
+    async listCompanies({ request, response }: HttpContext) {
         try {
-            const companies = await VerificationService.listPendingCompanies()
+            const page = request.input('page', 1)
+            const limit = request.input('limit', 20)
+            const status = request.input('status', 'all')
+            const companies = await VerificationService.listCompanies(page, limit, status)
             return response.ok(companies)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
+    }
+
+    /**
+     * Get company detail (Admin)
+     */
+    async getCompanyDetail({ params, response }: HttpContext) {
+        try {
+            const result = await VerificationService.getCompanyDetail(params.companyId)
+            return response.ok(result)
+        } catch (error: any) {
+            if (error.message.includes('not found')) {
+                return response.notFound({ message: error.message })
+            }
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * List pending company verifications
+     */
+    async pendingCompanies({ request, response }: HttpContext) {
+        return this.listCompanies({ request, response } as any)
     }
 
     /**
@@ -102,6 +144,19 @@ export default class VerificationController {
             if (error.message.includes('not found')) {
                 return response.notFound({ message: error.message })
             }
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Impersonate a company (Admin)
+     */
+    async impersonate({ auth, params, response }: HttpContext) {
+        try {
+            const admin = auth.user!
+            const result = await VerificationService.impersonateCompany(admin, params.companyId)
+            return response.ok(result)
+        } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }

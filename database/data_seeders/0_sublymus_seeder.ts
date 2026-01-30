@@ -136,6 +136,58 @@ export default class SublymusSeeder extends BaseSeeder {
                     radiusKm: 5
                 },
                 isActive: true
+            },
+            // POLYGON ZONES
+            {
+                id: 'zn_sub_yamoussoukro_poly',
+                name: 'Zone Basilique yamoussoukro',
+                color: '#34d399',
+                sector: 'YAMOUSSOUKRO',
+                type: 'polygon' as const,
+                geometry: {
+                    paths: [
+                        { lat: 6.815, lng: -5.305 },
+                        { lat: 6.818, lng: -5.295 },
+                        { lat: 6.810, lng: -5.285 },
+                        { lat: 6.805, lng: -5.295 },
+                        { lat: 6.815, lng: -5.305 }
+                    ]
+                },
+                isActive: true
+            },
+            {
+                id: 'zn_sub_bouake_poly',
+                name: 'Bouaké Zone Nord-Est',
+                color: '#f472b6',
+                sector: 'BOUAKE',
+                type: 'polygon' as const,
+                geometry: {
+                    paths: [
+                        { lat: 7.710, lng: -5.040 },
+                        { lat: 7.720, lng: -5.020 },
+                        { lat: 7.690, lng: -5.010 },
+                        { lat: 7.680, lng: -5.030 },
+                        { lat: 7.710, lng: -5.040 }
+                    ]
+                },
+                isActive: true
+            },
+            {
+                id: 'zn_sub_san_pedro_poly',
+                name: 'San-Pédro Zone Portuaire',
+                color: '#38bdf8',
+                sector: 'SAN_PEDRO',
+                type: 'polygon' as const,
+                geometry: {
+                    paths: [
+                        { lat: 4.760, lng: -6.650 },
+                        { lat: 4.770, lng: -6.630 },
+                        { lat: 4.740, lng: -6.620 },
+                        { lat: 4.730, lng: -6.640 },
+                        { lat: 4.760, lng: -6.650 }
+                    ]
+                },
+                isActive: true
             }
         ]
 

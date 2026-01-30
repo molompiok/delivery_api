@@ -41,6 +41,9 @@ export default class Vehicle extends BaseModel {
     @belongsTo(() => User, { foreignKey: 'assignedDriverId' })
     declare assignedDriver: BelongsTo<any>
 
+    @belongsTo(() => User, { foreignKey: 'ownerId' })
+    declare ownerUser: BelongsTo<any>
+
     // Metadata
     @column()
     declare type: VehicleType
@@ -87,9 +90,6 @@ export default class Vehicle extends BaseModel {
     declare verificationStatus: VehicleStatus
 
     @column()
-    declare isActive: boolean
-
-    @column()
     declare metadata: {
         assignmentHistory?: Array<{
             driverId: string | null
@@ -106,6 +106,11 @@ export default class Vehicle extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @computed()
+    get isActive() {
+        return this.$extras.isActive === true || this.$extras.isActive === 1
+    }
 
     // --- Computed Document Properties ---
 

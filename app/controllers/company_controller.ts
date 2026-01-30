@@ -24,10 +24,10 @@ export default class CompanyController {
     public async getMyCompany({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-            if (!user.companyId) {
+            if (!user.effectiveCompanyId) {
                 return response.notFound({ message: 'User does not belong to a company' })
             }
-            const company = await Company.findOrFail(user.companyId)
+            const company = await Company.findOrFail(user.effectiveCompanyId)
             return response.ok(company)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -169,7 +169,7 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const { mode } = request.only(['mode'])
-            await ShiftService.forceMode(params.driverId, mode, user.companyId!)
+            await ShiftService.forceMode(params.driverId, mode, user.effectiveCompanyId!)
             return response.ok({ message: 'Mode forced successfully' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })

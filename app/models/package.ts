@@ -42,6 +42,9 @@ export default class Package extends BaseModel {
     @column()
     declare isCold: boolean
 
+    @column()
+    declare deliveryWaypointSequence: number | null
+
     @belongsTo(() => Order)
     declare order: BelongsTo<typeof Order>
 

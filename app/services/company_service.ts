@@ -29,11 +29,11 @@ export class CompanyService {
      * Update company
      */
     async update(user: User, data: { name?: string, registreCommerce?: string, logo?: string, description?: string }) {
-        if (!user.companyId) {
+        if (!user.effectiveCompanyId) {
             throw new Error('User does not own a company')
         }
 
-        const company = await Company.findOrFail(user.companyId)
+        const company = await Company.findOrFail(user.effectiveCompanyId)
         company.merge(data)
         await company.save()
 
@@ -44,7 +44,7 @@ export class CompanyService {
      * Invite a driver
      */
     async inviteDriver(user: User, phone: string) {
-        if (!user.companyId) {
+        if (!user.effectiveCompanyId) {
             throw new Error('User does not own a company')
         }
 
@@ -58,7 +58,7 @@ export class CompanyService {
         // 2. Find or create the relationship
         const relation = await CompanyDriverSetting.updateOrCreate(
             {
-                companyId: user.companyId,
+                companyId: user.effectiveCompanyId,
                 driverId: driver.id,
             },
             {
@@ -75,7 +75,7 @@ export class CompanyService {
         await this.syncRequiredDocsFromMetadata(user, driver.id)
 
         // 4. Send SMS notification
-        const company = await Company.findOrFail(user.companyId)
+        const company = await Company.findOrFail(user.effectiveCompanyId)
         await SmsService.send({
             to: phone,
             content: `Bonjour, l'entreprise ${company.name} souhaite accéder à vos documents sur Sublymus pour un recrutement. Connectez-vous pour accepter la demande.`
@@ -88,9 +88,9 @@ export class CompanyService {
      * Sync required documents from Company metadata
      */
     async syncRequiredDocsFromMetadata(user: User, driverId: string) {
-        if (!user.companyId) throw new Error('Company access required')
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
 
-        const company = await Company.findOrFail(user.companyId)
+        const company = await Company.findOrFail(user.effectiveCompanyId)
         const requirements = company.metaData?.documentRequirements || []
 
         if (requirements.length === 0) return
@@ -103,12 +103,12 @@ export class CompanyService {
      * Remove a driver
      */
     async removeDriver(user: User, driverId: string) {
-        if (!user.companyId) {
+        if (!user.effectiveCompanyId) {
             throw new Error('User does not own a company')
         }
 
         const companyDriver = await CompanyDriverSetting.query()
-            .where('companyId', user.companyId)
+            .where('companyId', user.effectiveCompanyId)
             .where('driverId', driverId)
             .where('status', 'ACCEPTED')
             .firstOrFail()
@@ -123,12 +123,12 @@ export class CompanyService {
      * List drivers
      */
     async listDrivers(user: User, filters: { status?: string, name?: string, email?: string, phone?: string } = {}) {
-        if (!user.companyId) {
+        if (!user.effectiveCompanyId) {
             throw new Error('User does not own a company')
         }
 
         const query = CompanyDriverSetting.query()
-            .where('companyId', user.companyId)
+            .where('companyId', user.effectiveCompanyId)
             .preload('driver', (q) => {
                 q.preload('driverSetting')
             })
@@ -164,13 +164,13 @@ export class CompanyService {
      * Get Driver Details
      */
     async getDriverDetails(user: User, driverId: string) {
-        if (!user.companyId) {
+        if (!user.effectiveCompanyId) {
             throw new Error('User does not own a company')
         }
 
         // 1. Get Relationship
         const relation = await CompanyDriverSetting.query()
-            .where('companyId', user.companyId)
+            .where('companyId', user.effectiveCompanyId)
             .where('driverId', driverId)
             .preload('driver', (q) => {
                 q.preload('driverSetting')
@@ -219,10 +219,10 @@ export class CompanyService {
      * Step 3: Select required documents for a driver
      */
     async setRequiredDocs(user: User, driverId: string, docTypeIds: string[]) {
-        if (!user.companyId) throw new Error('Company access required')
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
 
         const relation = await CompanyDriverSetting.query()
-            .where('companyId', user.companyId)
+            .where('companyId', user.effectiveCompanyId)
             .where('driverId', driverId)
             .firstOrFail()
 
@@ -317,13 +317,13 @@ export class CompanyService {
      * Step 6: Validate an individual document
      */
     async validateDocument(user: User, docId: string, status: 'APPROVED' | 'REJECTED', comment?: string) {
-        if (!user.companyId) throw new Error('Company access required')
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
 
         const Document = (await import('#models/document')).default
         const doc = await Document.findOrFail(docId)
 
         // Check if doc belongs to this company's relation
-        if (doc.tableName !== 'CompanyDriverSetting' || doc.ownerId !== user.companyId) {
+        if (doc.tableName !== 'CompanyDriverSetting' || doc.ownerId !== user.effectiveCompanyId) {
             throw new Error('Not authorized to validate this document')
         }
 
@@ -342,10 +342,10 @@ export class CompanyService {
      * Step 7: Send final fleet invitation
      */
     async inviteToFleet(user: User, driverId: string) {
-        if (!user.companyId) throw new Error('Company access required')
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
 
         const relation = await CompanyDriverSetting.query()
-            .where('companyId', user.companyId)
+            .where('companyId', user.effectiveCompanyId)
             .where('driverId', driverId)
             .where('status', 'ACCESS_ACCEPTED')
             .firstOrFail()
@@ -366,7 +366,7 @@ export class CompanyService {
 
         // Send Notification (SMS)
         const driver = await User.findOrFail(relation.driverId)
-        const company = await Company.findOrFail(user.companyId)
+        const company = await Company.findOrFail(user.effectiveCompanyId)
         if (driver.phone) {
             await SmsService.send({
                 to: driver.phone,
@@ -381,11 +381,11 @@ export class CompanyService {
      * Upload a document for a driver (ETP Doc specific to company)
      */
     async uploadDocument(ctx: any, user: User, relationId: string, docType: string) {
-        if (!user.companyId) throw new Error('Company access required')
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
 
         const relation = await CompanyDriverSetting.query()
             .where('id', relationId)
-            .where('companyId', user.companyId)
+            .where('companyId', user.effectiveCompanyId)
             .firstOrFail()
 
         const FileManager = (await import('#services/file_manager')).default
@@ -423,7 +423,7 @@ export class CompanyService {
                 tableName: 'CompanyDriverSetting',
                 tableId: relation.id,
                 documentType: typeKey,
-                ownerId: user.companyId,
+                ownerId: user.effectiveCompanyId,
                 ownerType: 'Company',
                 status: 'PENDING',
                 isDeleted: false
@@ -445,9 +445,9 @@ export class CompanyService {
      * Upload a document for the company itself (K-bis, insurance...)
      */
     async uploadCompanyDocument(ctx: any, user: User, docType: string) {
-        if (!user.companyId) throw new Error('Company access required')
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
 
-        const company = await Company.findOrFail(user.companyId)
+        const company = await Company.findOrFail(user.effectiveCompanyId)
         const FileManager = (await import('#services/file_manager')).default
         const manager = new FileManager(company, 'Company')
 
@@ -502,8 +502,8 @@ export class CompanyService {
      * Get Company Document Requirements from metaData
      */
     async getDocumentRequirements(user: User) {
-        if (!user.companyId) throw new Error('Company access required')
-        const company = await Company.findOrFail(user.companyId)
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
+        const company = await Company.findOrFail(user.effectiveCompanyId)
         return company.metaData?.documentRequirements || []
     }
 
@@ -512,8 +512,8 @@ export class CompanyService {
      * Overwrites ONLY the documentRequirements field
      */
     async updateDocumentRequirements(user: User, requirements: any[]) {
-        if (!user.companyId) throw new Error('Company access required')
-        const company = await Company.findOrFail(user.companyId)
+        if (!user.effectiveCompanyId) throw new Error('Company access required')
+        const company = await Company.findOrFail(user.effectiveCompanyId)
 
         const metaData = { ...(company.metaData || {}) }
         metaData.documentRequirements = requirements

@@ -18,6 +18,7 @@ import './routes/core.js'
 import './routes/external.js'
 import './routes/zones.js'
 import './routes/documents.js'
+import './routes/missions.js'
 
 // --- PUBLIC ROUTES ---
 router.get('/', async () => {

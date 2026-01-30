@@ -21,5 +21,34 @@ export default class OrderSocketListener {
 
         // Also notify the client's personal room
         WsService.emitToRoom(`clients:${payload.clientId}`, 'order_update', payload)
+
+        // NEW: Notify the ETP fleet room
+        try {
+            const Order = (await import('#models/order')).default
+            const order = await Order.find(payload.orderId)
+
+            if (order) {
+                // If it's an internal or target order, notify the client's company
+                const User = (await import('#models/user')).default
+                const client = await User.find(order.clientId)
+
+                if (client?.effectiveCompanyId) {
+                    WsService.emitToRoom(`fleet:${client.effectiveCompanyId}`, 'order_status_updated', {
+                        ...payload,
+                        assignmentMode: order.assignmentMode
+                    })
+                }
+
+                // If a driver is assigned, also notify the driver's company (if different)
+                if (order.driverId) {
+                    const driver = await User.find(order.driverId)
+                    if (driver?.companyId && driver.companyId !== client?.effectiveCompanyId) {
+                        WsService.emitToRoom(`fleet:${driver.companyId}`, 'order_status_updated', payload)
+                    }
+                }
+            }
+        } catch (error) {
+            logger.error({ error, orderId: payload.orderId }, 'Real-time (Order): Failed to notify fleet rooms')
+        }
     }
 }

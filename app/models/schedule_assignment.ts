@@ -1,6 +1,5 @@
 import { DateTime } from 'luxon'
 import { BaseModel, beforeCreate, column, belongsTo } from '@adonisjs/lucid/orm'
-import { generateId } from '../utils/id_generator.js'
 import Schedule from '#models/schedule'
 import User from '#models/user'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'

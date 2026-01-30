@@ -104,7 +104,7 @@ export class AuthService {
         const confirm = await AsyncConfirm.query()
             .whereRaw("payload->>'phone' = ?", [phone])
             .where('type', AsyncConfirmType.PHONE_OTP)
-            .where('expiresAt', '>', DateTime.now().toSQL())
+            .where('expiresAt', '>', DateTime.now())
             .whereNull('usedAt')
             .orderBy('createdAt', 'desc')
             .first()

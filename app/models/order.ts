@@ -7,6 +7,9 @@ import Mission from '#models/mission'
 import Address from '#models/address'
 import Vehicle from '#models/vehicle'
 import OrderLeg from '#models/order_leg'
+import Task from '#models/task'
+import Shipment from '#models/shipment'
+import Job from '#models/job'
 import type { BelongsTo, HasOne, HasMany } from '@adonisjs/lucid/types/relations'
 import { hasMany } from '@adonisjs/lucid/orm'
 import type { PricingDetails, WaypointSummaryItem } from '../types/logistics.js'
@@ -51,10 +54,17 @@ export default class Order extends BaseModel {
     declare assignmentAttemptCount: number
 
     @column()
-    declare status: 'PENDING' | 'ACCEPTED' | 'AT_PICKUP' | 'COLLECTED' | 'AT_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED'
+    declare status: 'PENDING' | 'ACCEPTED' | 'AT_PICKUP' | 'COLLECTED' | 'AT_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE'
+
+    @column()
+    declare isComplex: boolean
+
+    @column()
+    declare logicPattern: string | null
 
     @column({
         prepare: (value: PricingDetails) => value ? JSON.stringify(value) : JSON.stringify({}),
+        consume: (value) => typeof value === 'string' ? JSON.parse(value) : value
     })
     declare pricingData: PricingDetails
 
@@ -72,6 +82,7 @@ export default class Order extends BaseModel {
 
     @column({
         prepare: (value: WaypointSummaryItem[]) => value ? JSON.stringify(value) : null,
+        consume: (value) => typeof value === 'string' ? JSON.parse(value) : value
     })
     declare waypointsSummary: WaypointSummaryItem[] | null
 
@@ -80,6 +91,32 @@ export default class Order extends BaseModel {
 
     @column()
     declare totalDurationSeconds: number | null
+
+    @column({
+        serializeAs: 'routeGeometry',
+        prepare: (v) => v ? JSON.stringify(v) : null,
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare routeGeometry: { type: 'LineString'; coordinates: number[][] } | null
+
+    @column({
+        serializeAs: 'statusHistory',
+        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify([]),
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare statusHistory: Array<{ status: string; timestamp: string; note?: string }>
+
+    @column({
+        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare metadata: any
+
+    @column.dateTime()
+    declare etaPickup: DateTime | null
+
+    @column.dateTime()
+    declare etaDelivery: DateTime | null
 
     @belongsTo(() => User, { foreignKey: 'clientId' })
     declare client: BelongsTo<typeof User>
@@ -101,6 +138,15 @@ export default class Order extends BaseModel {
 
     @hasMany(() => OrderLeg)
     declare legs: HasMany<typeof OrderLeg>
+
+    @hasMany(() => Task)
+    declare tasks: HasMany<typeof Task>
+
+    @hasMany(() => Shipment)
+    declare shipments: HasMany<typeof Shipment>
+
+    @hasMany(() => Job)
+    declare jobs: HasMany<typeof Job>
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

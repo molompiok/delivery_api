@@ -1,6 +1,7 @@
 import { Server } from 'socket.io'
 import type { Server as HttpServer } from 'node:http'
 import logger from '@adonisjs/core/services/logger'
+import LocationSearchService from '#services/location_search_service'
 
 class WsService {
     public io: Server | undefined
@@ -22,6 +23,13 @@ class WsService {
         this.io.on('connection', (socket) => {
             logger.info({ socketId: socket.id }, 'Client connected to WebSocket')
 
+            // Start worker if needed (idempotent)
+            LocationSearchService.startWorker()
+
+            socket.on('search_place', (data) => {
+                LocationSearchService.addToQueue(socket.id, data)
+            })
+
             socket.on('join', (room: string) => {
                 logger.info({ socketId: socket.id, room }, 'Client joining room')
                 socket.join(room)
@@ -40,6 +48,9 @@ class WsService {
      */
     public emitToRoom(room: string, event: string, data: any) {
         if (this.io) {
+            if (event === 'search_result') {
+                logger.info({ room, resultCount: data.results?.length }, 'Emitting search results to room')
+            }
             this.io.to(room).emit(event, data)
         }
     }

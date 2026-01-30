@@ -57,6 +57,12 @@ export default class OrderLeg extends BaseModel {
     })
     declare rawData: any | null
 
+    @column()
+    declare verificationCode: string | null
+
+    @column()
+    declare isVerified: boolean
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 

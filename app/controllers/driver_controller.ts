@@ -10,8 +10,8 @@ export default class DriverController {
      */
     static registerValidator = vine.compile(
         vine.object({
-            vehicleType: vine.enum(['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK']),
-            vehiclePlate: vine.string().minLength(3).maxLength(15),
+            vehicleType: vine.enum(['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK']).optional(),
+            vehiclePlate: vine.string().minLength(3).maxLength(15).optional(),
         })
     )
 
@@ -65,6 +65,9 @@ export default class DriverController {
                 return response.badRequest({ message: 'User is not registered as a driver' })
             }
 
+            // Auto-create missing required documents
+            await DriverService.ensureRequiredDocuments(user)
+
             const documents = await Document.query()
                 .where('tableName', 'User')
                 .where('tableId', user.id)
@@ -73,22 +76,7 @@ export default class DriverController {
                 .orderBy('createdAt', 'desc')
 
             return response.ok({
-                documents: documents.map(doc => ({
-                    id: doc.id,
-                    documentType: doc.documentType,
-                    status: doc.status,
-                    fileId: doc.fileId,
-                    file: doc.file ? {
-                        id: doc.file.id,
-                        name: doc.file.name,
-                        mimeType: doc.file.mimeType,
-                        size: doc.file.size,
-                    } : null,
-                    validationComment: doc.validationComment,
-                    expireAt: doc.expireAt,
-                    createdAt: doc.createdAt,
-                    updatedAt: doc.updatedAt,
-                }))
+                documents: documents.map(doc => doc.serialize())
             })
         } catch (error: any) {
             return response.badRequest({ message: error.message })

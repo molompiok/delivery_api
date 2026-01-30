@@ -5,54 +5,115 @@ import User from '#models/user'
 
 export class VerificationService {
     /**
-     * List pending driver verifications
+     * List driver verifications with filters
      */
-    async listPendingDrivers() {
-        return await DriverSetting.query()
-            .where('verificationStatus', 'PENDING')
-            .preload('user')
+    async listPendingDrivers(page: number = 1, limit: number = 20, filter: string = 'all') {
+        const query = DriverSetting.query().preload('user').orderBy('createdAt', 'desc')
+
+        if (filter === 'completed') {
+            query.where('verificationStatus', 'VERIFIED')
+        } else if (filter === 'rejected') {
+            query.whereHas('user', (u) => u.whereHas('documents', (d) => d.where('status', 'REJECTED')))
+        } else if (filter === 'accepted') {
+            query.whereHas('user', (u) => u.whereHas('documents', (d) => d.where('status', 'APPROVED')))
+        } else if (filter === 'to_fill') {
+            query.whereHas('user', (u) => u.whereHas('documents', (d) => d.where('status', 'PENDING').whereNull('fileId')))
+        } else if (filter === 'waiting_admin') {
+            query.whereHas('user', (u) => u.whereHas('documents', (d) => d.where('status', 'PENDING').whereNotNull('fileId')))
+        } else if (filter === 'all') {
+            // No extra where
+        } else {
+            // Default to only pending legacy behavior if needed, 
+            // but the user wants "All" or specific categories.
+            query.where('verificationStatus', 'PENDING')
+        }
+
+        return await query.paginate(page, limit)
     }
 
     /**
-     * Get driver documents for admin review
+     * List pending vehicle verifications
      */
-    async getDriverDocuments(driverId: string) {
-        const user = await User.findOrFail(driverId)
+    async listPendingVehicles(page: number = 1, limit: number = 20) {
+        const Vehicle = (await import('#models/vehicle')).default
+        return await Vehicle.query()
+            .where('verificationStatus', 'PENDING')
+            .where('ownerType', 'User') // Specifically for IDEP vehicles
+            .preload('ownerUser')
+            .orderBy('createdAt', 'desc')
+            .paginate(page, limit)
+    }
 
-        if (!user.isDriver) {
-            throw new Error('User is not a driver')
-        }
+    /**
+     * Get full driver detail for admin review
+     */
+    async getDriverDetail(userId: string) {
+        const driver = await DriverSetting.query()
+            .where('userId', userId)
+            .preload('user')
+            .preload('currentCompany')
+            .preload('activeZone')
+            .preload('activeVehicle')
+            .firstOrFail()
 
-        // Get all documents for this driver (User table)
+        // Get all documents for this driver
         const documents = await Document.query()
             .where('tableName', 'User')
-            .where('tableId', driverId)
+            .where('tableId', userId)
             .where('isDeleted', false)
             .preload('file')
             .orderBy('createdAt', 'desc')
 
+        // Also get vehicles owned by this driver (for IDEP)
+        const Vehicle = (await import('#models/vehicle')).default
+        const vehicles = await Vehicle.query()
+            .where('ownerId', userId)
+            .where('ownerType', 'User')
+
+        const vehicleIds = vehicles.map(v => v.id)
+        let vehicleDocuments: Document[] = []
+        if (vehicleIds.length > 0) {
+            vehicleDocuments = await Document.query()
+                .where('tableName', 'Vehicle')
+                .whereIn('tableId', vehicleIds)
+                .where('isDeleted', false)
+                .preload('file')
+                .orderBy('createdAt', 'desc')
+        }
+
         return {
-            driver: {
-                id: user.id,
-                fullName: user.fullName,
-                email: user.email,
-                phone: user.phone,
-            },
+            ...driver.toJSON(),
             documents: documents.map(doc => ({
                 id: doc.id,
                 documentType: doc.documentType,
                 status: doc.status,
-                fileId: doc.fileId,
                 file: doc.file ? {
                     id: doc.file.id,
                     name: doc.file.name,
                     mimeType: doc.file.mimeType,
-                    size: doc.file.size,
                 } : null,
                 validationComment: doc.validationComment,
                 expireAt: doc.expireAt,
-                createdAt: doc.createdAt,
-                updatedAt: doc.updatedAt,
+            })),
+            vehicles: vehicles.map(v => ({
+                id: v.id,
+                brand: v.brand,
+                model: v.model,
+                plate: v.plate,
+                type: v.type,
+                verificationStatus: v.verificationStatus,
+                documents: vehicleDocuments.filter(d => d.tableId === v.id).map(doc => ({
+                    id: doc.id,
+                    documentType: doc.documentType,
+                    status: doc.status,
+                    file: doc.file ? {
+                        id: doc.file.id,
+                        name: doc.file.name,
+                        mimeType: doc.file.mimeType,
+                    } : null,
+                    validationComment: doc.validationComment,
+                    expireAt: doc.expireAt,
+                }))
             }))
         }
     }
@@ -67,9 +128,9 @@ export class VerificationService {
 
         const doc = await Document.findOrFail(docId)
 
-        // Ensure this is a User document (not CompanyDriverSetting)
-        if (doc.tableName !== 'User') {
-            throw new Error('This endpoint only validates driver (User) documents')
+        // Ensure this is a User or Vehicle document
+        if (!['User', 'Vehicle'].includes(doc.tableName)) {
+            throw new Error('This endpoint only validates driver (User) or Vehicle documents')
         }
 
         doc.status = status
@@ -146,12 +207,69 @@ export class VerificationService {
     }
 
     /**
+     * List all companies with filters
+     */
+    async listCompanies(page: number = 1, limit: number = 20, status: string = 'all') {
+        const query = Company.query().preload('owner').orderBy('createdAt', 'desc')
+
+        if (status !== 'all') {
+            query.where('verificationStatus', status.toUpperCase() as any)
+        }
+
+        return await query.paginate(page, limit)
+    }
+
+    /**
+     * Get full company detail
+     */
+    async getCompanyDetail(companyId: string) {
+        const company = await Company.query()
+            .where('id', companyId)
+            .preload('owner')
+            .preload('vehicles')
+            .firstOrFail()
+
+        // Get manager (user who has currentCompanyManaged = companyId)
+        const manager = await User.query()
+            .where('currentCompanyManaged', companyId)
+            .first()
+
+        // Get all documents for this company
+        const documents = await Document.query()
+            .where('tableName', 'Company')
+            .where('tableId', companyId)
+            .where('isDeleted', false)
+            .preload('file')
+            .orderBy('createdAt', 'desc')
+
+        return {
+            ...company.toJSON(),
+            manager: manager ? {
+                id: manager.id,
+                fullName: manager.fullName,
+                email: manager.email,
+                phone: manager.phone,
+            } : null,
+            documents: documents.map(doc => ({
+                id: doc.id,
+                documentType: doc.documentType,
+                status: doc.status,
+                file: doc.file ? {
+                    id: doc.file.id,
+                    name: doc.file.name,
+                    mimeType: doc.file.mimeType,
+                } : null,
+                validationComment: doc.validationComment,
+                expireAt: doc.expireAt,
+            }))
+        }
+    }
+
+    /**
      * List pending company verifications
      */
-    async listPendingCompanies() {
-        return await Company.query()
-            .where('verificationStatus', 'PENDING')
-            .preload('owner')
+    async listPendingCompanies(page: number = 1, limit: number = 20) {
+        return await this.listCompanies(page, limit, 'PENDING')
     }
 
     /**
@@ -172,6 +290,29 @@ export class VerificationService {
         await company.save()
 
         return company
+    }
+
+    /**
+     * Impersonate a company (Admin only)
+     * Updates the admin's currentCompanyManaged field.
+     */
+    async impersonateCompany(admin: User, companyId: string) {
+        if (!admin.isAdmin) {
+            throw new Error('Only admins can impersonate companies')
+        }
+
+        // 1. Verify company exists
+        const company = await Company.findOrFail(companyId)
+
+        // 2. Update admin's currentCompanyManaged
+        admin.currentCompanyManaged = company.id
+        await admin.save()
+
+        return {
+            message: `Impersonating ${company.name}`,
+            company: company.toJSON(),
+            user: admin.toJSON()
+        }
     }
 }
 

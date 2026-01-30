@@ -40,7 +40,7 @@ export default class VehicleController {
 
         // 2. Company vehicle
         if (ownerType === 'Company') {
-            if (user.companyId === ownerId && user.currentCompanyManaged) return true;
+            if (user.effectiveCompanyId === ownerId && user.currentCompanyManaged) return true;
         }
 
         return false;
@@ -51,7 +51,7 @@ export default class VehicleController {
      */
     private async getContext(auth: any) {
         const user = auth.user!
-        let companyId = user.currentCompanyManaged || user.companyId
+        let companyId = user.currentCompanyManaged || user.effectiveCompanyId
         return { user, companyId }
     }
 
