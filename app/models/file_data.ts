@@ -15,7 +15,7 @@ export interface FileConfig {
 }
 
 export default class FileData extends BaseModel {
-  static table = 'file_data'
+  static table = 'file_permissions'
 
   @column({ isPrimary: true })
   declare id: string
@@ -28,27 +28,29 @@ export default class FileData extends BaseModel {
   }
 
   // Polymorphic reference
-  @column()
+  @column({ columnName: 'table_name' })
   declare tableName: string
 
-  @column()
+  @column({ columnName: 'table_column' })
   declare tableColumn: string
 
-  @column()
+  @column({ columnName: 'table_id' })
   declare tableId: string
 
   // Immutable owner (never changes)
-  @column()
+  @column({ columnName: 'owner_id' })
   declare ownerId: string
 
   // Access control lists
   @column({
+    columnName: 'read_access',
     prepare: (value: AccessList) => JSON.stringify(value),
     consume: (value: string) => (typeof value === 'string' ? JSON.parse(value) : value)
   })
   declare readAccess: AccessList
 
   @column({
+    columnName: 'write_access',
     prepare: (value: AccessList) => JSON.stringify(value),
     consume: (value: string) => (typeof value === 'string' ? JSON.parse(value) : value)
   })

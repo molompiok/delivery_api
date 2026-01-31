@@ -3,8 +3,6 @@ import Company from '#models/company'
 import User from '#models/user'
 import Vehicle from '#models/vehicle'
 import Schedule, { RecurrenceType, ScheduleCategory, ScheduleType } from '#models/schedule'
-import Order from '#models/order'
-import Address from '#models/address'
 
 export default class DashboardSeeder extends BaseSeeder {
     async run() {
@@ -39,7 +37,6 @@ export default class DashboardSeeder extends BaseSeeder {
                     companyId: fastDelivery.id,
                     assignedDriverId: drivers[i]?.id || null,
                     verificationStatus: 'APPROVED' as any,
-                    isActive: true,
                 }
             )
         }
@@ -70,41 +67,13 @@ export default class DashboardSeeder extends BaseSeeder {
             }
         }
 
-        // 3. Addresses & Orders (Basic Mock)
-        console.log('  📦 Seeding Orders...')
+        // 3. Addresses & Orders (Bypassed due to refactoring)
+        console.log('  📦 Seeding Orders (Bypassed due to refactoring)...')
+        /*
         for (let i = 0; i < 5; i++) {
-            const pickup = await Address.create({
-                label: `Pickup ${i}`,
-                street: 'Boulevard Latrille',
-                city: 'Abidjan',
-                formattedAddress: `Boulevard Latrille, Abidjan ${i}`,
-                lat: 5.35 + (Math.random() - 0.5) * 0.05,
-                lng: -3.98 + (Math.random() - 0.5) * 0.05,
-                ownerType: 'Company',
-                ownerId: fastDelivery.id
-            })
-
-            const delivery = await Address.create({
-                label: `Delivery ${i}`,
-                street: 'Rue des Jardins',
-                city: 'Abidjan',
-                formattedAddress: `Rue des Jardins, Abidjan ${i}`,
-                lat: 5.35 + (Math.random() - 0.5) * 0.05,
-                lng: -3.98 + (Math.random() - 0.5) * 0.05,
-                ownerType: 'User',
-                ownerId: drivers[i % drivers.length].id
-            })
-
-            await Order.create({
-                clientId: drivers[i % drivers.length].id,
-                pickupAddressId: pickup.id,
-                deliveryAddressId: delivery.id,
-                status: (['PENDING', 'ACCEPTED', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY', 'DELIVERED', 'FAILED', 'CANCELLED'][i % 8]) as any,
-                totalDistanceMeters: 5500,
-                totalDurationSeconds: 900,
-                driverId: i % 2 === 0 ? drivers[i % drivers.length].id : null
-            })
+            // ... (legacy order creation)
         }
+        */
 
         console.log('✅ Dashboard data seeding completed\n')
     }

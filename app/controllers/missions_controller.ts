@@ -2,8 +2,6 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import MissionService from '#services/mission_service'
 import vine from '@vinejs/vine'
-import OrderLeg from '#models/order_leg'
-import { isValidCodeFormat } from '#utils/verification_code'
 
 const verifyCodeValidator = vine.compile(
     vine.object({
@@ -16,51 +14,61 @@ export default class MissionsController {
     constructor(protected missionService: MissionService) { }
 
     /**
+     * Driver signals arrival at a stop
+     */
+    async arrivedAtStop({ response, params, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const stop = await this.missionService.arrivedAtStop(user.id, params.stopId)
+            return response.ok({
+                message: 'Arrived at stop',
+                stop: stop.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    async completeAction(ctx: HttpContext) {
+        const { params, auth, response, request } = ctx
+        try {
+            const user = auth.getUserOrFail()
+            const proofs = request.all().proofs || {}
+
+            // Collect and flatten all files from request
+            const allFiles = request.allFiles()
+            const files = Object.values(allFiles).flat()
+
+            const action = await this.missionService.completeAction(user.id, params.actionId, proofs, files)
+            return response.ok({
+                message: 'Action completed',
+                action: action.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+
+    /**
      * Verify a pickup or delivery code
      */
     async verifyCode({ request, response, params, auth }: HttpContext) {
-        auth.getUserOrFail()
-        const orderId = params.id
-        const { code } = await request.validateUsing(verifyCodeValidator)
-
         try {
-            // Validate code format
-            if (!isValidCodeFormat(code)) {
-                return response.badRequest({
-                    message: 'Invalid code format. Must be 6 digits.',
-                })
-            }
-
-            // Find the leg with this code for this order
-            const leg = await OrderLeg.query()
-                .where('orderId', orderId)
-                .where('verificationCode', code)
-                .where('isVerified', false)
-                .first()
-
-            if (!leg) {
-                return response.badRequest({
-                    message: 'Invalid or already used verification code',
-                })
-            }
-
-            // Mark as verified
-            leg.isVerified = true
-            await leg.save()
+            auth.getUserOrFail()
+            const { code } = await request.validateUsing(verifyCodeValidator)
+            const leg = await this.missionService.verifyCode(params.id, code)
 
             return response.ok({
                 message: 'Code verified successfully',
                 leg: {
                     id: leg.id,
                     sequence: leg.sequence,
-                    isVerified: leg.isVerified,
+                    status: leg.status,
                 },
             })
-        } catch (error) {
-            return response.internalServerError({
-                message: 'Code verification failed',
-                error: error.message,
-            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 
@@ -68,19 +76,15 @@ export default class MissionsController {
      * Accept a mission
      */
     async accept({ response, params, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const orderId = params.id
-
         try {
-            const order = await this.missionService.acceptMission(user.id, orderId)
+            const user = auth.getUserOrFail()
+            const order = await this.missionService.acceptMission(user.id, params.id)
             return response.ok({
                 message: 'Mission accepted successfully',
                 order: order.serialize(),
             })
-        } catch (error) {
-            return response.badRequest({
-                message: error.message,
-            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 
@@ -88,18 +92,12 @@ export default class MissionsController {
      * Refuse a mission
      */
     async refuse({ params, auth, response }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const orderId = params.id
-
         try {
-            await this.missionService.refuseMission(user.id, orderId)
-            return response.ok({
-                message: 'Mission refused',
-            })
-        } catch (error) {
-            return response.badRequest({
-                message: error.message,
-            })
+            const user = auth.getUserOrFail()
+            await this.missionService.refuseMission(user.id, params.id)
+            return response.ok({ message: 'Mission refused' })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 
@@ -107,12 +105,10 @@ export default class MissionsController {
      * Update mission status
      */
     async updateStatus({ request, response, params, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const orderId = params.id
-        const { status, latitude, longitude, reason } = request.all()
-
         try {
-            const order = await this.missionService.updateStatus(orderId, user.id, status, {
+            const user = auth.getUserOrFail()
+            const { status, latitude, longitude, reason } = request.all()
+            const order = await this.missionService.updateStatus(params.id, user.id, status, {
                 latitude,
                 longitude,
                 reason,
@@ -121,10 +117,8 @@ export default class MissionsController {
                 message: 'Status updated successfully',
                 order: order.serialize(),
             })
-        } catch (error) {
-            return response.badRequest({
-                message: error.message,
-            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 
@@ -132,24 +126,12 @@ export default class MissionsController {
      * List missions for the authenticated driver
      */
     async list({ auth, response }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const Order = (await import('#models/order')).default
-
         try {
-            const missions = await Order.query()
-                .where('driverId', user.id)
-                .orWhere('offeredDriverId', user.id)
-                .preload('pickupAddress')
-                .preload('deliveryAddress')
-                .preload('packages')
-                .orderBy('createdAt', 'desc')
-
+            const user = auth.getUserOrFail()
+            const missions = await this.missionService.listMissions(user.id)
             return response.ok(missions)
-        } catch (error) {
-            return response.internalServerError({
-                message: 'Failed to fetch missions',
-                error: error.message,
-            })
+        } catch (error: any) {
+            return response.internalServerError({ message: error.message })
         }
     }
 }

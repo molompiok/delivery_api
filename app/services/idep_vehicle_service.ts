@@ -1,9 +1,9 @@
 import Vehicle from '#models/vehicle'
 import User from '#models/user'
 import Document from '#models/document'
-import { DateTime } from 'luxon'
+import db from '@adonisjs/lucid/services/db'
 
-export class IdepVehicleService {
+export default class IdepVehicleService {
     /**
      * Create a new vehicle for an independent driver (IDEP)
      * Automatically provisions required document records.
@@ -13,42 +13,49 @@ export class IdepVehicleService {
             throw new Error('User must be a driver to register an IDEP vehicle')
         }
 
-        // 1. Create the vehicle
-        const vehicle = await Vehicle.create({
-            ownerType: 'User',
-            ownerId: user.id,
-            type: data.type,
-            brand: data.brand,
-            model: data.model,
-            plate: data.plate,
-            year: data.year,
-            color: data.color,
-            energy: data.energy,
-            specs: data.specs,
-            verificationStatus: 'PENDING',
-        })
-
-        // 2. Provision required documents (Sublymus standards)
-        const requiredDocTypes = ['VEHICLE_REGISTRATION', 'VEHICLE_INSURANCE']
-
-        // Add technical visit only if not a bicycle
-        if (vehicle.type !== 'BICYCLE') {
-            requiredDocTypes.push('VEHICLE_TECHNICAL_VISIT')
-        }
-
-        for (const docType of requiredDocTypes) {
-            await Document.create({
-                tableName: 'Vehicle',
-                tableId: vehicle.id,
-                documentType: docType,
-                status: 'PENDING',
-                ownerId: user.id,
+        const trx = await db.transaction()
+        try {
+            // 1. Create the vehicle
+            const vehicle = await Vehicle.create({
                 ownerType: 'User',
-                isDeleted: false
-            })
-        }
+                ownerId: user.id,
+                type: data.type,
+                brand: data.brand,
+                model: data.model,
+                plate: data.plate,
+                year: data.year,
+                color: data.color,
+                energy: data.energy,
+                specs: data.specs,
+                verificationStatus: 'PENDING',
+            }, { client: trx })
 
-        return vehicle
+            // 2. Provision required documents (Sublymus standards)
+            const requiredDocTypes = ['VEHICLE_REGISTRATION', 'VEHICLE_INSURANCE']
+
+            // Add technical visit only if not a bicycle
+            if (vehicle.type !== 'BICYCLE') {
+                requiredDocTypes.push('VEHICLE_TECHNICAL_VISIT')
+            }
+
+            for (const docType of requiredDocTypes) {
+                await Document.create({
+                    tableName: 'Vehicle',
+                    tableId: vehicle.id,
+                    documentType: docType,
+                    status: 'PENDING',
+                    ownerId: user.id,
+                    ownerType: 'User',
+                    isDeleted: false
+                }, { client: trx })
+            }
+
+            await trx.commit()
+            return vehicle
+        } catch (error) {
+            await trx.rollback()
+            throw error
+        }
     }
 
     /**
@@ -111,5 +118,3 @@ export class IdepVehicleService {
         }
     }
 }
-
-export default new IdepVehicleService()

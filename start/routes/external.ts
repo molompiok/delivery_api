@@ -34,7 +34,7 @@ router.get('/init-scenario-3', async () => {
             mimeType: 'application/pdf',
             size: 1024,
             fileCategory: 'DOCS' as any,
-            isPublic: false
+            isEncrypted: false
         }
     )
 
@@ -46,7 +46,7 @@ router.get('/init-scenario-3', async () => {
             mimeType: 'image/jpeg',
             size: 2048,
             fileCategory: 'DOCS' as any,
-            isPublic: false
+            isEncrypted: false
         }
     )
 

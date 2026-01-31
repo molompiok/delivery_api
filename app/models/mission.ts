@@ -3,9 +3,7 @@ import { BaseModel, beforeCreate, column, belongsTo } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Order from '#models/order'
 import User from '#models/user'
-import Task from '#models/task'
-import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
-import { hasMany } from '@adonisjs/lucid/orm'
+import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 
 export default class Mission extends BaseModel {
     @column({ isPrimary: true })
@@ -55,8 +53,6 @@ export default class Mission extends BaseModel {
     @belongsTo(() => User, { foreignKey: 'driverId' })
     declare driver: BelongsTo<typeof User>
 
-    @hasMany(() => Task)
-    declare tasks: HasMany<typeof Task>
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

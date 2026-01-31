@@ -3,8 +3,15 @@ import IdepVehicleService from '#services/idep_vehicle_service'
 import VehicleService from '#services/vehicle_service'
 import Vehicle from '#models/vehicle'
 import vine from '@vinejs/vine'
+import { inject } from '@adonisjs/core'
 
+@inject()
 export default class IdepVehicleController {
+    constructor(
+        protected idepVehicleService: IdepVehicleService,
+        protected vehicleService: VehicleService
+    ) { }
+
     /**
      * Validator for IDEP vehicle creation
      */
@@ -35,7 +42,7 @@ export default class IdepVehicleController {
         const data = await request.validateUsing(IdepVehicleController.createValidator)
 
         try {
-            const vehicle = await IdepVehicleService.createVehicle(user, data)
+            const vehicle = await this.idepVehicleService.createVehicle(user, data)
             return response.created(vehicle)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -47,7 +54,7 @@ export default class IdepVehicleController {
      */
     async index({ response, auth }: HttpContext) {
         const user = auth.user!
-        const vehicles = await IdepVehicleService.listVehicles(user)
+        const vehicles = await this.idepVehicleService.listVehicles(user)
         return response.ok(vehicles)
     }
 
@@ -67,7 +74,7 @@ export default class IdepVehicleController {
         }
 
         const data = await request.validateUsing(IdepVehicleController.createValidator)
-        const updated = await VehicleService.saveVehicle({
+        const updated = await this.vehicleService.saveVehicle(user, {
             ...data,
             id: vehicle.id,
             ownerType: 'User',
@@ -83,7 +90,7 @@ export default class IdepVehicleController {
     async show({ params, response, auth }: HttpContext) {
         const user = auth.user!
         try {
-            const vehicle = await IdepVehicleService.getVehicle(user, params.id)
+            const vehicle = await this.idepVehicleService.getVehicle(user, params.id)
             return response.ok(vehicle)
         } catch (error: any) {
             return response.notFound({ message: 'Vehicle not found or not owned by you' })
@@ -111,7 +118,7 @@ export default class IdepVehicleController {
         const { docType, expiryDate } = request.body()
 
         try {
-            const result = await VehicleService.uploadDocument(ctx, vehicle, docType, user, expiryDate)
+            const result = await this.vehicleService.uploadDocument(ctx, vehicle.id, docType, user, expiryDate)
             return response.ok(result)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

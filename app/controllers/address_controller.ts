@@ -1,13 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import AddressService from '#services/address_service'
-import Address from '#models/address'
-import User from '#models/user'
+import { inject } from '@adonisjs/core'
 import vine from '@vinejs/vine'
 
+@inject()
 export default class AddressController {
-    /**
-     * Validator for address creation/update
-     */
+    constructor(protected addressService: AddressService) { }
+
     static addressValidator = vine.compile(
         vine.object({
             ownerType: vine.enum(['User', 'Company', 'Order', 'Mission', 'Vehicle']),
@@ -26,117 +25,67 @@ export default class AddressController {
         })
     )
 
-    private async canEditAddress(user: User, ownerType: string, ownerId: string): Promise<boolean> {
-        if (user.isAdmin) return true;
-
-        // 1. My own address
-        if (ownerType === 'User' && ownerId === user.id) return true;
-
-        // 2. Company address
-        if (ownerType === 'Company') {
-            if (user.effectiveCompanyId === ownerId && user.currentCompanyManaged) return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * List addresses for an owner
-     */
     async index({ request, response, auth }: HttpContext) {
-        const { ownerType, ownerId } = request.qs()
-        const user = auth.user!
+        try {
+            const { ownerType, ownerId } = request.qs()
+            const user = auth.user!
+            if (!ownerType || !ownerId) return response.badRequest({ message: 'ownerType and ownerId are required' })
 
-        if (!ownerType || !ownerId) {
-            return response.badRequest({ message: 'ownerType and ownerId are required' })
+            const addresses = await this.addressService.listAddresses(user, ownerType, ownerId)
+            return response.ok(addresses)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
-
-        // Security check for LISTING
-        if (!(await this.canEditAddress(user, ownerType, ownerId))) {
-            // Exception: Listing Company addresses might be public if they are Pickup Points?
-            // For now, restrict to Owner/Manager.
-            return response.forbidden({ message: 'Permission denied' })
-        }
-
-        const addresses = await Address.query()
-            .where('ownerType', ownerType)
-            .where('ownerId', ownerId)
-            .where('isActive', true)
-            .orderBy('isDefault', 'desc')
-            .orderBy('createdAt', 'desc')
-
-        return response.ok(addresses)
     }
 
-    /**
-     * Create a new address
-     */
     async store({ request, response, auth }: HttpContext) {
-        const data = await request.validateUsing(AddressController.addressValidator)
-        const user = auth.user!
-
-        // Security check
-        if (!(await this.canEditAddress(user, data.ownerType, data.ownerId))) {
-            return response.forbidden({ message: 'Permission denied' })
+        try {
+            const user = auth.user!
+            const data = await request.validateUsing(AddressController.addressValidator)
+            const address = await this.addressService.saveAddress(user, data)
+            return response.created(address)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
-
-        const address = await AddressService.saveAddress(data as any)
-        return response.created(address)
     }
 
-    /**
-     * Update an address
-     */
     async update({ params, request, response, auth }: HttpContext) {
-        const address = await Address.find(params.id)
-        if (!address) {
-            return response.notFound({ message: 'Address not found' })
+        try {
+            const user = auth.user!
+            const data = await request.validateUsing(AddressController.addressValidator)
+            const address = await this.addressService.saveAddress(user, { ...data, id: params.id })
+            return response.ok(address)
+        } catch (error: any) {
+            if (error.code === 'E_ROW_NOT_FOUND' || error.message.includes('not found')) {
+                return response.notFound({ message: 'Address not found' })
+            }
+            return response.badRequest({ message: error.message })
         }
-
-        const user = auth.user!
-        if (!(await this.canEditAddress(user, address.ownerType, address.ownerId))) {
-            return response.forbidden({ message: 'Permission denied' })
-        }
-
-        const data = await request.validateUsing(AddressController.addressValidator)
-
-        const updated = await AddressService.saveAddress({ ...data, id: address.id } as any)
-        return response.ok(updated)
     }
 
-    /**
-     * Delete an address (Soft delete via isActive=false usually, but here hard delete for now)
-     */
     async destroy({ params, response, auth }: HttpContext) {
-        const address = await Address.find(params.id)
-        if (!address) {
-            return response.notFound({ message: 'Address not found' })
+        try {
+            const user = auth.user!
+            await this.addressService.deleteAddress(user, params.id)
+            return response.noContent()
+        } catch (error: any) {
+            if (error.code === 'E_ROW_NOT_FOUND' || error.message.includes('not found')) {
+                return response.notFound({ message: 'Address not found' })
+            }
+            return response.badRequest({ message: error.message })
         }
-
-        const user = auth.user!
-        if (!(await this.canEditAddress(user, address.ownerType, address.ownerId))) {
-            return response.forbidden({ message: 'Permission denied' })
-        }
-
-        await address.delete()
-        return response.noContent()
     }
 
-    /**
-     * Set as default
-     */
     async setDefault({ params, response, auth }: HttpContext) {
-        const address = await Address.find(params.id)
-        if (!address) {
-            return response.notFound({ message: 'Address not found' })
+        try {
+            const user = auth.user!
+            const address = await this.addressService.setDefault(user, params.id)
+            return response.ok({ message: 'Default address updated', address })
+        } catch (error: any) {
+            if (error.code === 'E_ROW_NOT_FOUND' || error.message.includes('not found')) {
+                return response.notFound({ message: 'Address not found' })
+            }
+            return response.badRequest({ message: error.message })
         }
-
-        const user = auth.user!
-        if (!(await this.canEditAddress(user, address.ownerType, address.ownerId))) {
-            return response.forbidden({ message: 'Permission denied' })
-        }
-
-        await AddressService.setDefault(address.id, address.ownerType, address.ownerId)
-        return response.ok({ message: 'Default address updated' })
     }
 }

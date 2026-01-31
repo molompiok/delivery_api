@@ -1,11 +1,14 @@
 import User from '#models/user'
+import db from '@adonisjs/lucid/services/db'
 import ApiKey from '#models/api_key'
 import AsyncConfirm, { AsyncConfirmType } from '#models/async_confirm'
 import { DateTime } from 'luxon'
 import hash from '@adonisjs/core/services/hash'
 import { generateId } from '../utils/id_generator.js'
+import { inject } from '@adonisjs/core'
 
-export class AuthService {
+@inject()
+export default class AuthService {
     /**
      * Send OTP to phone number
      */
@@ -85,7 +88,6 @@ export class AuthService {
             content: `Votre code de vérification Sublymus est : ${otp}`
         })
 
-        // Return OTP even if SMS fails (for development/testing when quota exceeded)
         return {
             otp,
             smsSent,
@@ -101,48 +103,110 @@ export class AuthService {
             throw new Error('OTP and Phone number are required')
         }
 
-        const confirm = await AsyncConfirm.query()
-            .whereRaw("payload->>'phone' = ?", [phone])
-            .where('type', AsyncConfirmType.PHONE_OTP)
-            .where('expiresAt', '>', DateTime.now())
-            .whereNull('usedAt')
-            .orderBy('createdAt', 'desc')
-            .first()
+        const trx = await db.transaction()
+        try {
+            const confirm = await AsyncConfirm.query({ client: trx })
+                .whereRaw("payload->>'phone' = ?", [phone])
+                .where('type', AsyncConfirmType.PHONE_OTP)
+                .where('expiresAt', '>', DateTime.now().toSQL())
+                .whereNull('usedAt')
+                .orderBy('createdAt', 'desc')
+                .forUpdate()
+                .first()
 
-        if (!confirm || !(await hash.verify(confirm.tokenHash, otp))) {
-            throw new Error('Invalid or expired OTP')
-        }
-
-        let user = await User.findBy('phone', phone)
-        if (!user) {
-            user = await User.create({
-                phone,
-                isActive: true,
-                phoneVerifiedAt: DateTime.now()
-            })
-        } else if (!user.phoneVerifiedAt) {
-            user.phoneVerifiedAt = DateTime.now()
-        }
-
-        user.lastLoginAt = DateTime.now()
-        await user.save()
-
-        confirm.usedAt = DateTime.now()
-        confirm.userId = user.id
-        await confirm.save()
-
-        const token = await User.accessTokens.create(user)
-
-        return {
-            token: token.value!.release(),
-            user: {
-                id: user.id,
-                email: user.email,
-                phone: user.phone,
-                fullName: user.fullName,
-                isDriver: user.isDriver,
-                isAdmin: user.isAdmin,
+            if (!confirm || !(await hash.verify(confirm.tokenHash, otp))) {
+                throw new Error('Invalid or expired OTP')
             }
+
+            let user = await User.query({ client: trx }).where('phone', phone).first()
+            if (!user) {
+                user = await User.create({
+                    phone,
+                    isActive: true,
+                    phoneVerifiedAt: DateTime.now()
+                }, { client: trx })
+            } else if (!user.phoneVerifiedAt) {
+                user.phoneVerifiedAt = DateTime.now()
+            }
+
+            user.lastLoginAt = DateTime.now()
+            await user.useTransaction(trx).save()
+
+            confirm.usedAt = DateTime.now()
+            confirm.userId = user.id
+            await confirm.useTransaction(trx).save()
+
+            const token = await User.accessTokens.create(user)
+
+            await trx.commit()
+
+            return {
+                token: token.value!.release(),
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    phone: user.phone,
+                    fullName: user.fullName,
+                    isDriver: user.isDriver,
+                    isAdmin: user.isAdmin,
+                }
+            }
+        } catch (error) {
+            await trx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Handle OAuth Callback (Find/Create User and Generate Token)
+     */
+    async handleOAuthUser(googleUser: any) {
+        const trx = await db.transaction()
+        try {
+            let user = await User.query({ client: trx }).where('email', googleUser.email).first()
+            if (!user) {
+                user = await User.create({
+                    email: googleUser.email,
+                    fullName: googleUser.name,
+                    isActive: true,
+                }, { client: trx })
+            }
+
+            user.lastLoginAt = DateTime.now()
+            await user.useTransaction(trx).save()
+
+            const token = await User.accessTokens.create(user)
+            await trx.commit()
+
+            return {
+                token: token.value!.release(),
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    fullName: user.fullName,
+                    isDriver: user.isDriver,
+                    isAdmin: user.isAdmin,
+                },
+            }
+        } catch (error) {
+            await trx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Update User Profile
+     */
+    async updateProfile(user: User, data: any) {
+        const trx = await db.transaction()
+        try {
+            user.merge(data)
+            await user.useTransaction(trx).save()
+            await trx.commit()
+            return user
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
     }
 
@@ -150,36 +214,50 @@ export class AuthService {
      * Generate API Key
      */
     async generateApiKey(userId: string, name: string) {
-        const user = await User.find(userId)
-        if (!user) throw new Error('User not found')
+        const trx = await db.transaction()
+        try {
+            const user = await User.findOrFail(userId, { client: trx })
 
-        const existingKeysCount = await ApiKey.query()
-            .where('userId', user.id)
-            .where('isActive', true)
-            .count('* as total')
+            const existingKeysCount = await ApiKey.query({ client: trx })
+                .where('userId', user.id)
+                .where('isActive', true)
+                .count('* as total')
 
-        if (parseInt(existingKeysCount[0].$extras.total || '0') >= 10) {
-            throw new Error('Maximum API key limit reached (10 keys per user).')
+            if (parseInt(existingKeysCount[0].$extras.total || '0') >= 10) {
+                throw new Error('Maximum API key limit reached (10 keys per user).')
+            }
+
+            const rawKey = generateId('sk').replace('sk_', '')
+            const keyHash = await hash.make(rawKey)
+            const hint = rawKey.slice(-4)
+
+            const apiKey = await ApiKey.create({
+                userId: user.id,
+                name,
+                keyHash,
+                hint,
+                isActive: true
+            }, { client: trx })
+
+            await trx.commit()
+
+            return {
+                id: apiKey.id,
+                name: apiKey.name,
+                key: `sk_${rawKey}`,
+                hint: apiKey.hint
+            }
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
+    }
 
-        const rawKey = generateId('sk').replace('sk_', '')
-        const keyHash = await hash.make(rawKey)
-        const hint = rawKey.slice(-4)
-
-        const apiKey = await ApiKey.create({
-            userId: user.id,
-            name,
-            keyHash,
-            hint,
-            isActive: true
-        })
-
-        return {
-            id: apiKey.id,
-            name: apiKey.name,
-            key: `sk_${rawKey}`,
-            hint: apiKey.hint
-        }
+    /**
+     * List API Keys
+     */
+    async listApiKeys(userId: string) {
+        return await ApiKey.query().where('userId', userId).orderBy('createdAt', 'desc')
     }
 
     /**
@@ -196,5 +274,3 @@ export class AuthService {
         return true
     }
 }
-
-export default new AuthService()

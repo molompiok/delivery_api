@@ -1,9 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import CompanyService from '#services/company_service'
 import ShiftService from '#services/shift_service'
-import Company from '#models/company'
+import { inject } from '@adonisjs/core'
 
+@inject()
 export default class CompanyController {
+    constructor(protected companyService: CompanyService) { }
+
     /**
      * Create a new company
      */
@@ -11,7 +14,7 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const data = request.only(['name', 'registreCommerce', 'logo', 'description'])
-            const company = await CompanyService.create(user, data)
+            const company = await this.companyService.create(user, data)
             return response.created(company)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -24,10 +27,7 @@ export default class CompanyController {
     public async getMyCompany({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-            if (!user.effectiveCompanyId) {
-                return response.notFound({ message: 'User does not belong to a company' })
-            }
-            const company = await Company.findOrFail(user.effectiveCompanyId)
+            const company = await this.companyService.getCompanyDetails(user)
             return response.ok(company)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -41,7 +41,7 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const data = request.only(['name', 'registreCommerce', 'logo', 'description'])
-            const company = await CompanyService.update(user, data)
+            const company = await this.companyService.update(user, data)
             return response.ok(company)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -55,8 +55,7 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const filters = request.qs()
-            const drivers = await CompanyService.listDrivers(user, filters)
-
+            const drivers = await this.companyService.listDrivers(user, filters)
             return response.ok(drivers)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -69,8 +68,7 @@ export default class CompanyController {
     public async getDriver({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            const driver = await CompanyService.getDriverDetails(user, params.driverId)
-
+            const driver = await this.companyService.getDriverDetails(user, params.driverId)
             return response.ok(driver)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -84,12 +82,8 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const { phone } = request.only(['phone'])
-            const invitation = await CompanyService.inviteDriver(user, phone)
-
-            return response.ok({
-                message: 'Driver invited successfully',
-                invitation,
-            })
+            const invitation = await this.companyService.inviteDriver(user, phone)
+            return response.ok({ message: 'Driver invited successfully', invitation })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
@@ -101,8 +95,7 @@ export default class CompanyController {
     public async remove({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            await CompanyService.removeDriver(user, params.driverId)
-
+            await this.companyService.removeDriver(user, params.driverId)
             return response.ok({ message: 'Driver removed successfully' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -116,12 +109,8 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const { docTypeIds } = request.only(['docTypeIds'])
-            const relation = await CompanyService.setRequiredDocs(user, params.driverId, docTypeIds)
-
-            return response.ok({
-                message: 'Required documents set successfully',
-                relation,
-            })
+            const relation = await this.companyService.setRequiredDocs(user, params.driverId, docTypeIds)
+            return response.ok({ message: 'Required documents set successfully', relation })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
@@ -134,12 +123,8 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const { status, comment } = request.only(['status', 'comment'])
-            const file = await CompanyService.validateDocument(user, params.docId, status, comment)
-
-            return response.ok({
-                message: 'Document validation updated',
-                file,
-            })
+            const file = await this.companyService.validateDocument(user, params.docId, status, comment)
+            return response.ok({ message: 'Document validation updated', file })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
@@ -151,12 +136,8 @@ export default class CompanyController {
     public async inviteToFleet({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            const relation = await CompanyService.inviteToFleet(user, params.driverId)
-
-            return response.ok({
-                message: 'Fleet invitation sent successfully',
-                relation,
-            })
+            const relation = await this.companyService.inviteToFleet(user, params.driverId)
+            return response.ok({ message: 'Fleet invitation sent successfully', relation })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
@@ -169,7 +150,8 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const { mode } = request.only(['mode'])
-            await ShiftService.forceMode(params.driverId, mode, user.effectiveCompanyId!)
+            const activeCompanyId = user.currentCompanyManaged || user.companyId
+            await ShiftService.forceMode(params.driverId, mode, activeCompanyId!)
             return response.ok({ message: 'Mode forced successfully' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -181,11 +163,10 @@ export default class CompanyController {
      */
     async uploadDoc(ctx: HttpContext) {
         const { params, request, response, auth } = ctx
-        const user = auth.user!
-        const { docType } = request.body()
-
         try {
-            const result = await CompanyService.uploadDocument(ctx, user, params.relationId, docType)
+            const user = auth.user!
+            const { docType } = request.body()
+            const result = await this.companyService.uploadDocument(ctx, user, params.relationId, docType)
             return response.created(result)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -197,11 +178,10 @@ export default class CompanyController {
      */
     async uploadCompanyDoc(ctx: HttpContext) {
         const { request, response, auth } = ctx
-        const user = auth.user!
-        const { docType } = request.body()
-
         try {
-            const result = await CompanyService.uploadCompanyDocument(ctx, user, docType)
+            const user = auth.user!
+            const { docType } = request.body()
+            const result = await this.companyService.uploadCompanyDocument(ctx, user, docType)
             return response.created(result)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -214,7 +194,7 @@ export default class CompanyController {
     async syncRequirements({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            await CompanyService.syncRequiredDocsFromMetadata(user, params.driverId)
+            await this.companyService.syncRequiredDocsFromMetadata(user, params.driverId)
             return response.ok({ message: 'Driver requirements synced with company standards' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -227,7 +207,7 @@ export default class CompanyController {
     async getRequirements({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-            const requirements = await CompanyService.getDocumentRequirements(user)
+            const requirements = await this.companyService.getDocumentRequirements(user)
             return response.ok(requirements)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -241,7 +221,7 @@ export default class CompanyController {
         try {
             const user = auth.user!
             const { requirements } = request.only(['requirements'])
-            const updated = await CompanyService.updateDocumentRequirements(user, requirements)
+            const updated = await this.companyService.updateDocumentRequirements(user, requirements)
             return response.ok(updated)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

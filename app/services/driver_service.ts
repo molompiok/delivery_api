@@ -1,45 +1,52 @@
 import User from '#models/user'
+import db from '@adonisjs/lucid/services/db'
 import DriverSetting from '#models/driver_setting'
 import CompanyDriverSetting from '#models/company_driver_setting'
 import { DateTime } from 'luxon'
+import { inject } from '@adonisjs/core'
 
-export class DriverService {
+@inject()
+export default class DriverService {
     /**
      * Register as driver
      */
     async register(user: User, data: { vehicleType?: string, vehiclePlate?: string }) {
-        let driverSetting = await DriverSetting.query()
-            .where('userId', user.id)
-            .first()
+        const trx = await db.transaction()
+        try {
+            let driverSetting = await DriverSetting.query({ client: trx }).where('userId', user.id).first()
 
-        if (driverSetting) {
-            // Idempotent: Update existing setting if it somehow exists
-            driverSetting.merge({
-                vehicleType: data.vehicleType || driverSetting.vehicleType || 'MOTORCYCLE',
-                vehiclePlate: data.vehiclePlate || driverSetting.vehiclePlate || 'PENDING',
-            })
-            await driverSetting.save()
-        } else {
-            driverSetting = await DriverSetting.create({
-                userId: user.id,
-                vehicleType: data.vehicleType || 'MOTORCYCLE',
-                vehiclePlate: data.vehiclePlate || 'PENDING',
-            })
+            if (driverSetting) {
+                driverSetting.merge({
+                    vehicleType: data.vehicleType || driverSetting.vehicleType || 'MOTORCYCLE',
+                    vehiclePlate: data.vehiclePlate || driverSetting.vehiclePlate || 'PENDING',
+                })
+                await driverSetting.useTransaction(trx).save()
+            } else {
+                driverSetting = await DriverSetting.create({
+                    userId: user.id,
+                    vehicleType: data.vehicleType || 'MOTORCYCLE',
+                    vehiclePlate: data.vehiclePlate || 'PENDING',
+                }, { client: trx })
+            }
+
+            if (!user.isDriver) {
+                user.isDriver = true
+                await user.useTransaction(trx).save()
+                await this.ensureRequiredDocuments(user, trx)
+            }
+
+            await trx.commit()
+            return driverSetting
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
-
-        if (!user.isDriver) {
-            user.isDriver = true
-            await user.save()
-            await this.ensureRequiredDocuments(user)
-        }
-
-        return driverSetting
     }
 
     /**
-     * Ensure all required documents exist for a driver (creates placeholders if missing)
+     * Ensure all required documents exist for a driver
      */
-    async ensureRequiredDocuments(user: User) {
+    async ensureRequiredDocuments(user: User, trx?: any) {
         if (!user.isDriver) return
 
         const { REQUIRED_DRIVER_DOCUMENTS } = await import('#constants/required_documents')
@@ -47,10 +54,7 @@ export class DriverService {
 
         for (const req of REQUIRED_DRIVER_DOCUMENTS) {
             const typeKey = req.type.replace('dct_', '')
-
-            // We use updateOrCreate but we DON'T update the status if it already exists
-            // To be safer, we can check existence first
-            const existing = await Document.query()
+            const existing = await Document.query({ client: trx })
                 .where('tableName', 'User')
                 .where('tableId', user.id)
                 .where('documentType', typeKey)
@@ -65,7 +69,7 @@ export class DriverService {
                     ownerType: 'User',
                     status: 'PENDING',
                     isDeleted: false
-                })
+                }, { client: trx })
             }
         }
     }
@@ -74,10 +78,7 @@ export class DriverService {
      * Get driver profile
      */
     async getProfile(user: User) {
-        if (!user.isDriver) {
-            throw new Error('User is not a driver')
-        }
-
+        if (!user.isDriver) throw new Error('User is not a driver')
         return await DriverSetting.query()
             .where('userId', user.id)
             .preload('currentCompany')
@@ -89,18 +90,26 @@ export class DriverService {
      * Update driver profile
      */
     async updateProfile(user: User, data: { vehicleType?: string, vehiclePlate?: string }) {
-        if (!user.isDriver) {
-            throw new Error('User is not a driver')
-        }
-
-        const driverSetting = await DriverSetting.query()
-            .where('userId', user.id)
-            .firstOrFail()
-
+        if (!user.isDriver) throw new Error('User is not a driver')
+        const driverSetting = await DriverSetting.query().where('userId', user.id).firstOrFail()
         driverSetting.merge(data)
         await driverSetting.save()
-
         return driverSetting
+    }
+
+    /**
+     * Get my documents
+     */
+    async listDocuments(user: User) {
+        if (!user.isDriver) throw new Error('User is not a driver')
+        await this.ensureRequiredDocuments(user)
+        const Document = (await import('#models/document')).default
+        return await Document.query()
+            .where('tableName', 'User')
+            .where('tableId', user.id)
+            .where('isDeleted', false)
+            .preload('file')
+            .orderBy('createdAt', 'desc')
     }
 
     /**
@@ -115,208 +124,176 @@ export class DriverService {
     }
 
     /**
-     * Step 4 & 5: Accept access request
+     * Accept access request
      */
     async acceptAccessRequest(user: User, relationId: string) {
-        const relation = await CompanyDriverSetting.query()
-            .where('id', relationId)
-            .where('driverId', user.id)
-            .where('status', 'PENDING_ACCESS')
-            .firstOrFail()
+        const trx = await db.transaction()
+        try {
+            const relation = await CompanyDriverSetting.query({ client: trx })
+                .where('id', relationId)
+                .where('driverId', user.id)
+                .where('status', 'PENDING_ACCESS')
+                .forUpdate()
+                .firstOrFail()
 
-        relation.status = 'ACCESS_ACCEPTED'
-        await relation.save()
+            relation.status = 'ACCESS_ACCEPTED'
+            await relation.useTransaction(trx).save()
 
-        // Step 5: Mirror existing documents provided by the driver (User table files)
-        // to the CompanyDriverSetting relation so the manager can see them.
-        const FileManager = (await import('#services/file_manager')).default
-        const File = (await import('#models/file')).default
-        const Document = (await import('#models/document')).default
+            const FileManager = (await import('#services/file_manager')).default
+            const File = (await import('#models/file')).default
+            const Document = (await import('#models/document')).default
 
-        const existingFiles = await File.query()
-            .where('tableName', 'User')
-            .where('tableId', user.id)
+            const existingFiles = await File.query({ client: trx }).where('tableName', 'User').where('tableId', user.id)
+            const manager = new FileManager(relation, 'CompanyDriverSetting')
 
-        const manager = new FileManager(relation, 'CompanyDriverSetting')
+            for (const sourceFile of existingFiles) {
+                try {
+                    const copiedFile = await manager.cloneFileAsHardLink(sourceFile, sourceFile.tableColumn)
+                    const typeKey = sourceFile.tableColumn.replace('dct_', '')
+                    const sourceDoc = await Document.query({ client: trx }).where('tableName', 'User').where('tableId', user.id).where('documentType', typeKey).first()
+                    let doc = await Document.query({ client: trx }).where('tableName', 'CompanyDriverSetting').where('tableId', relation.id).where('documentType', typeKey).first()
 
-        for (const sourceFile of existingFiles) {
-            try {
-                // 1. Create a hard-link copy for the company
-                const copiedFile = await manager.cloneFileAsHardLink(sourceFile, sourceFile.tableColumn)
+                    if (!doc) {
+                        doc = await Document.create({
+                            tableName: 'CompanyDriverSetting',
+                            tableId: relation.id,
+                            documentType: typeKey,
+                            ownerId: relation.companyId,
+                            ownerType: 'Company',
+                            status: 'PENDING',
+                            isDeleted: false
+                        }, { client: trx })
+                    }
 
-                // 2. Find/Update the Document record for this relation
-                const typeKey = sourceFile.tableColumn.replace('dct_', '')
+                    doc.fileId = copiedFile.id
+                    doc.status = 'PENDING'
 
-                // Source doc for status check
-                const sourceDoc = await Document.query()
-                    .where('tableName', 'User')
-                    .where('tableId', user.id)
-                    .where('documentType', typeKey)
-                    .first()
-
-                // Target doc (CompanyDriverSetting)
-                let doc = await Document.query()
-                    .where('tableName', 'CompanyDriverSetting')
-                    .where('tableId', relation.id)
-                    .where('documentType', typeKey)
-                    .first()
-
-                if (!doc) {
-                    // Create if doesn't exist (e.g. if company didn't specify required docs yet but driver has them)
-                    doc = await Document.create({
-                        tableName: 'CompanyDriverSetting',
-                        tableId: relation.id,
-                        documentType: typeKey,
-                        ownerId: relation.companyId,
-                        ownerType: 'Company',
-                        status: 'PENDING',
-                        isDeleted: false
-                    })
+                    if (sourceDoc?.status === 'APPROVED') {
+                        doc.addHistory('FILE_MIRRORED', user, { sourceFileId: sourceFile.id, note: 'Ce document a été précédemment validé par Sublymus' })
+                    } else {
+                        doc.addHistory('FILE_MIRRORED', user, { sourceFileId: sourceFile.id })
+                    }
+                    await doc.useTransaction(trx).save()
+                    await manager.share(sourceFile.tableColumn, { read: { companyIds: [relation.companyId] } })
+                } catch (err: any) {
+                    console.error(`Failed to mirror file ${sourceFile.id}:`, err.message)
                 }
-
-                doc.fileId = copiedFile.id
-                doc.status = 'PENDING' // Always reset to PENDING for company manager validation
-
-                if (sourceDoc?.status === 'APPROVED') {
-                    doc.addHistory('FILE_MIRRORED', user, {
-                        sourceFileId: sourceFile.id,
-                        note: 'Ce document a été précédemment validé par Sublymus'
-                    })
-                } else {
-                    doc.addHistory('FILE_MIRRORED', user, { sourceFileId: sourceFile.id })
-                }
-
-                await doc.save()
-
-                // 3. Ensure FileData permissions for the company manager
-                // (FileManager.getFileData handles this when called)
-                await manager.getFileData(sourceFile.tableColumn, relation.companyId)
-                await manager.share(sourceFile.tableColumn, {
-                    read: { companyIds: [relation.companyId] }
-                })
-            } catch (err: any) {
-                console.error(`Failed to mirror file ${sourceFile.id}:`, err.message)
             }
+            await trx.commit()
+            return relation
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
-
-        return relation
     }
 
     /**
-     * Step 7: Accept final fleet invitation
+     * Accept final fleet invitation
      */
     async acceptFleetInvitation(user: User, relationId: string) {
-        if (!user.isDriver) {
-            throw new Error('You must register as a driver first')
+        const trx = await db.transaction()
+        try {
+            if (!user.isDriver) throw new Error('You must register as a driver first')
+            const relation = await CompanyDriverSetting.query({ client: trx })
+                .where('id', relationId)
+                .where('driverId', user.id)
+                .where('status', 'PENDING_FLEET')
+                .forUpdate()
+                .firstOrFail()
+
+            relation.status = 'ACCEPTED'
+            relation.acceptedAt = DateTime.now()
+            await relation.useTransaction(trx).save()
+
+            await DriverSetting.updateOrCreate({ userId: user.id }, { currentCompanyId: relation.companyId }, { client: trx })
+
+            await trx.commit()
+            return relation
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
-
-        const relation = await CompanyDriverSetting.query()
-            .where('id', relationId)
-            .where('driverId', user.id)
-            .where('status', 'PENDING_FLEET')
-            .firstOrFail()
-
-        relation.status = 'ACCEPTED'
-        relation.acceptedAt = DateTime.now()
-        await relation.save()
-
-        // Set as main company for the driver
-        const driverSetting = await DriverSetting.updateOrCreate(
-            { userId: user.id },
-            { currentCompanyId: relation.companyId }
-        )
-
-        return relation
     }
 
     /**
-     * Reject any request (access or fleet)
+     * Reject request
      */
     async rejectRequest(user: User, relationId: string) {
-        const invitation = await CompanyDriverSetting.query()
-            .where('id', relationId)
-            .where('driverId', user.id)
-            .whereIn('status', ['PENDING_ACCESS', 'PENDING_FLEET'])
-            .firstOrFail()
-
+        const invitation = await CompanyDriverSetting.query().where('id', relationId).where('driverId', user.id).whereIn('status', ['PENDING_ACCESS', 'PENDING_FLEET']).firstOrFail()
         invitation.status = 'REJECTED'
         await invitation.save()
-
         return true
     }
 
     /**
-     * Get companies associated with driver
+     * Get companies
      */
     async getCompanies(user: User) {
-        return await CompanyDriverSetting.query()
-            .where('driverId', user.id)
-            .preload('company')
-            .orderBy('createdAt', 'desc')
+        return await CompanyDriverSetting.query().where('driverId', user.id).preload('company').orderBy('createdAt', 'desc')
     }
 
     /**
-     * Upload a document for the driver (Global User Doc)
+     * Upload a global document
      */
     async uploadDocument(ctx: any, user: User, docType: string) {
-        console.log('[DEBUG] uploadDocument docType:', docType)
-        console.log('[DEBUG] request files:', ctx.request.files(docType))
-        console.log('[DEBUG] request file single:', ctx.request.file(docType))
+        const trx = await db.transaction()
+        try {
+            const FileManager = (await import('#services/file_manager')).default
+            const manager = new FileManager(user, 'User')
+            const typeKey = docType.replace('dct_', '')
+            const normalizedDocType = `dct_${typeKey}`
 
-        const FileManager = (await import('#services/file_manager')).default
-        const manager = new FileManager(user, 'User')
+            await manager.sync(ctx, { column: normalizedDocType, config: { encrypt: true } })
 
-        const typeKey = docType.replace('dct_', '')
-        const normalizedDocType = `dct_${typeKey}`
+            const File = (await import('#models/file')).default
+            const file = await File.query({ client: trx })
+                .where('tableName', 'User')
+                .where('tableId', user.id)
+                .where('tableColumn', normalizedDocType)
+                .orderBy('createdAt', 'desc')
+                .firstOrFail()
 
-        // 1. Sync with FileManager
-        await manager.sync(ctx, {
-            column: normalizedDocType,
-            config: { encrypt: true } // Documents are encrypted by default
-        })
+            const Document = (await import('#models/document')).default
+            let doc = await Document.query({ client: trx })
+                .where('tableName', 'User')
+                .where('tableId', user.id)
+                .where('documentType', typeKey)
+                .forUpdate()
+                .first()
 
-        // 2. Get the file record
-        const File = (await import('#models/file')).default
-        const file = await File.query()
-            .where('tableName', 'User')
-            .where('tableId', user.id)
-            .where('tableColumn', normalizedDocType)
-            .orderBy('createdAt', 'desc')
-            .first()
+            if (!doc) {
+                doc = await Document.create({
+                    tableName: 'User',
+                    tableId: user.id,
+                    documentType: typeKey,
+                    ownerId: user.id,
+                    ownerType: 'User',
+                    status: 'PENDING',
+                    isDeleted: false
+                }, { client: trx })
+            }
 
-        if (!file) throw new Error('File upload failed')
+            doc.fileId = file.id
+            doc.status = 'PENDING'
+            doc.addHistory('FILE_UPLOADED', user, { fileId: file.id })
+            await doc.useTransaction(trx).save()
 
-        // 3. Link to Document record
-        const Document = (await import('#models/document')).default
-        let doc = await Document.query()
-            .where('tableName', 'User')
-            .where('tableId', user.id)
-            .where('documentType', typeKey)
-            .first()
+            const VerificationService = (await import('#services/verification_service')).default
+            await VerificationService.syncDriverVerificationStatus(user.id, trx)
 
-        if (!doc) {
-            doc = await Document.create({
-                tableName: 'User',
-                tableId: user.id,
-                documentType: typeKey,
-                ownerId: user.id,
-                ownerType: 'User',
-                status: 'PENDING',
-                isDeleted: false
-            })
+            await trx.commit()
+            return { file, document: doc }
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
+    }
 
-        doc.fileId = file.id
-        doc.status = 'PENDING'
-        doc.addHistory('FILE_UPLOADED', user, { fileId: file.id })
-        await doc.save()
-
-        // 4. Update the verification status if needed
-        const VerificationService = (await import('#services/verification_service')).default
-        await VerificationService.syncDriverVerificationStatus(user.id)
-
-        return { file, document: doc }
+    /**
+     * Update location (tracking)
+     */
+    async updateLocation(userId: string, lat: number, lng: number, heading?: number) {
+        const TrackingService = (await import('#services/tracking_service')).default
+        await TrackingService.track(userId, lat, lng, heading)
     }
 }
-
-export default new DriverService()

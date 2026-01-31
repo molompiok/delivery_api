@@ -1,4 +1,5 @@
 import DriverSetting from '#models/driver_setting'
+import db from '@adonisjs/lucid/services/db'
 import Company from '#models/company'
 import Document from '#models/document'
 import User from '#models/user'
@@ -151,8 +152,9 @@ export class VerificationService {
     /**
      * Auto-sync driver verification status based on document statuses
      */
-    async syncDriverVerificationStatus(userId: string) {
-        const documents = await Document.query()
+    async syncDriverVerificationStatus(userId: string, trx?: any) {
+        const client = trx || db
+        const documents = await Document.query({ client })
             .where('tableName', 'User')
             .where('tableId', userId)
             .where('isDeleted', false)
@@ -166,7 +168,7 @@ export class VerificationService {
         const anyRejected = documents.some(doc => doc.status === 'REJECTED')
         const anyPending = documents.some(doc => doc.status === 'PENDING')
 
-        const driverSetting = await DriverSetting.query()
+        const driverSetting = await DriverSetting.query({ client })
             .where('userId', userId)
             .first()
 
@@ -180,7 +182,7 @@ export class VerificationService {
             driverSetting.verificationStatus = 'PENDING'
         }
 
-        await driverSetting.save()
+        await driverSetting.useTransaction(client).save()
         return driverSetting
     }
 

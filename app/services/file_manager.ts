@@ -191,18 +191,26 @@ export default class FileManager {
             await this.deleteFile(updateId)
         }
 
-        // 3. Handle Uploads
+        // 3. Handle Uploads 
         const multipleFiles = request.files(column)
         const singleFile = request.file(column)
 
         if (multipleFiles && Array.isArray(multipleFiles) && multipleFiles.length > 0) {
-            for (const file of multipleFiles) {
-                if (file.isValid) {
-                    await this.processUpload(file, options)
-                }
-            }
+            await this.uploadFiles(multipleFiles, options, user.id)
         } else if (singleFile && singleFile.isValid) {
-            await this.processUpload(singleFile, options)
+            await this.uploadFiles([singleFile], options, user.id)
+        }
+    }
+
+    /**
+     * Manually upload files for a specific column/owner
+     */
+    async uploadFiles(files: MultipartFile[], options: SyncOptions, ownerId: string) {
+        await this.getFileData(options.column, ownerId, options.config)
+        for (const file of files) {
+            if (file.isValid) {
+                await this.processUpload(file, options)
+            }
         }
     }
 

@@ -1,8 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import VehicleService from '#services/vehicle_service'
 import DocumentSecurityService from '#services/security/document_security_service'
+import { inject } from '@adonisjs/core'
 
+@inject()
 export default class VehicleDocumentController {
+    constructor(protected vehicleService: VehicleService) { }
+
     /**
      * Valider un document de véhicule (Admin Sublymus uniquement)
      */
@@ -25,13 +29,13 @@ export default class VehicleDocumentController {
                 })
             }
 
-            const doc = await VehicleService.validateDocument(user, docId, status, comment)
+            const doc = await this.vehicleService.validateDocument(user, docId, status, comment)
 
             return response.ok({
                 message: `Document ${status.toLowerCase()}`,
                 document: doc
             })
-        } catch (error) {
+        } catch (error: any) {
             if (error.code === 'E_ROW_NOT_FOUND') {
                 return response.notFound({ message: 'Document not found' })
             }

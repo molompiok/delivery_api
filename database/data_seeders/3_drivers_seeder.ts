@@ -1,10 +1,12 @@
 import { BaseSeeder } from '@adonisjs/lucid/seeders'
 import { createUserWithPhone, uploadFakeFile } from '../seeders/helpers/seeder_helper.js'
+import app from '@adonisjs/core/services/app'
 import DriverService from '#services/driver_service'
 
 export default class DriversSeeder extends BaseSeeder {
     async run() {
         console.log('🚗 Seeding Drivers...')
+        const driverService = await app.container.make(DriverService)
 
         // ===== FastDelivery Drivers =====
         console.log('  FastDelivery Drivers:')
@@ -16,7 +18,7 @@ export default class DriversSeeder extends BaseSeeder {
             fullName: 'Kofi Mensah',
         })
         if (!driver1Fast.isDriver) {
-            await DriverService.register(driver1Fast, {
+            await driverService.register(driver1Fast, {
                 vehicleType: 'Moto',
                 vehiclePlate: 'AB-1234-CI',
             })
@@ -40,7 +42,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!driver2Fast.isDriver) {
-            await DriverService.register(driver2Fast, {
+            await driverService.register(driver2Fast, {
                 vehicleType: 'Voiture',
                 vehiclePlate: 'CD-5678-CI',
             })
@@ -59,7 +61,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!driver3Fast.isDriver) {
-            await DriverService.register(driver3Fast, {
+            await driverService.register(driver3Fast, {
                 vehicleType: 'Moto',
                 vehiclePlate: 'EF-9012-CI',
             })
@@ -75,7 +77,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!driver4Fast.isDriver) {
-            await DriverService.register(driver4Fast, {
+            await driverService.register(driver4Fast, {
                 vehicleType: 'Voiture',
                 vehiclePlate: 'GH-3456-CI',
             })
@@ -92,7 +94,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!driver5Fast.isDriver) {
-            await DriverService.register(driver5Fast, {
+            await driverService.register(driver5Fast, {
                 vehicleType: 'Moto',
                 vehiclePlate: 'IJ-7890-CI',
             })
@@ -109,7 +111,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!driver1Slow.isDriver) {
-            await DriverService.register(driver1Slow, {
+            await driverService.register(driver1Slow, {
                 vehicleType: 'Camion',
                 vehiclePlate: 'KL-1234-CI',
             })
@@ -125,7 +127,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!driver2Slow.isDriver) {
-            await DriverService.register(driver2Slow, {
+            await driverService.register(driver2Slow, {
                 vehicleType: 'Camion',
                 vehiclePlate: 'MN-5678-CI',
             })
@@ -142,7 +144,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!solo1.isDriver) {
-            await DriverService.register(solo1, {
+            await driverService.register(solo1, {
                 vehicleType: 'Moto',
                 vehiclePlate: 'OP-1111-CI',
             })
@@ -163,7 +165,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!solo2.isDriver) {
-            await DriverService.register(solo2, {
+            await driverService.register(solo2, {
                 vehicleType: 'Voiture',
                 vehiclePlate: 'QR-2222-CI',
             })
@@ -178,7 +180,7 @@ export default class DriversSeeder extends BaseSeeder {
 
         })
         if (!solo3.isDriver) {
-            await DriverService.register(solo3, {
+            await driverService.register(solo3, {
                 vehicleType: 'Moto',
                 vehiclePlate: 'ST-3333-CI',
             })

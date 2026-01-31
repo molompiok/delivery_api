@@ -1,4 +1,5 @@
 import User from '#models/user'
+import db from '@adonisjs/lucid/services/db'
 
 export class AdminService {
     /**
@@ -9,16 +10,24 @@ export class AdminService {
             throw new Error('Only admins can promote users to admin')
         }
 
-        const targetUser = await User.findOrFail(userId)
+        const trx = await db.transaction()
+        try {
+            const targetUser = await User.query({ client: trx }).where('id', userId).forUpdate().firstOrFail()
 
-        if (targetUser.isAdmin) {
-            throw new Error('User is already an admin')
+            if (targetUser.isAdmin) {
+                await trx.commit()
+                throw new Error('User is already an admin')
+            }
+
+            targetUser.isAdmin = true
+            await targetUser.useTransaction(trx).save()
+            await trx.commit()
+
+            return targetUser
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
-
-        targetUser.isAdmin = true
-        await targetUser.save()
-
-        return targetUser
     }
 
     /**

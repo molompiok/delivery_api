@@ -1,13 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import DriverService from '#services/driver_service'
-import TrackingService from '#services/tracking_service'
 import vine from '@vinejs/vine'
-import Document from '#models/document'
+import { inject } from '@adonisjs/core'
 
+@inject()
 export default class DriverController {
-    /**
-     * Validator for driver registration/update
-     */
+    constructor(protected driverService: DriverService) { }
+
     static registerValidator = vine.compile(
         vine.object({
             vehicleType: vine.enum(['MOTORCYCLE', 'CAR', 'VAN', 'TRUCK']).optional(),
@@ -23,193 +22,116 @@ export default class DriverController {
         })
     )
 
-    /**
-     * Register user as driver
-     */
     public async registerAsDriver({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user!
             const data = await request.validateUsing(DriverController.registerValidator)
-            const driverSetting = await DriverService.register(user, data)
-
-            return response.created({
-                message: 'Successfully registered as driver',
-                driverSetting,
-            })
+            const driverSetting = await this.driverService.register(user, data)
+            return response.created({ message: 'Successfully registered as driver', driverSetting })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Get current user's driver profile
-     */
     public async getMyDriverProfile({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-            const driverSetting = await DriverService.getProfile(user)
+            const driverSetting = await this.driverService.getProfile(user)
             return response.ok(driverSetting)
         } catch (error: any) {
             return response.notFound({ message: error.message })
         }
     }
 
-    /**
-     * Get my documents (driver's own documents)
-     */
     public async getMyDocuments({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-
-            if (!user.isDriver) {
-                return response.badRequest({ message: 'User is not registered as a driver' })
-            }
-
-            // Auto-create missing required documents
-            await DriverService.ensureRequiredDocuments(user)
-
-            const documents = await Document.query()
-                .where('tableName', 'User')
-                .where('tableId', user.id)
-                .where('isDeleted', false)
-                .preload('file')
-                .orderBy('createdAt', 'desc')
-
-            return response.ok({
-                documents: documents.map(doc => doc.serialize())
-            })
+            const documents = await this.driverService.listDocuments(user)
+            return response.ok({ documents: documents.map(doc => doc.serialize()) })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Update driver profile
-     */
     public async updateDriverProfile({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user!
             const data = await request.validateUsing(DriverController.registerValidator)
-            const driverSetting = await DriverService.updateProfile(user, data)
-
-            return response.ok({
-                message: 'Driver profile updated',
-                driverSetting,
-            })
+            const driverSetting = await this.driverService.updateProfile(user, data)
+            return response.ok({ message: 'Driver profile updated', driverSetting })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Get pending company invitations
-     */
     public async getInvitations({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-            const invitations = await DriverService.getInvitations(user)
+            const invitations = await this.driverService.getInvitations(user)
             return response.ok(invitations)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Step 4: Accept document access request
-     */
     public async acceptAccessRequest({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            const invitation = await DriverService.acceptAccessRequest(user, params.invitationId)
-
-            return response.ok({
-                message: 'Access granted successfully',
-                invitation,
-            })
+            const invitation = await this.driverService.acceptAccessRequest(user, params.invitationId)
+            return response.ok({ message: 'Access granted successfully', invitation })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Step 7: Accept final fleet invitation
-     */
     public async acceptFleetInvitation({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            const invitation = await DriverService.acceptFleetInvitation(user, params.invitationId)
-
-            return response.ok({
-                message: 'Joined company fleet successfully',
-                invitation,
-            })
+            const invitation = await this.driverService.acceptFleetInvitation(user, params.invitationId)
+            return response.ok({ message: 'Joined company fleet successfully', invitation })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Reject any request (access or fleet)
-     */
     public async rejectRequest({ auth, params, response }: HttpContext) {
         try {
             const user = auth.user!
-            await DriverService.rejectRequest(user, params.invitationId)
-
-            return response.ok({
-                message: 'Request rejected',
-            })
+            await this.driverService.rejectRequest(user, params.invitationId)
+            return response.ok({ message: 'Request rejected' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Get companies the driver is associated with
-     */
     public async getMyCompanies({ auth, response }: HttpContext) {
         try {
             const user = auth.user!
-            const relationships = await DriverService.getCompanies(user)
+            const relationships = await this.driverService.getCompanies(user)
             return response.ok(relationships)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Update current location (GPS Ping)
-     */
     public async updateLocation({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user!
             const { lat, lng, heading } = await request.validateUsing(DriverController.locationValidator)
-
-            await TrackingService.track(user.id, lat, lng, heading)
-
-            return response.ok({
-                message: 'Location updated',
-                timestamp: new Date().toISOString()
-            })
+            await this.driverService.updateLocation(user.id, lat, lng, heading)
+            return response.ok({ message: 'Location updated', timestamp: new Date().toISOString() })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
     }
 
-    /**
-     * Upload a global document (User table)
-     */
     public async uploadDoc(ctx: HttpContext) {
         const { request, response, auth } = ctx
-        const user = auth.user!
-        const { docType } = request.body()
-
-        if (!user.isDriver) {
-            return response.forbidden({ message: 'Only drivers can upload documents' })
-        }
-
         try {
-            const result = await DriverService.uploadDocument(ctx, user, docType)
+            const user = auth.user!
+            const { docType } = request.body()
+            if (!user.isDriver) return response.forbidden({ message: 'Only drivers can upload documents' })
+            const result = await this.driverService.uploadDocument(ctx, user, docType)
             return response.created(result)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

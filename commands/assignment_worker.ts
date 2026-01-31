@@ -51,7 +51,6 @@ export default class AssignmentWorker extends BaseCommand {
       .where('status', 'PENDING')
       .whereNotNull('offeredDriverId')
       .where('offer_expires_at', '<', now.toSQL())
-      .preload('pickupAddress')
 
     if (expiredOrders.length > 0) {
       logger.info({ count: expiredOrders.length.toString }, 'Found expired offers')

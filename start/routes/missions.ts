@@ -11,6 +11,9 @@ router
         router.post('/missions/:id/refuse', [MissionsController, 'refuse'])
         router.post('/missions/:id/status', [MissionsController, 'updateStatus'])
         router.post('/missions/:id/verify-code', [MissionsController, 'verifyCode'])
+
+        router.post('/stops/:stopId/arrival', [MissionsController, 'arrivedAtStop'])
+        router.post('/actions/:actionId/complete', [MissionsController, 'completeAction'])
     })
     .prefix('/api/v1')
     .use(middleware.auth())

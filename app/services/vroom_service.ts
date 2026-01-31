@@ -1,4 +1,3 @@
-import { DateTime } from 'luxon'
 import env from '../../start/env.js'
 import logger from '@adonisjs/core/services/logger'
 import {
@@ -8,9 +7,7 @@ import {
     VroomShipment,
     VroomJob
 } from '../types/vroom.js'
-import Task from '#models/task'
-import Shipment from '#models/shipment'
-import Job from '#models/job'
+import Stop from '#models/stop'
 import Vehicle from '#models/vehicle'
 
 export default class VroomService {
@@ -44,19 +41,19 @@ export default class VroomService {
     }
 
     /**
-     * Builds VROOM input from our Cas G models.
+     * Builds VROOM input from our New Action-Stop models.
+     * Note: In the new model, we group Actions by Stop.
      */
     async buildInput(
         vehicles: Vehicle[],
-        shipments: Shipment[],
-        jobs: Job[]
+        stops: Stop[]
     ): Promise<{ input: VroomInput, idMapping: any }> {
         const vroomVehicles: VroomVehicle[] = []
         const vroomShipments: VroomShipment[] = []
         const vroomJobs: VroomJob[] = []
 
         const mapping = {
-            tasks: new Map<number, string>(),
+            stops: new Map<number, string>(),
             vehicles: new Map<number, string>(),
             count: 1
         }
@@ -66,68 +63,54 @@ export default class VroomService {
             const vroomVhcId = mapping.count++
             mapping.vehicles.set(vroomVhcId, vhc.id)
 
-            // For start/end, we might need the actual address coordinates
-            // Assuming driver current location or fixed depot
-            // This is a placeholder logic:
             const vroomVhc: VroomVehicle = {
                 id: vroomVhcId,
                 description: `${vhc.brand} ${vhc.model}`,
                 capacity: vhc.specs?.maxWeight ? [vhc.specs.maxWeight] : [1000],
-                // start: [lon, lat],
-                // end: [lon, lat],
             }
             vroomVehicles.push(vroomVhc)
         }
 
-        // 2. Process Shipments
-        for (const shp of shipments) {
-            await shp.load('pickupTask')
-            await shp.load('deliveryTask')
+        // 2. Process Stops as Jobs/Shipments
+        // For simplicity in this v1 of Action-Stop conversion:
+        // - PICKUP + DELIVERY combo for the same Item across two stops => VroomShipment
+        // - Single stop SERVICE => VroomJob
 
-            const pTask = shp.pickupTask
-            const dTask = shp.deliveryTask
+        // This is a complex mapping because VROOM expects Shipments or Jobs.
+        // For now, let's treat every Action as a Job if it's SERVICE or standalone,
+        // but the goal is to group them.
 
-            await pTask.load('address')
-            await dTask.load('address')
+        for (const stop of stops) {
+            await stop.load('actions')
+            await stop.load('address')
 
-            const vroomPId = mapping.count++
-            const vroomDId = mapping.count++
+            const vroomStopId = mapping.count++
+            mapping.stops.set(vroomStopId, stop.id)
 
-            mapping.tasks.set(vroomPId, pTask.id)
-            mapping.tasks.set(vroomDId, dTask.id)
-
-            vroomShipments.push({
-                description: `Shipment ${shp.id}`,
-                pickup: {
-                    id: vroomPId,
-                    location: [pTask.address.lng, pTask.address.lat],
-                    service: pTask.serviceTime
-                },
-                delivery: {
-                    id: vroomDId,
-                    location: [dTask.address.lng, dTask.address.lat],
-                    service: dTask.serviceTime
-                },
-                priority: 1 // Default
-            })
-        }
-
-        // 3. Process Jobs
-        for (const job of jobs) {
-            await job.load('task')
-            const task = job.task
-            await task.load('address')
-
-            const vroomJobId = mapping.count++
-            mapping.tasks.set(vroomJobId, task.id)
-
-            vroomJobs.push({
-                id: vroomJobId,
-                description: `Job ${job.id}`,
-                location: [task.address.lng, task.address.lat],
-                service: task.serviceTime,
-                priority: 1
-            })
+            for (const action of stop.actions) {
+                // If it's a service, it's definitely a Job
+                if (action.type === 'SERVICE') {
+                    vroomJobs.push({
+                        id: vroomStopId,
+                        description: `Action ${action.id}`,
+                        location: [stop.address.lng, stop.address.lat],
+                        service: action.serviceTime,
+                        priority: 1
+                    })
+                } else {
+                    // For PICKUP/DELIVERY, we could try to pair them into VroomShipments
+                    // BUT VroomShipment requires two locations. 
+                    // If we only have stops, we can treat them as Jobs with pickup/delivery amounts (VROOM supports this too)
+                    vroomJobs.push({
+                        id: vroomStopId,
+                        description: `${action.type} ${action.id}`,
+                        location: [stop.address.lng, stop.address.lat],
+                        service: action.serviceTime,
+                        amount: action.type === 'PICKUP' ? [action.quantity] : [-action.quantity],
+                        priority: 1
+                    })
+                }
+            }
         }
 
         return {
@@ -137,7 +120,7 @@ export default class VroomService {
                 jobs: vroomJobs
             },
             idMapping: {
-                tasks: Object.fromEntries(mapping.tasks),
+                stops: Object.fromEntries(mapping.stops),
                 vehicles: Object.fromEntries(mapping.vehicles)
             }
         }
@@ -154,23 +137,17 @@ export default class VroomService {
             const vhcId = mapping.vehicles[route.vehicle]
             if (!vhcId) continue
 
-            // 1. Find or create the mission for this vehicle
-            // In a real scenario, we might need to link it to the specific order(s)
-            // For now, we assume missions are managed per-driver/vehicle
-
-            // 2. Update Tasks in sequence
             let sequence = 0
             for (const step of route.steps) {
                 if (step.type === 'start' || step.type === 'end' || step.type === 'break') continue
 
-                const taskId = mapping.tasks[step.id!]
-                if (taskId) {
-                    const task = await Task.find(taskId)
-                    if (task) {
-                        task.sequence = sequence++
-                        task.arrivalTime = step.arrival ? DateTime.now().plus({ seconds: step.arrival }) : null
-                        // If we have multiple missions, we would assign task.missionId here
-                        await task.save()
+                const stopId = mapping.stops[step.id!]
+                if (stopId) {
+                    const stop = await Stop.find(stopId)
+                    if (stop) {
+                        stop.sequence = sequence++
+                        // On pourra aussi estimer l'heure d'arriv au stop
+                        await stop.save()
                     }
                 }
             }

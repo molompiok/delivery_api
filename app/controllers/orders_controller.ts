@@ -2,82 +2,63 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import OrderService from '#services/order_service'
 import vine from '@vinejs/vine'
-import Order from '#models/order'
 
 /**
- * Validates the order creation payload.
+ * Validates the universal order creation payload.
  */
 const createOrderValidator = vine.compile(
     vine.object({
-        waypoints: vine.array(
+        steps: vine.array(
             vine.object({
-                address_text: vine.string().trim().minLength(5).maxLength(255),
-                type: vine.enum(['pickup', 'delivery'] as const),
-                waypoint_sequence: vine.number().optional(),
-                coordinates: vine.array(vine.number()).minLength(2).maxLength(2).optional(),
-                contact_name: vine.string().trim().optional(),
-                contact_phone: vine.string().trim().optional(),
-                note: vine.string().trim().optional(),
-                // Package infos can be tied to a specific waypoint
-                package_infos: vine.array(
+                sequence: vine.number().optional(),
+                linked: vine.boolean().optional(),
+                stops: vine.array(
                     vine.object({
-                        name: vine.string().trim(),
-                        description: vine.string().trim().optional(),
-                        quantity: vine.number().min(1).optional(),
-                        delivery_waypoint_sequence: vine.number().optional(),
-                        dimensions: vine.object({
-                            weight_g: vine.number().optional(),
-                            width_cm: vine.number().optional(),
-                            height_cm: vine.number().optional(),
-                            length_cm: vine.number().optional(),
-                        }).optional(),
-                        mention_warning: vine.enum(['fragile', 'liquid', 'flammable', 'none']).optional(),
+                        address_text: vine.string().trim().minLength(5).maxLength(255),
+                        coordinates: vine.array(vine.number()).minLength(2).maxLength(2).optional(),
+                        sequence: vine.number().optional(),
+                        actions: vine.array(
+                            vine.object({
+                                type: vine.enum(['pickup', 'delivery', 'service'] as const),
+                                transit_item_id: vine.string().trim().optional(),
+                                quantity: vine.number().min(0.001).optional(),
+                                service_time: vine.number().optional(),
+                                confirmation_rules: vine.object({
+                                    otp: vine.boolean().optional(),
+                                    photo: vine.boolean().optional(),
+                                    signature: vine.boolean().optional(),
+                                    scan: vine.boolean().optional(),
+                                }).optional(),
+                                metadata: vine.any().optional(),
+                            })
+                        ).minLength(1)
                     })
-                ).optional(),
+                ).minLength(1)
             })
-        ).minLength(2),
+        ).minLength(1),
+        transit_items: vine.array(
+            vine.object({
+                id: vine.string().trim(),
+                product_id: vine.string().trim().optional(),
+                name: vine.string().trim(),
+                description: vine.string().trim().optional(),
+                packaging_type: vine.enum(['box', 'fluid'] as const).optional(),
+                weight_g: vine.number().optional(),
+                dimensions: vine.object({
+                    width_cm: vine.number().optional(),
+                    height_cm: vine.number().optional(),
+                    length_cm: vine.number().optional(),
+                }).optional(),
+                unitary_price: vine.number().optional(),
+                metadata: vine.any().optional(),
+            })
+        ).optional(),
         ref_id: vine.string().trim().optional(),
         assignment_mode: vine.enum(['GLOBAL', 'INTERNAL', 'TARGET']).optional(),
         priority: vine.enum(['LOW', 'MEDIUM', 'HIGH'] as const).optional(),
         optimize_route: vine.boolean().optional(),
-        note: vine.string().trim().optional(),
-    })
-)
-
-/**
- * Validates the complex order creation payload.
- */
-const createComplexOrderValidator = vine.compile(
-    vine.object({
-        shipments: vine.array(
-            vine.object({
-                pickup: vine.object({
-                    address_text: vine.string().trim(),
-                    coordinates: vine.array(vine.number()).minLength(2).maxLength(2),
-                    service_time: vine.number().optional()
-                }),
-                delivery: vine.object({
-                    address_text: vine.string().trim(),
-                    coordinates: vine.array(vine.number()).minLength(2).maxLength(2),
-                    service_time: vine.number().optional()
-                }),
-                package: vine.object({
-                    name: vine.string().trim(),
-                    weight: vine.number().optional()
-                }).optional()
-            })
-        ).optional(),
-        jobs: vine.array(
-            vine.object({
-                address_text: vine.string().trim(),
-                coordinates: vine.array(vine.number()).minLength(2).maxLength(2),
-                service_time: vine.number().optional()
-            })
-        ).optional(),
-        ref_id: vine.string().trim().optional(),
-        assignment_mode: vine.enum(['GLOBAL', 'INTERNAL', 'TARGET']).optional(),
-        logic_pattern: vine.string().optional(),
-        priority: vine.enum(['LOW', 'MEDIUM', 'HIGH'] as const).optional()
+        allow_overload: vine.boolean().optional(),
+        metadata: vine.any().optional(),
     })
 )
 
@@ -98,15 +79,12 @@ export default class OrdersController {
      * Get an estimation for an order.
      */
     async estimate({ request, response }: HttpContext) {
-        const payload = await request.validateUsing(createOrderValidator)
         try {
+            const payload = await request.validateUsing(createOrderValidator)
             const estimation = await this.orderService.getEstimation(payload)
             return response.ok(estimation)
-        } catch (error) {
-            return response.internalServerError({
-                message: 'Estimation failed',
-                error: error.message
-            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 
@@ -114,41 +92,16 @@ export default class OrdersController {
      * Handle order creation.
      */
     async store({ request, response, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const payload = await request.validateUsing(createOrderValidator)
-
         try {
+            const user = auth.getUserOrFail()
+            const payload = await request.validateUsing(createOrderValidator)
             const order = await this.orderService.createOrder(user.id, payload)
             return response.created({
                 message: 'Order created successfully',
                 order: order.serialize()
             })
-        } catch (error) {
-            return response.internalServerError({
-                message: 'Order creation failed',
-                error: error.message
-            })
-        }
-    }
-
-    /**
-     * Handle complex order creation (Cas G).
-     */
-    async storeComplex({ request, response, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const payload = await request.validateUsing(createComplexOrderValidator)
-
-        try {
-            const order = await this.orderService.createComplexOrder(user.id, payload)
-            return response.created({
-                message: 'Complex order created successfully',
-                order: order.serialize()
-            })
-        } catch (error) {
-            return response.internalServerError({
-                message: 'Complex order creation failed',
-                error: error.message
-            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 
@@ -156,16 +109,13 @@ export default class OrdersController {
      * List client orders.
      */
     async index({ response, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        const orders = await Order.query()
-            .where('clientId', user.id)
-            .preload('legs')
-            .preload('packages')
-            .preload('pickupAddress')
-            .preload('deliveryAddress')
-            .orderBy('createdAt', 'desc')
-
-        return response.ok(orders.map(o => o.serialize()))
+        try {
+            const user = auth.getUserOrFail()
+            const orders = await this.orderService.listOrders(user.id)
+            return response.ok(orders.map(o => o.serialize()))
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
     }
 
     /**
@@ -174,30 +124,10 @@ export default class OrdersController {
     async show({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await Order.query()
-                .where('id', params.id)
-                .andWhere('clientId', user.id)
-                .preload('legs')
-                .preload('packages')
-                .preload('pickupAddress')
-                .preload('deliveryAddress')
-                .preload('tasks', (q) => q.preload('address'))
-                .preload('shipments')
-                .preload('jobs')
-                .preload('driver', (q) => q.preload('driverSetting'))
-                .first()
-
-            if (!order) {
-                return response.notFound({ message: 'Order not found' })
-            }
-
+            const order = await this.orderService.getOrderDetails(params.id, user.id)
             return response.ok(order.serialize())
-        } catch (error) {
-            console.error('Failed to fetch order details:', error);
-            return response.internalServerError({
-                message: 'Failed to fetch order details',
-                error: error.message
-            });
+        } catch (error: any) {
+            return response.notFound({ message: error.message })
         }
     }
 
@@ -205,26 +135,30 @@ export default class OrdersController {
      * Handle order cancellation.
      */
     async cancel({ params, request, response, auth }: HttpContext) {
-        const user = auth.getUserOrFail()
-        await request.validateUsing(cancelOrderValidator)
-
-        const order = await Order.query()
-            .where('id', params.id)
-            .andWhere('clientId', user.id)
-            .first()
-
-        if (!order) {
-            return response.notFound({ message: 'Order not found' })
+        try {
+            const user = auth.getUserOrFail()
+            const { reason } = await request.validateUsing(cancelOrderValidator)
+            const order = await this.orderService.cancelOrder(params.id, user.id, reason)
+            return response.ok({ message: 'Order cancelled successfully', order: order.serialize() })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
+    }
 
-        if (order.status !== 'PENDING') {
-            return response.badRequest({ message: 'Only pending orders can be cancelled' })
+    /**
+     * Handle order update.
+     */
+    async update({ params, request, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const payload = request.all()
+            const order = await this.orderService.updateOrder(params.id, user.id, payload)
+            return response.ok({
+                message: 'Order updated successfully',
+                order: order.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
-
-        order.status = 'CANCELLED'
-        // In a more complete implementation, we might want to log the reason or notify driver
-        await order.save()
-
-        return response.ok({ message: 'Order cancelled successfully', order: order.serialize() })
     }
 }

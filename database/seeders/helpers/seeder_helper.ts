@@ -72,13 +72,13 @@ export async function uploadFakeFile(
     const File = (await import('#models/file')).default
     const fs = await import('node:fs/promises')
     const path = await import('node:path')
-    const os = await import('node:os')
     const crypto = await import('node:crypto')
 
     const category = options.category || 'PDF'
     const ext = category === 'IMAGE' ? 'png' : category === 'PDF' ? 'pdf' : 'json'
     const mimeType = category === 'IMAGE' ? 'image/png' : category === 'PDF' ? 'application/pdf' : 'application/json'
-    const fileName = options.fileName || `fake_${category.toLowerCase()}.${ext}`
+    const finalFileName = options.fileName || `fake_${category.toLowerCase()}.${ext}`
+    console.log(`Generating fake file: ${finalFileName}`)
 
     // Create content
     const content = createFakeFileContent(category)

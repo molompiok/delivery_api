@@ -3,6 +3,7 @@ import CompanyDriverSetting from '#models/company_driver_setting'
 import { ScheduleType } from '#models/schedule'
 import { WorkMode, isTransitioning, getTargetMode } from '#constants/work_mode'
 import NotificationService from '#services/notification_service'
+import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 
 /**
@@ -57,40 +58,51 @@ export class ShiftService {
      * Vérifie et bascule le mode d'un driver spécifique
      */
     async checkAndSwitchDriver(driverSetting: DriverSetting): Promise<void> {
-        const now = DateTime.now()
-        const currentMode = driverSetting.currentMode
+        const trx = await db.transaction()
+        try {
+            // Reload with lock
+            const ds = await DriverSetting.query({ client: trx }).where('id', driverSetting.id).forUpdate().firstOrFail()
+            const now = DateTime.now()
+            const currentMode = ds.currentMode
 
-        // Si en transition, vérifier si on peut finaliser
-        if (isTransitioning(currentMode)) {
-            await this.handleTransition(driverSetting)
-            return
-        }
+            // Si en transition, vérifier si on peut finaliser
+            if (isTransitioning(currentMode)) {
+                await this.handleTransition(ds, trx)
+                await trx.commit()
+                return
+            }
 
-        // Vérifier si un shift ETP est actif maintenant
-        const hasActiveShift = await this.hasActiveETPShift(driverSetting.userId, now)
+            // Vérifier si un shift ETP est actif maintenant
+            const hasActiveShift = await this.hasActiveETPShift(ds.userId, now)
 
-        // Déterminer le mode attendu
-        const expectedMode = hasActiveShift ? WorkMode.ETP : WorkMode.IDEP
+            // Déterminer le mode attendu
+            const expectedMode = hasActiveShift ? WorkMode.ETP : WorkMode.IDEP
 
-        // Si le mode actuel correspond au mode attendu, rien à faire
-        if (currentMode === expectedMode) {
-            return
-        }
+            // Si le mode actuel correspond au mode attendu, rien à faire
+            if (currentMode === expectedMode) {
+                await trx.commit()
+                return
+            }
 
-        // Sinon, tenter la bascule
-        if (expectedMode === WorkMode.ETP && currentMode === WorkMode.IDEP) {
-            // Shift ETP commence
-            await this.switchToETP(driverSetting)
-        } else if (expectedMode === WorkMode.IDEP && currentMode === WorkMode.ETP) {
-            // Shift ETP se termine
-            await this.switchToIDEP(driverSetting)
+            // Sinon, tenter la bascule
+            if (expectedMode === WorkMode.ETP && currentMode === WorkMode.IDEP) {
+                // Shift ETP commence
+                await this.switchToETP(ds, trx)
+            } else if (expectedMode === WorkMode.IDEP && currentMode === WorkMode.ETP) {
+                // Shift ETP se termine
+                await this.switchToIDEP(ds, trx)
+            }
+            await trx.commit()
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
     }
 
     /**
      * Bascule vers le mode ETP
      */
-    private async switchToETP(driverSetting: DriverSetting): Promise<void> {
+    private async switchToETP(driverSetting: DriverSetting, trx?: any): Promise<void> {
         // Vérifier si le driver a une mission en cours
         const hasActiveMission = await this.hasActiveMission(driverSetting.userId)
 
@@ -98,7 +110,7 @@ export class ShiftService {
             // Mission en cours → Passer en transition
             console.log(`[SHIFT] Driver ${driverSetting.userId} has active mission, going to IDEP_TO_ETP`)
             driverSetting.currentMode = WorkMode.IDEP_TO_ETP
-            await driverSetting.save()
+            await driverSetting.useTransaction(trx).save()
 
             // Notifier le driver
             const user = await driverSetting.related('user').query().first()
@@ -111,7 +123,7 @@ export class ShiftService {
             // Pas de mission → Bascule immédiate
             console.log(`[SHIFT] Driver ${driverSetting.userId} switching to ETP`)
             driverSetting.currentMode = WorkMode.ETP
-            await driverSetting.save()
+            await driverSetting.useTransaction(trx).save()
 
             // Notifier le driver
             const user = await driverSetting.related('user').query().first()
@@ -127,7 +139,7 @@ export class ShiftService {
     /**
      * Bascule vers le mode IDEP
      */
-    private async switchToIDEP(driverSetting: DriverSetting): Promise<void> {
+    private async switchToIDEP(driverSetting: DriverSetting, trx?: any): Promise<void> {
         // Vérifier si le driver a une mission en cours
         const hasActiveMission = await this.hasActiveMission(driverSetting.userId)
 
@@ -135,7 +147,7 @@ export class ShiftService {
             // Mission en cours → Passer en transition
             console.log(`[SHIFT] Driver ${driverSetting.userId} has active mission, going to ETP_TO_IDEP`)
             driverSetting.currentMode = WorkMode.ETP_TO_IDEP
-            await driverSetting.save()
+            await driverSetting.useTransaction(trx).save()
 
             // Notifier le driver
             const user = await driverSetting.related('user').query().first()
@@ -148,7 +160,7 @@ export class ShiftService {
             // Pas de mission → Bascule immédiate
             console.log(`[SHIFT] Driver ${driverSetting.userId} switching to IDEP`)
             driverSetting.currentMode = WorkMode.IDEP
-            await driverSetting.save()
+            await driverSetting.useTransaction(trx).save()
 
             // Notifier le driver
             const user = await driverSetting.related('user').query().first()
@@ -162,7 +174,7 @@ export class ShiftService {
      * Gère les transitions en attente
      * Si la mission est terminée, finalise la bascule
      */
-    private async handleTransition(driverSetting: DriverSetting): Promise<void> {
+    private async handleTransition(driverSetting: DriverSetting, trx?: any): Promise<void> {
         const hasActiveMission = await this.hasActiveMission(driverSetting.userId)
 
         // Si la mission est toujours en cours, on attend
@@ -179,7 +191,7 @@ export class ShiftService {
 
         console.log(`[SHIFT] Driver ${driverSetting.userId} transition complete: ${driverSetting.currentMode} → ${targetMode}`)
         driverSetting.currentMode = targetMode
-        await driverSetting.save()
+        await driverSetting.useTransaction(trx).save()
 
         // Notifier le driver
         const user = await driverSetting.related('user').query().first()
@@ -195,43 +207,57 @@ export class ShiftService {
      * Force manuellement le mode de travail pour la journée en cours
      */
     async forceMode(userId: string, mode: 'IDEP' | 'ETP', companyId?: string): Promise<void> {
-        const now = DateTime.now()
-        const scheduleType = mode === 'ETP' ? ScheduleType.WORK : ScheduleType.CLOSED
+        const trx = await db.transaction()
+        try {
+            const now = DateTime.now()
+            const scheduleType = mode === 'ETP' ? ScheduleType.WORK : ScheduleType.CLOSED
 
-        const ownerType = mode === 'ETP' ? 'Company' : 'User'
-        const ownerId = mode === 'ETP' ? companyId! : userId
+            const ownerType = mode === 'ETP' ? 'Company' : 'User'
+            const ownerId = mode === 'ETP' ? companyId! : userId
 
-        if (mode === 'ETP' && !companyId) {
-            throw new Error('companyId is required to force ETP mode')
-        }
+            if (mode === 'ETP' && !companyId) {
+                throw new Error('companyId is required to force ETP mode')
+            }
 
-        const Schedule = (await import('#models/schedule')).default
-        const { RecurrenceType } = await import('#models/schedule')
+            const Schedule = (await import('#models/schedule')).default
+            const { RecurrenceType } = await import('#models/schedule')
 
-        // Créer l'override
-        const schedule = await Schedule.create({
-            ownerType,
-            ownerId,
-            scheduleType,
-            recurrenceType: RecurrenceType.MANUAL_OVERRIDE,
-            specificDate: now,
-            startTime: '00:00',
-            endTime: '23:59',
-            label: `Force switch to ${mode} (Manual)`,
-            isActive: true,
-            timezone: 'Africa/Abidjan'
-        })
+            // Créer l'override
+            const schedule = await Schedule.create({
+                ownerType,
+                ownerId,
+                scheduleType,
+                recurrenceType: RecurrenceType.MANUAL_OVERRIDE,
+                specificDate: now,
+                startTime: '00:00',
+                endTime: '23:59',
+                label: `Force switch to ${mode} (Manual)`,
+                isActive: true,
+                timezone: 'Africa/Abidjan'
+            }, { client: trx })
 
-        // Assigner le chauffeur si c'est une company
-        if (mode === 'ETP') {
-            await schedule.related('assignedUsers').attach([userId])
-        }
+            // Assigner le chauffeur si c'est une company
+            if (mode === 'ETP') {
+                await schedule.related('assignedUsers').attach([userId], trx)
+            }
 
-        // Déclencher la bascule immédiate
-        const DriverSetting = (await import('#models/driver_setting')).default
-        const setting = await DriverSetting.query().where('userId', userId).first()
-        if (setting) {
-            await this.checkAndSwitchDriver(setting)
+            // Déclencher la bascule immédiate
+            const DriverSetting = (await import('#models/driver_setting')).default
+            const setting = await DriverSetting.query({ client: trx }).where('userId', userId).forUpdate().first()
+            if (setting) {
+                // We pass the settings to checkAndSwitchDriver which starts ANOTHER transaction?
+                // Wait, checkAndSwitchDriver starts its own transaction. 
+                // Let's refactor checkAndSwitchDriver to accept an optional trx to avoid nested transactions if possible, 
+                // but Lucid supports nested transactions if configured.
+                // For simplicity, let's commit here and THEN call it.
+                await trx.commit()
+                await this.checkAndSwitchDriver(setting)
+            } else {
+                await trx.commit()
+            }
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
     }
 
@@ -247,8 +273,10 @@ export class ShiftService {
         if (!relation) return false
 
         // Utilise la résolution de priorité centralisée (SPECIFIC > RANGE > WEEKLY)
+        const app = (await import('@adonisjs/core/services/app')).default
         const ScheduleService = (await import('#services/schedule_service')).default
-        const effective = await ScheduleService.getEffectiveSchedule(
+        const scheduleService = await app.container.make(ScheduleService)
+        const effective = await scheduleService.getEffectiveSchedule(
             'Company',
             relation.companyId,
             dateTime,

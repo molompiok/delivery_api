@@ -2,6 +2,7 @@ import Order from '#models/order'
 import User from '#models/user'
 import { inject } from '@adonisjs/core'
 import logger from '@adonisjs/core/services/logger'
+import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 import emitter from '@adonisjs/core/services/emitter'
 import MissionOffered from '#events/mission_offered'
@@ -129,12 +130,13 @@ export default class DispatchService {
      * Dispatch to the global pool using Geo-search.
      */
     private async handleGlobalDispatch(order: Order) {
-        // 1. Charger l'adresse de collecte
-        await order.load('pickupAddress')
-        const pickup = order.pickupAddress
+        // 1. Charger le premier stop (point de dpart/collecte)
+        await order.load('stops', (q) => q.orderBy('sequence', 'asc').limit(1).preload('address'))
+        const firstStop = order.stops[0]
+        const pickup = firstStop?.address
 
         if (!pickup) {
-            logger.error({ orderId: order.id }, 'Global dispatch failed: No pickup address')
+            logger.error({ orderId: order.id }, 'Global dispatch failed: No initial stop/address found')
             return
         }
 
@@ -251,32 +253,45 @@ export default class DispatchService {
      * Offer the order to a specific driver.
      */
     private async offerToDriver(order: Order, driverId: string) {
-        // Durée de l'offre basée sur la priorité
-        const timeoutSeconds = order.priority === 'HIGH' ? 60 : 180 // 1 min vs 3 min
+        const trx = await db.transaction()
+        try {
+            // Durée de l'offre basée sur la priorité
+            const timeoutSeconds = order.priority === 'HIGH' ? 60 : 180 // 1 min vs 3 min
 
-        // 1. Verrouiller le chauffeur dans Redis immédiatement pour éviter les doubles offres
-        const state = await RedisService.getDriverState(driverId)
-        if (!state || state.status !== 'ONLINE') {
-            logger.warn({ orderId: order.id, driverId }, 'Offer aborted: Driver is no longer ONLINE')
-            return
+            // 1. Verrouiller le chauffeur dans Redis immédiatement pour éviter les doubles offres
+            // (Redis locking is already handled outside ORM, but we need to lock the Order in DB)
+            const state = await RedisService.getDriverState(driverId)
+            if (!state || state.status !== 'ONLINE') {
+                logger.warn({ orderId: order.id, driverId }, 'Offer aborted: Driver is no longer ONLINE')
+                await trx.rollback()
+                return
+            }
+
+            // Lock order record
+            const o = await Order.query({ client: trx }).where('id', order.id).forUpdate().firstOrFail()
+
+            // 2. Mettre à jour l'ordre
+            o.offeredDriverId = driverId
+            o.offerExpiresAt = DateTime.now().plus({ seconds: timeoutSeconds })
+            o.assignmentAttemptCount++
+            await o.useTransaction(trx).save()
+
+            // 3. Mettre à jour le statut du chauffeur à OFFERING dans Redis
+            // Note: On ne touche pas à current_orders car l'offre n'est pas encore acceptée
+            await RedisService.updateDriverState(driverId, { status: 'OFFERING' })
+
+            await trx.commit()
+
+            emitter.emit(MissionOffered, new MissionOffered({
+                orderId: o.id,
+                driverId: driverId,
+                expiresAt: o.offerExpiresAt.toISO()!
+            }))
+
+            logger.info({ orderId: o.id, driverId, expiresAt: o.offerExpiresAt.toISO() }, 'Order offered to driver')
+        } catch (error) {
+            await trx.rollback()
+            throw error
         }
-
-        // 2. Mettre à jour l'ordre
-        order.offeredDriverId = driverId
-        order.offerExpiresAt = DateTime.now().plus({ seconds: timeoutSeconds })
-        order.assignmentAttemptCount++
-        await order.save()
-
-        // 3. Mettre à jour le statut du chauffeur à OFFERING dans Redis
-        // Note: On ne touche pas à current_orders car l'offre n'est pas encore acceptée
-        await RedisService.updateDriverState(driverId, { status: 'OFFERING' })
-
-        emitter.emit(MissionOffered, new MissionOffered({
-            orderId: order.id,
-            driverId: driverId,
-            expiresAt: order.offerExpiresAt.toISO()!
-        }))
-
-        logger.info({ orderId: order.id, driverId, expiresAt: order.offerExpiresAt.toISO() }, 'Order offered to driver')
     }
 }

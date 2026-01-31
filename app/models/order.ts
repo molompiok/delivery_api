@@ -2,17 +2,16 @@ import { DateTime } from 'luxon'
 import { BaseModel, beforeCreate, column, belongsTo, hasOne } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
-import Package from '#models/package'
 import Mission from '#models/mission'
-import Address from '#models/address'
 import Vehicle from '#models/vehicle'
 import OrderLeg from '#models/order_leg'
-import Task from '#models/task'
-import Shipment from '#models/shipment'
-import Job from '#models/job'
+import Step from '#models/step'
+import Stop from '#models/stop'
+import Action from '#models/action'
+import TransitItem from '#models/transit_item'
 import type { BelongsTo, HasOne, HasMany } from '@adonisjs/lucid/types/relations'
 import { hasMany } from '@adonisjs/lucid/orm'
-import type { PricingDetails, WaypointSummaryItem } from '../types/logistics.js'
+import type { PricingDetails } from '../types/logistics.js'
 
 export default class Order extends BaseModel {
     @column({ isPrimary: true })
@@ -62,6 +61,9 @@ export default class Order extends BaseModel {
     @column()
     declare logicPattern: string | null
 
+    @column()
+    declare isDeleted: boolean
+
     @column({
         prepare: (value: PricingDetails) => value ? JSON.stringify(value) : JSON.stringify({}),
         consume: (value) => typeof value === 'string' ? JSON.parse(value) : value
@@ -69,22 +71,7 @@ export default class Order extends BaseModel {
     declare pricingData: PricingDetails
 
     @column()
-    declare packageId: string | null
-
-    @column()
-    declare pickupAddressId: string
-
-    @column()
-    declare deliveryAddressId: string
-
-    @column()
     declare calculationEngine: string | null
-
-    @column({
-        prepare: (value: WaypointSummaryItem[]) => value ? JSON.stringify(value) : null,
-        consume: (value) => typeof value === 'string' ? JSON.parse(value) : value
-    })
-    declare waypointsSummary: WaypointSummaryItem[] | null
 
     @column()
     declare totalDistanceMeters: number | null
@@ -121,17 +108,8 @@ export default class Order extends BaseModel {
     @belongsTo(() => User, { foreignKey: 'clientId' })
     declare client: BelongsTo<typeof User>
 
-    @belongsTo(() => Address, { foreignKey: 'pickupAddressId' })
-    declare pickupAddress: BelongsTo<typeof Address>
-
-    @belongsTo(() => Address, { foreignKey: 'deliveryAddressId' })
-    declare deliveryAddress: BelongsTo<typeof Address>
-
     @belongsTo(() => Vehicle)
     declare vehicle: BelongsTo<typeof Vehicle>
-
-    @hasMany(() => Package)
-    declare packages: HasMany<typeof Package>
 
     @hasOne(() => Mission)
     declare mission: HasOne<typeof Mission>
@@ -139,14 +117,17 @@ export default class Order extends BaseModel {
     @hasMany(() => OrderLeg)
     declare legs: HasMany<typeof OrderLeg>
 
-    @hasMany(() => Task)
-    declare tasks: HasMany<typeof Task>
+    @hasMany(() => Step)
+    declare steps: HasMany<typeof Step>
 
-    @hasMany(() => Shipment)
-    declare shipments: HasMany<typeof Shipment>
+    @hasMany(() => Stop)
+    declare stops: HasMany<typeof Stop>
 
-    @hasMany(() => Job)
-    declare jobs: HasMany<typeof Job>
+    @hasMany(() => Action)
+    declare actions: HasMany<typeof Action>
+
+    @hasMany(() => TransitItem)
+    declare transitItems: HasMany<typeof TransitItem>
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
