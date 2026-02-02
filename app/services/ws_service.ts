@@ -63,6 +63,17 @@ class WsService {
             this.io.emit(event, data)
         }
     }
+
+    /**
+     * Notify a driver that their route has been updated.
+     */
+    public notifyDriverRouteUpdate(driverId: string, orderId: string) {
+        this.emitToRoom(`driver:${driverId}`, 'route_updated', {
+            orderId,
+            message: 'Your route has been updated. Please refresh your view.',
+            timestamp: new Date().toISOString()
+        })
+    }
 }
 
 export default new WsService()

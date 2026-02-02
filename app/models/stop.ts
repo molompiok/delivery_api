@@ -48,11 +48,23 @@ export default class Stop extends BaseModel {
     })
     declare metadata: any
 
+    @column()
+    declare originalId: string | null
+
+    @column()
+    declare isPendingChange: boolean
+
+    @column()
+    declare isDeleteRequired: boolean
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @belongsTo(() => Stop, { foreignKey: 'originalId' })
+    declare original: BelongsTo<typeof Stop>
 
     @belongsTo(() => Order, { foreignKey: 'orderId' })
     declare order: BelongsTo<typeof Order>

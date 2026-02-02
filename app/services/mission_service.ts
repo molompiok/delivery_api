@@ -161,13 +161,16 @@ export default class MissionService {
             for (const proof of action.proofs) {
                 const submittedValue = proofs[proof.key]
 
-                if (proof.type === 'OTP') {
-                    if (!submittedValue || submittedValue !== proof.expectedValue) {
-                        throw new Error(`Invalid or missing OTP for proof: ${proof.key}`)
+                if (proof.type === 'CODE') {
+                    // Compare mode: verify submitted code matches expected
+                    if (proof.metadata?.compare) {
+                        if (!submittedValue || submittedValue !== proof.expectedValue) {
+                            throw new Error(`Invalid or missing code for proof: ${proof.key}`)
+                        }
                     }
                     proof.submittedValue = submittedValue
                     proof.isVerified = true
-                } else if (['PHOTO', 'SIGNATURE', 'ID_CARD'].includes(proof.type)) {
+                } else if (proof.type === 'PHOTO') {
                     // Check if we have files for this proof key
                     const relevantFiles = files.filter(f => f.fieldName === proof.key)
 

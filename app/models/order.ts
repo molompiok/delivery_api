@@ -53,7 +53,7 @@ export default class Order extends BaseModel {
     declare assignmentAttemptCount: number
 
     @column()
-    declare status: 'PENDING' | 'ACCEPTED' | 'AT_PICKUP' | 'COLLECTED' | 'AT_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE'
+    declare status: 'DRAFT' | 'PENDING' | 'ACCEPTED' | 'AT_PICKUP' | 'COLLECTED' | 'AT_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE'
 
     @column()
     declare isComplex: boolean

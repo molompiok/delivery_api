@@ -1,0 +1,9 @@
+HTTP/1.1 400 Bad Request
+x-request-id: u3z3fbpfci9y1zkypzvcidg9
+content-length: 53
+content-type: application/json; charset=utf-8
+Date: Mon, 02 Feb 2026 09:40:23 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"message":"Failed to finalize order: Row not found"}

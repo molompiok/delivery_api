@@ -17,7 +17,7 @@ export default class ActionProof extends BaseModel {
     declare actionId: string
 
     @column()
-    declare type: 'OTP' | 'PHOTO' | 'SIGNATURE' | 'ID_CARD'
+    declare type: 'CODE' | 'PHOTO'
 
     @column()
     declare key: string

@@ -5,6 +5,8 @@ import { generateId } from '../utils/id_generator.js'
 export interface AccessList {
   userIds: string[]
   companyIds: string[]
+  companyDriverIds: string[]  // All drivers of these companies get access
+  dynamicQuery: string | null // SQL query that returns user IDs (game changer)
 }
 
 export interface FileConfig {
@@ -71,17 +73,27 @@ export default class FileData extends BaseModel {
 
   // --- Permission Check Methods ---
 
+  /**
+   * Synchronous write check (for backward compatibility)
+   * Does NOT evaluate companyDriverIds or dynamicQuery
+   */
   canWrite(userId: string, userCompanyId?: string | null): boolean {
     // Owner always has write access
     if (userId === this.ownerId) return true
 
-    // Check write list
+    // Check write list - explicit user
     if (this.writeAccess.userIds.includes(userId)) return true
+
+    // Check write list - company managers
     if (userCompanyId && this.writeAccess.companyIds.includes(userCompanyId)) return true
 
     return false
   }
 
+  /**
+   * Synchronous read check (for backward compatibility)
+   * Does NOT evaluate companyDriverIds or dynamicQuery
+   */
   canRead(userId: string, userCompanyId?: string | null): boolean {
     // Write implies Read
     if (this.canWrite(userId, userCompanyId)) return true
@@ -92,6 +104,83 @@ export default class FileData extends BaseModel {
 
     return false
   }
+
+  /**
+   * Async write check - evaluates companyDriverIds and dynamicQuery
+   */
+  async canWriteAsync(userId: string, userCompanyId?: string | null): Promise<boolean> {
+    // Sync checks first
+    if (this.canWrite(userId, userCompanyId)) return true
+
+    // Check companyDriverIds - is user a driver for one of these companies?
+    if (this.writeAccess.companyDriverIds.length > 0) {
+      const { default: db } = await import('@adonisjs/lucid/services/db')
+      const driverEntry = await db.from('company_driver_settings')
+        .where('user_id', userId)
+        .whereIn('company_id', this.writeAccess.companyDriverIds)
+        .where('status', 'APPROVED')
+        .first()
+      if (driverEntry) return true
+    }
+
+    // Check dynamicQuery - execute SQL and see if userId is in results
+    if (this.writeAccess.dynamicQuery) {
+      const allowed = await this.executeDynamicQuery(this.writeAccess.dynamicQuery)
+      if (allowed.includes(userId)) return true
+    }
+
+    return false
+  }
+
+  /**
+   * Async read check - evaluates companyDriverIds and dynamicQuery
+   */
+  async canReadAsync(userId: string, userCompanyId?: string | null): Promise<boolean> {
+    // Write implies Read
+    if (await this.canWriteAsync(userId, userCompanyId)) return true
+
+    // Sync read checks
+    if (this.readAccess.userIds.includes(userId)) return true
+    if (userCompanyId && this.readAccess.companyIds.includes(userCompanyId)) return true
+
+    // Check companyDriverIds - is user a driver for one of these companies?
+    if (this.readAccess.companyDriverIds.length > 0) {
+      const { default: db } = await import('@adonisjs/lucid/services/db')
+      const driverEntry = await db.from('company_driver_settings')
+        .where('user_id', userId)
+        .whereIn('company_id', this.readAccess.companyDriverIds)
+        .where('status', 'APPROVED')
+        .first()
+      if (driverEntry) return true
+    }
+
+    // Check dynamicQuery
+    if (this.readAccess.dynamicQuery) {
+      const allowed = await this.executeDynamicQuery(this.readAccess.dynamicQuery)
+      if (allowed.includes(userId)) return true
+    }
+
+    return false
+  }
+
+  /**
+   * Execute a dynamic SQL query that returns user IDs
+   * Query MUST return a column named 'user_id'
+   * Example: "SELECT user_id FROM missions WHERE order_id = 'ord_xxx'"
+   */
+  private async executeDynamicQuery(query: string): Promise<string[]> {
+    try {
+      const { default: db } = await import('@adonisjs/lucid/services/db')
+      const results = await db.rawQuery(query)
+      // Results format depends on driver, but typically rows[0] for pg
+      const rows = results.rows || results[0] || []
+      return rows.map((r: any) => r.user_id || r.driver_id).filter(Boolean)
+    } catch (error) {
+      console.error('[FileData] Dynamic query execution failed:', error)
+      return []
+    }
+  }
+
 
   // --- Static Helpers ---
 
@@ -114,8 +203,8 @@ export default class FileData extends BaseModel {
         tableColumn,
         tableId,
         ownerId,
-        readAccess: { userIds: [], companyIds: [] },
-        writeAccess: { userIds: [], companyIds: [] },
+        readAccess: { userIds: [], companyIds: [], companyDriverIds: [], dynamicQuery: null },
+        writeAccess: { userIds: [], companyIds: [], companyDriverIds: [], dynamicQuery: null },
         config
       })
     }

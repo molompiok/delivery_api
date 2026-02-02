@@ -1,30 +1,28 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
-import OrderService from '#services/order_service'
-import vine from '@vinejs/vine'
-
-const updateStepValidator = vine.compile(
-    vine.object({
-        sequence: vine.number().optional(),
-        linked: vine.boolean().optional(),
-        metadata: vine.any().optional(),
-    })
-)
+import StepService from '#services/order/step_service'
 
 @inject()
 export default class StepsController {
-    constructor(protected orderService: OrderService) { }
+    constructor(protected stepService: StepService) { }
+
+    async store({ params, request, response, auth }: HttpContext) {
+        const user = auth.getUserOrFail()
+        const payload = request.all()
+        const step = await this.stepService.addStep(params.orderId, user.id, payload)
+        return response.created(step)
+    }
 
     async update({ params, request, response, auth }: HttpContext) {
         const user = auth.getUserOrFail()
-        const payload = await request.validateUsing(updateStepValidator)
-        const step = await this.orderService.updateStep(params.id, user.id, payload)
-        return response.ok(step)
+        const payload = request.all()
+        const result = await this.stepService.updateStep(params.id, user.id, payload)
+        return response.ok(result)
     }
 
     async destroy({ params, response, auth }: HttpContext) {
         const user = auth.getUserOrFail()
-        await this.orderService.removeStep(params.id, user.id)
-        return response.noContent()
+        const result = await this.stepService.removeStep(params.id, user.id)
+        return response.ok(result)
     }
 }

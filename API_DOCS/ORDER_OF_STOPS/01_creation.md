@@ -15,6 +15,9 @@ Cette étape concerne la réception des commandes via l'API et leur persistance 
     - Création des `TransitItems` et liaison optionnelle aux `Products` (Company only).
     - Création des `Actions` liées aux `Stops` et `TransitItems`.
     - Calcul de la charge initiale et dynamique du véhicule.
+- **Patterns de Création** :
+    - **Mode Bulk** : `POST /v1/orders/complex` - Crée toute la structure (items, steps, stops, actions) en une seule transaction atomique.
+    - **Mode Atomique** : `POST /v1/orders/initiate` -> `addStep` -> `addStop` -> `addAction` -> `submit`. Permet une construction segmentée dans le Dashboard.
 - **Suppression du Legacy** :
     - Retrait de `createComplexOrder` (fusionnée dans la logique universelle).
     - Nettoyage des appels à `Task`, `Shipment`, `Job` et `Package`.

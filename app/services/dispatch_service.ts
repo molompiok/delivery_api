@@ -8,6 +8,7 @@ import emitter from '@adonisjs/core/services/emitter'
 import MissionOffered from '#events/mission_offered'
 import RedisService, { CondensedDriverState } from '#services/redis_service'
 import redis from '@adonisjs/redis/services/main'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 @inject()
 export default class DispatchService {
@@ -16,7 +17,7 @@ export default class DispatchService {
     /**
      * Main entry point to dispatch an order based on its assignment mode.
      */
-    async dispatch(order: Order) {
+    async dispatch(order: Order, trx?: TransactionClientContract) {
         logger.info({ orderId: order.id, mode: order.assignmentMode, refId: order.refId }, 'Starting dispatch process')
 
         // S'assurer que la commande est toujours PENDING
@@ -33,14 +34,14 @@ export default class DispatchService {
 
         switch (order.assignmentMode) {
             case 'TARGET':
-                await this.handleTargetDispatch(order)
+                await this.handleTargetDispatch(order, trx)
                 break
             case 'INTERNAL':
-                await this.handleInternalDispatch(order)
+                await this.handleInternalDispatch(order, undefined, trx)
                 break
             case 'GLOBAL':
             default:
-                await this.handleGlobalDispatch(order)
+                await this.handleGlobalDispatch(order, trx)
                 break
         }
     }
@@ -48,10 +49,10 @@ export default class DispatchService {
     /**
      * Dispatch to a specific target (Driver or Company) via Ref-ID.
      */
-    private async handleTargetDispatch(order: Order) {
+    private async handleTargetDispatch(order: Order, trx?: TransactionClientContract) {
         if (!order.refId) {
             logger.warn({ orderId: order.id }, 'Target dispatch failed: No refId. Falling back to Global.')
-            return this.handleGlobalDispatch(order)
+            return this.handleGlobalDispatch(order, trx)
         }
 
         // 1. Essayer de trouver un chauffeur par son ID (liv_XXXX ou NanoID)
@@ -64,7 +65,7 @@ export default class DispatchService {
             const state = await RedisService.getDriverState(driver.id)
             if (state && state.status === 'ONLINE') {
                 logger.info({ orderId: order.id, driverId: driver.id }, 'Target dispatch: Found specific driver')
-                return this.offerToDriver(order, driver.id)
+                return this.offerToDriver(order, driver.id, trx)
             }
         }
 
@@ -73,20 +74,20 @@ export default class DispatchService {
         const company = await Company.find(order.refId)
         if (company) {
             logger.info({ orderId: order.id, companyId: company.id }, 'Target dispatch: Found company, treating as INTERNAL')
-            return this.handleInternalDispatch(order, company.id)
+            return this.handleInternalDispatch(order, company.id, trx)
         }
 
         logger.warn({ orderId: order.id, refId: order.refId }, 'Target dispatch failed: No valid target. Falling back.')
         // Note: Si c'était une commande "obligatoire" pour cet acteur, on ne devrait peut-être pas fallback.
         // Mais pour l'instant on garde le fallback global.
-        return this.handleGlobalDispatch(order)
+        return this.handleGlobalDispatch(order, trx)
     }
 
     /**
      * Dispatch to a company fleet.
      * @param forcedCompanyId If provided, ignore order client's company
      */
-    private async handleInternalDispatch(order: Order, forcedCompanyId?: string) {
+    private async handleInternalDispatch(order: Order, forcedCompanyId?: string, trx?: TransactionClientContract) {
         let companyId = forcedCompanyId
         if (!companyId) {
             await order.load('client')
@@ -96,7 +97,7 @@ export default class DispatchService {
         if (!companyId) {
             logger.error({ orderId: order.id }, 'INTERNAL dispatch requires company context')
             order.status = 'NO_DRIVER_AVAILABLE'
-            await order.save()
+            await order.useTransaction(trx!).save()
             throw new Error('INTERNAL dispatch requires company context')
         }
 
@@ -115,13 +116,13 @@ export default class DispatchService {
             const state = await RedisService.getDriverState(driver.id)
             if (state && state.status === 'ONLINE' && state.active_company_id === companyId) {
                 logger.info({ orderId: order.id, driverId: driver.id }, 'Internal dispatch: Best candidate found')
-                return this.offerToDriver(order, driver.id)
+                return this.offerToDriver(order, driver.id, trx)
             }
         }
 
         logger.warn({ orderId: order.id, companyId }, 'INTERNAL dispatch: No drivers available in company fleet')
         order.status = 'NO_DRIVER_AVAILABLE'
-        await order.save()
+        await order.useTransaction(trx!).save()
         // TODO: Notify client that no driver is available
         // Ne bascule PAS en global automatiquement pour "INTERNE" (règle métier stricte)
     }
@@ -129,7 +130,7 @@ export default class DispatchService {
     /**
      * Dispatch to the global pool using Geo-search.
      */
-    private async handleGlobalDispatch(order: Order) {
+    private async handleGlobalDispatch(order: Order, trx?: TransactionClientContract) {
         // 1. Charger le premier stop (point de dpart/collecte)
         await order.load('stops', (q) => q.orderBy('sequence', 'asc').limit(1).preload('address'))
         const firstStop = order.stops[0]
@@ -155,7 +156,7 @@ export default class DispatchService {
             // Critères : ONLINE et acceptant les ordres globaux
             if (state && state.status === 'ONLINE') {
                 logger.info({ orderId: order.id, driverId: candidate.id, dist: candidate.distance }, 'Global dispatch: Found nearby ONLINE driver')
-                return this.offerToDriver(order, candidate.id)
+                return this.offerToDriver(order, candidate.id, trx)
             }
         }
 
@@ -186,7 +187,7 @@ export default class DispatchService {
                         distanceToPickup,
                         currentOrders: state.current_orders.length
                     }, 'Global dispatch: Found BUSY driver eligible for chaining')
-                    return this.offerToDriver(order, state.id)
+                    return this.offerToDriver(order, state.id, trx)
                 }
             }
         }
@@ -252,8 +253,8 @@ export default class DispatchService {
     /**
      * Offer the order to a specific driver.
      */
-    private async offerToDriver(order: Order, driverId: string) {
-        const trx = await db.transaction()
+    private async offerToDriver(order: Order, driverId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
         try {
             // Durée de l'offre basée sur la priorité
             const timeoutSeconds = order.priority === 'HIGH' ? 60 : 180 // 1 min vs 3 min
@@ -263,24 +264,24 @@ export default class DispatchService {
             const state = await RedisService.getDriverState(driverId)
             if (!state || state.status !== 'ONLINE') {
                 logger.warn({ orderId: order.id, driverId }, 'Offer aborted: Driver is no longer ONLINE')
-                await trx.rollback()
+                if (!trx) await effectiveTrx.rollback()
                 return
             }
 
             // Lock order record
-            const o = await Order.query({ client: trx }).where('id', order.id).forUpdate().firstOrFail()
+            const o = await Order.query({ client: effectiveTrx }).where('id', order.id).forUpdate().firstOrFail()
 
             // 2. Mettre à jour l'ordre
             o.offeredDriverId = driverId
             o.offerExpiresAt = DateTime.now().plus({ seconds: timeoutSeconds })
             o.assignmentAttemptCount++
-            await o.useTransaction(trx).save()
+            await o.useTransaction(effectiveTrx).save()
 
             // 3. Mettre à jour le statut du chauffeur à OFFERING dans Redis
             // Note: On ne touche pas à current_orders car l'offre n'est pas encore acceptée
             await RedisService.updateDriverState(driverId, { status: 'OFFERING' })
 
-            await trx.commit()
+            if (!trx) await effectiveTrx.commit()
 
             emitter.emit(MissionOffered, new MissionOffered({
                 orderId: o.id,
@@ -290,7 +291,7 @@ export default class DispatchService {
 
             logger.info({ orderId: o.id, driverId, expiresAt: o.offerExpiresAt.toISO() }, 'Order offered to driver')
         } catch (error) {
-            await trx.rollback()
+            if (!trx) await effectiveTrx.rollback()
             throw error
         }
     }

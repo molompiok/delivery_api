@@ -1,31 +1,28 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
-import OrderService from '#services/order_service'
-import vine from '@vinejs/vine'
-
-const updateStopValidator = vine.compile(
-    vine.object({
-        sequence: vine.number().optional(),
-        address_text: vine.string().trim().optional(),
-        coordinates: vine.array(vine.number()).minLength(2).maxLength(2).optional(),
-        metadata: vine.any().optional(),
-    })
-)
+import StopService from '#services/order/stop_service'
 
 @inject()
 export default class StopsController {
-    constructor(protected orderService: OrderService) { }
+    constructor(protected stopService: StopService) { }
+
+    async store({ params, request, response, auth }: HttpContext) {
+        const user = auth.getUserOrFail()
+        const payload = request.all()
+        const stop = await this.stopService.addStop(params.stepId, user.id, payload)
+        return response.created(stop)
+    }
 
     async update({ params, request, response, auth }: HttpContext) {
         const user = auth.getUserOrFail()
-        const payload = await request.validateUsing(updateStopValidator)
-        const stop = await this.orderService.updateStop(params.id, user.id, payload)
-        return response.ok(stop)
+        const payload = request.all()
+        const result = await this.stopService.updateStop(params.id, user.id, payload)
+        return response.ok(result)
     }
 
     async destroy({ params, response, auth }: HttpContext) {
         const user = auth.getUserOrFail()
-        await this.orderService.removeStop(params.id, user.id)
-        return response.noContent()
+        const result = await this.stopService.removeStop(params.id, user.id)
+        return response.ok(result)
     }
 }

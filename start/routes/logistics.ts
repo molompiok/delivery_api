@@ -12,16 +12,23 @@ router.group(() => {
     // Orders
     router.get('/orders', [OrdersController, 'index'])
     router.post('/orders', [OrdersController, 'store'])
+    router.post('/orders/initiate', [OrdersController, 'initiate'])
+    router.post('/orders/:id/submit', [OrdersController, 'submit'])
+    router.post('/orders/:id/push-updates', [OrdersController, 'pushUpdates'])
+    router.get('/orders/:id/estimate-draft', [OrdersController, 'estimateDraft'])
+    router.post('/orders/:id/items', [OrdersController, 'addItem'])
     router.post('/orders/complex', [OrdersController, 'store'])
     router.post('/orders/estimate', [OrdersController, 'estimate'])
     router.get('/orders/:id', [OrdersController, 'show'])
     router.post('/orders/:id/cancel', [OrdersController, 'cancel'])
-    router.patch('/orders/:id', [OrdersController, 'update']) // Add this too
+    router.patch('/orders/:id', [OrdersController, 'update'])
 
     // Granular Order Management
+    router.post('/orders/:orderId/steps', [StepsController, 'store'])
     router.patch('/steps/:id', [StepsController, 'update'])
     router.delete('/steps/:id', [StepsController, 'destroy'])
 
+    router.post('/steps/:stepId/stops', [StopsController, 'store'])
     router.patch('/stops/:id', [StopsController, 'update'])
     router.delete('/stops/:id', [StopsController, 'destroy'])
 

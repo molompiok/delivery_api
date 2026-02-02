@@ -43,3 +43,8 @@ export enum CalculationEngine {
     GOOGLE = 'google',
     FALLBACK = 'fallback'
 }
+
+export interface LogisticsOperationResult<T> {
+    entity: T
+    validationErrors: string[]
+}

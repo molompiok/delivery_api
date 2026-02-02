@@ -43,7 +43,7 @@ export default class FileManager {
     }
 
     /**
-     * Check if user can write to a column
+     * Check if user can write to a column (includes companyDriverIds and dynamicQuery)
      */
     async canWrite(column: string, user: User): Promise<boolean> {
         const fileData = await FileData.query()
@@ -58,11 +58,11 @@ export default class FileManager {
         }
 
         const userCompanyId = user.currentCompanyManaged || user.companyId
-        return fileData.canWrite(user.id, userCompanyId)
+        return fileData.canWriteAsync(user.id, userCompanyId)
     }
 
     /**
-     * Check if user can read files from a column
+     * Check if user can read files from a column (includes companyDriverIds and dynamicQuery)
      */
     async canRead(column: string, user: User | null, isPublic?: boolean): Promise<boolean> {
         if (isPublic) return true
@@ -77,7 +77,7 @@ export default class FileManager {
         if (!fileData) return false
 
         const userCompanyId = user.currentCompanyManaged || user.companyId
-        return fileData.canRead(user.id, userCompanyId)
+        return fileData.canReadAsync(user.id, userCompanyId)
     }
 
     /**

@@ -1,0 +1,84 @@
+
+Options:
+  --ansi|--no-ansi          Force enable or disable colorful output
+  --help                    View help for a given command
+
+Available commands:
+  add                       Install and configure a package
+  build                     Build application for production by compiling
+                            frontend assets and TypeScript source to
+                            JavaScript
+  configure                 Configure a package after it has been installed
+  eject                     Eject scaffolding stubs to your application root
+  list                      View list of available commands
+  repl                      Start a new REPL session
+  serve                     Start the development HTTP server along with
+                            the file watcher to perform restarts on file
+                            change
+  test                      Run tests along with the file watcher to re-run
+                            tests on file change
+
+assignment
+  assignment:worker         Handles mission timeout and sequential
+                            dispatching
+
+check
+  check:dispatch:readiness  Verify system readiness for order dispatching
+                            (drivers, Redis sync, etc.)
+
+db
+  db:seed                   Execute database seeders
+  db:truncate               Truncate all tables in database
+  db:wipe                   Drop all tables, views and types in database
+
+env
+  env:add                   Add a new environment variable
+
+generate
+  generate:key              Generate a cryptographically secure random
+                            application key
+
+inspect
+  inspect:rcfile            Inspect the RC file with its default values
+
+list
+  list:routes               List application routes. This command will boot
+                            the application in the console environment
+
+make
+  make:command              Create a new ace command class
+  make:controller           Create a new HTTP controller class
+  make:event                Create a new event class
+  make:exception            Create a new custom exception class
+  make:factory              Make a new factory
+  make:listener             Create a new event listener class
+  make:middleware           Create a new middleware class for HTTP requests
+  make:migration            Make a new migration file
+  make:model                Make a new Lucid model
+  make:preload              Create a new preload file inside the start
+                            directory
+  make:provider             Create a new service provider class
+  make:seeder               Make a new Seeder file
+  make:service              Create a new service class
+  make:test                 Create a new Japa test file
+  make:validator            Create a new file to define VineJS validators
+  make:view                 Create a new Edge.js template file
+
+migration
+  migration:fresh           Drop all tables and re-migrate the database
+  migration:refresh         Rollback and migrate database
+  migration:reset           Rollback all migrations
+  migration:rollback        Rollback migrations to a specific batch number
+  migration:run             Migrate database by running pending migrations
+  migration:status          View migrations status
+
+redis
+  redis:flush               Flush all Redis data
+
+shift
+  shift:check               Vérifie les horaires et bascule les drivers
+                            entre IDEP et ETP
+  shift:worker              Démarre les workers BullMQ (Shifts + Location)
+
+test
+  test:import               Test model import

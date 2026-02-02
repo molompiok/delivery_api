@@ -4,7 +4,7 @@ Bienvenue dans la tour de contrôle pour l'implémentation et la validation de l
 
 ## Philosophie : Le Changement de Paradigme
 
-Cette opération marque la transition entre l'ancienne logique de gestion et la nouvelle structure définie dans [Init/README.md](../../../../Init/README.md).
+Cette opération marque la transition entre l'ancienne logique de gestion et la nouvelle structure définie dans [dataStructure.md](./dataStructure.md).
 
 | Caractéristique | Ancien Modèle (Obsolète) | Nouveau Modèle (Cible) |
 | :--- | :--- | :--- |
@@ -42,6 +42,7 @@ Cette opération marque la transition entre l'ancienne logique de gestion et la 
 ### Phase 3 : Exécution & Preuve de Service
 - [ ] [06_verification.md](./06_verification.md) : Vérification par code OTP et confirmation photo.
 - [ ] [07_realtime_sync.md](./07_realtime_sync.md) : Synchronisation temps réel (WebSockets) et interfaces.
+- [x] [08_shadow_modifications.md](./08_shadow_modifications.md) : Modifications en temps réel (Shadow Components).
 
 ## État Global de l'Opération
 
@@ -54,6 +55,7 @@ Cette opération marque la transition entre l'ancienne logique de gestion et la 
 | 05 | Lifecycle Mission | ⏳ En attente |
 | 06 | Preuve de Service | ⏳ En attente |
 | 07 | Sync Temps Réel | ⏳ En attente |
+| 08 | Shadows & Modifs | ✅ Terminé |
 
 ---
 

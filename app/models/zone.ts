@@ -1,9 +1,9 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, belongsTo } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, belongsTo, manyToMany } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Company from '#models/company'
 import User from '#models/user'
-import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import type { BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
 
 export type ZoneOwnerType = 'Company' | 'User' | 'Sublymus'
 
@@ -48,6 +48,14 @@ export default class Zone extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime
+
+    @manyToMany(() => User, {
+        pivotTable: 'zone_drivers',
+        pivotForeignKey: 'zone_id',
+        pivotRelatedForeignKey: 'user_id',
+        pivotTimestamps: true,
+    })
+    declare drivers: ManyToMany<typeof User>
 
     @belongsTo(() => Company, {
         foreignKey: 'ownerId'

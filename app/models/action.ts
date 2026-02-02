@@ -63,11 +63,23 @@ export default class Action extends BaseModel {
     })
     declare metadata: any
 
+    @column()
+    declare originalId: string | null
+
+    @column()
+    declare isPendingChange: boolean
+
+    @column()
+    declare isDeleteRequired: boolean
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @belongsTo(() => Action, { foreignKey: 'originalId' })
+    declare original: BelongsTo<typeof Action>
 
     @belongsTo(() => Order, { foreignKey: 'orderId' })
     declare order: BelongsTo<typeof Order>

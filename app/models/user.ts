@@ -87,7 +87,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @manyToMany(() => Zone, {
     pivotTable: 'zone_drivers',
-    pivotForeignKey: 'driver_id',
+    pivotForeignKey: 'user_id',
     pivotRelatedForeignKey: 'zone_id',
     pivotTimestamps: true,
   })

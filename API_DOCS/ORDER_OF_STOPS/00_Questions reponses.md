@@ -1,6 +1,6 @@
 # Questions & Réponses : Architecture des Commandes
 
-Ce document récapitule les échanges entre Noga et l'agent sur la nouvelle structure de gestion des commandes "centrée sur l'action au stop".
+Ce document récapitule les échanges sur la structure de gestion des commandes Sublymus "centrée sur l'action au stop".
 
 ---
 
@@ -10,63 +10,61 @@ Ce document récapitule les échanges entre Noga et l'agent sur la nouvelle stru
 
 ### 🟢 2. Multi-Actions au même Stop
 **Question :** Un seul stop peut-il contenir plusieurs actions ?
-**Réponse :** Oui. Un livreur peut effectuer des collectes, des livraisons et des services au même point géographique. L'ordre est défini par défaut dans le tableau des actions, mais le driver a la liberté de s'adapter sur place tant que toutes les actions sont complétées.
+**Réponse :** Oui. Un livreur peut effectuer des collectes, des livraisons et des services au même point géographique. L'ordre est défini par défaut dans le tableau des actions, mais le driver a la liberté de s'adapter sur place tant qu'il remplit toutes les missions du stop.
 
 ### 🟢 3. Logique VROOM & Stock
 **Question :** Comment traduire cela pour le moteur d'optimisation VROOM ?
-**Réponse :** Chaque action est traitée comme un "job" qui impacte le stock du véhicule. C'est à la couche application (delivery-api) de calculer l'état du stock (ce qui est monté/descendu) pour informer VROOM.
+**Réponse :** Chaque action est traitée comme un "job" qui impacte le stock du véhicule. Le serveur calcule l'état du stock à chaque étape pour s'assurer que le véhicule n'est jamais en sous-charge (livrer ce qu'on n'a pas) ou en surcharge (sauf si l'option est activée).
 
 ### 🟢 4. Gestion de la Capacité & Surcharge
 **Question :** VROOM doit-il respecter strictement la capacité du véhicule ?
-**Réponse :** Par défaut oui, mais avec une option "Autoriser surcharge". En cas de surcharge activée, on ignore la contrainte de capacité (ou on la passe à l'infini) pour permettre au moteur d'optimiser sans restriction physique. Le dépassement est tracé dans les métadonnées.
-*Note technique : VROOM ne gérant pas nativement la surcharge "souple", l'ignorer est l'approche retenue.*
+**Réponse :** Par défaut oui. L'option "Autoriser surcharge" permet d'ignorer cette contrainte pour laisser le moteur optimiser sans restriction physique (le dépassement reste tracé en métadonnées).
 
 ### 🟢 5. Validation & Preuve de Service
 **Question :** La validation se fait-elle par stop ou par action ?
-**Réponse :** Par action. Si un arrêt comporte 3 actions avec confirmation requise, le driver doit valider les 3 actions individuellement (Photo ou Code OTP/QR).
+**Réponse :** Par action. Chaque action (Photo, OTP, Scan) doit être validée individuellement par le driver pour confirmer l'exécution complète des tâches prévues au stop.
 
 ### 🟢 6. Distribution & Lots (Fluides / Quantités)
-**Question :** Comment gère-t-on 1000L d'eau collectés en deux fois et livrés en trois fois ?
-**Réponse :** C'est le duo `produit_id` + `transit_item_id` qui compte. On raisonne en quantités récupérées et livrées. On ne cherche pas à identifier chaque unité, mais à suivre le flux volumétrique ou quantitatif global du lot de transit.
+**Question :** Comment gère-t-on des quantités fractionnées (ex: 1000L collectés, livrés en 3 fois) ?
+**Réponse :** C'est le `transit_item_id` qui lie le lot. On suit le flux quantitatif. Le système valide que le cumul des livraisons pour cet ID ne dépasse jamais le cumul des collectes effectuées précédemment.
 
-### 🟢 7. Structure des Steps
-**Question :** Quel est le rôle des Steps ?
-**Réponse :** Les steps servent à organiser les stops. Pour l'instant, ils sont indépendants et ne gèrent pas encore de file d'attente spécifique de drivers ou de successions strictes.
+### 🟢 7. Hiérarchie : Steps vs Stops
+**Question :** Quel est le rôle des Steps dans la séquence ?
+**Réponse :** Les `steps` sont les blocs logiques de la mission.
+- Ils imposent un ordre strict : un driver doit finir le Step N avant de passer au Step N+1.
+- `linked: true` : Indique que les steps doivent être exécutés à la suite par le même chauffeur (indispensable pour les missions de type "Tournée").
+- `sequence` : L'index définit l'ordre chronologique obligatoire.
+
+---
+
+### 🟠 8. Modifications en Temps Réel (Le mécanisme "Shadow")
+
+**Question :** Comment modifier une commande déjà acceptée par un chauffeur sans créer de bugs sur son application ?
+**Réponse :** On utilise le mécanisme **"Draft-in-Place" (Shadow Components)**.
+1. Toute modification (update stop, add action) sur une commande non-Draft crée un clone (shadow) avec le flag `is_pending_change = true`.
+2. Le chauffeur ne voit que la version "Stable". Le dashboard voit la version "Virtuelle" (fusion des stables et des shadows).
+3. Le client peut ajuster, supprimer (flag `is_delete_required`) et tester son itinéraire en mode brouillon jusqu'à ce qu'il soit satisfait.
+
+**Question :** Que se passe-t-il quand on valide les modifications ?
+**Réponse :** L'appel à `/push-updates` effectue une validation finale :
+- Vérification de la viabilité logistique (pas de livraison impossible).
+- Fusion physique des `shadows` dans les records originaux.
+- Suppression des éléments marqués `is_delete_required`.
+- Recalcul de l'itinéraire (VROOM) et mise à jour des `OrderLegs`.
+- Notification WebSocket au chauffeur pour mettre à jour sa route.
+
+**Question :** Peut-on modifier ce qui est déjà "fait" ?
+**Réponse :** **Non.** Toute entité (Step/Stop/Action) dont le statut est `EXECUTED` ou `IN_PROGRESS` est verrouillée. On ne peut modifier que le futur de la mission.
 
 ---
 
-### 🟢 8. Cycle de Vie & Modifications en cours (In-Transit)
-La structure permet des ajustements dynamiques durant la tournée :
+### 🔴 9. Règles de Validation Logistique
 
-*   **Ajout de Steps** : Possible en cours de route. Le nouvel index doit être supérieur aux steps existants et cohérent avec la logistique actuelle.
-*   **Retrait Action/Stop** : Un stop ou une action peut être retiré définitivement ou "gelé" (reste visible mais exclu des calculs d'itinéraire).
-*   **Contrainte Critique** : On ne peut jamais supprimer ou modifier ce qui est déjà **fait** ou **en cours** d'exécution.
-*   **Suppression de Step** : Un step ne peut être retiré que s'il est vide de stops. Les index sont alors automatiques recalculés.
-*   **Suppression de Commande** : Suppression physique interdite. On utilise un flag `isDeleted: true` pour conserver l'historique complet (même rejeté).
+**Question :** Quelles sont les contraintes vérifiées par le serveur ?
+**Réponse :**
+1. **Viabilité par Step** : À chaque étape, la somme du (Stock de départ + Collectes du step) doit être >= Livraisons du step. On ne peut pas planifier une livraison si l'objet n'est pas déjà dans le camion ou récupéré durant le même trajet.
+2. **Équilibre Final (SUBMIT)** : Lors de la soumission ou du push final, le solde de chaque `transit_item_id` doit être exactement à **0** (tout ce qui est monté doit redescendre).
+3. **Ordre des Steps** : On ne peut pas insérer un Step avec un index inférieur à un Step déjà terminé.
 
 ---
-## Note supementaaire
-
-A - pour les commandes
-ok on peut 
-create 
-- cree une commande, 
-
-update
-- ajouter des stpes en cours de routes : chaque nouveau step est ajouet avec un index superieur et doit etre coherent avec les step recedant.
-- ajouter ( s'il c'est pas deja occuper avec une autre commande )/ retirer  (s'il n'a pas de colis n'a pas de colis a gerer).
-- on peut en cours de route : retiner une [ actions/stop ] definitivement , ou la geler ( toujour visible, mais plus prise en compte dans les calcules de tajectoire).
-- on ne peut rien suprpimer qui soit deja fait ou en cours.
-
-delete step
-- on ne peut par retirer suprimer ou retirer une step si elle contient encores des stops
--  les index automatiquement recalculer.
-
-delete commande 
-on ne peut pas suprimer une commande. meme celle qui n'ont ete cree et rejeter.
-juste un isDeleted a true.
-
-
-B - 
----
-*Dernière mise à jour : 2026-01-30*
+*Dernière mise à jour : 2026-02-01 (Shadow Components & Logic Update)*

@@ -68,28 +68,43 @@ interface FileConfig {
 
 ## 3. Logique de permissions
 
-### 3.1 Hiérarchie (W > R)
+### 3.1 Types de permissions
+
+| Type | Description |
+|------|-------------|
+| `userIds` | Liste explicite d'IDs utilisateurs |
+| `companyIds` | IDs de companies (tous les managers ont accès) |
+| `companyDriverIds` | IDs de companies (tous les **drivers approuvés** ont accès) |
+| `dynamicQuery` | Requête SQL qui retourne une liste de `user_id` autorisés |
+
+### 3.2 Hiérarchie (W > R)
 
 ```
-canWrite(user):
-  1. user.id == ownerId          → ✅ W+R (propriétaire sacré)
-  2. user.id IN writeAccess.userIds    → ✅ W+R
-  3. user.companyId IN writeAccess.companyIds → ✅ W+R
-  4. sinon → ❌
+canWriteAsync(user):
+  1. user.id == ownerId                    → ✅ W+R (propriétaire sacré)
+  2. user.id IN writeAccess.userIds        → ✅ W+R
+  3. user.companyId IN writeAccess.companyIds → ✅ W+R (managers)
+  4. user IN drivers(writeAccess.companyDriverIds) → ✅ W+R (drivers)
+  5. user.id IN execute(writeAccess.dynamicQuery)  → ✅ W+R (SQL)
+  6. sinon → ❌
 
-canRead(user):
-  1. canWrite(user) == true      → ✅ R (W implique R)
-  2. user.id IN readAccess.userIds     → ✅ R
+canReadAsync(user):
+  1. canWriteAsync(user) == true            → ✅ R (W implique R)
+  2. user.id IN readAccess.userIds          → ✅ R
   3. user.companyId IN readAccess.companyIds → ✅ R
-  4. File.isPublic == true       → ✅ R
-  5. sinon → ❌
+  4. user IN drivers(readAccess.companyDriverIds) → ✅ R
+  5. user.id IN execute(readAccess.dynamicQuery)  → ✅ R
+  6. File.isPublic == true                  → ✅ R
+  7. sinon → ❌
 ```
 
-### 3.2 Règles métier
+### 3.3 Règles métier
 
 - **L'owner ne peut jamais perdre ses droits** : Son ID est stocké dans `ownerId`, pas dans les listes dynamiques.
 - **W implique R** : Si un user peut écrire, il peut automatiquement lire.
-- **Company = tous ses managers** : Si une company est partagée, tous les users avec `companyId` ou `currentCompanyManaged` égal à cette company ont accès.
+- **Company = tous ses managers** : Si une company est dans `companyIds`, tous les users avec `companyId` ou `currentCompanyManaged` égal à cette company ont accès.
+- **CompanyDrivers = tous les drivers approuvés** : Si une company est dans `companyDriverIds`, tous les drivers avec `status: APPROVED` dans `CompanyDriverSetting` ont accès.
+- **dynamicQuery = Game Changer** : Une requête SQL qui retourne une colonne `user_id` ou `driver_id`. Exemple : `"SELECT driver_id FROM missions WHERE order_id = 'ord_xxx'"`.
 - **Admin bypass** : Les admins (`user.isAdmin = true`) ont accès à tout.
 
 ---
