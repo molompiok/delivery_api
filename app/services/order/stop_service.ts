@@ -11,8 +11,13 @@ import { LogisticsOperationResult } from '../../types/logistics.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addStopSchema, updateStopSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
+import { inject } from '@adonisjs/core'
+import ActionService from './action_service.js'
 
+@inject()
 export default class StopService {
+    constructor(protected actionService: ActionService) { }
+
     /**
      * Adds a stop to a step.
      */
@@ -27,14 +32,17 @@ export default class StopService {
             const order = await Order.query({ client: effectiveTrx }).where('id', step.orderId).where('clientId', clientId).first()
             if (!order) throw new Error('Unauthorized or Order not found')
             // Geocode address if needed
-            let coordinates: number[] | undefined | null = validatedData.coordinates as number[] | undefined
-            if (!coordinates && validatedData.address_text) {
-                const geocoded = await GeoService.geocode(validatedData.address_text)
+            let coordinates: number[] | undefined | null = validatedData.address?.lat && validatedData.address?.lng
+                ? [validatedData.address.lng, validatedData.address.lat]
+                : undefined
+
+            if (!coordinates && validatedData.address?.street) {
+                const geocoded = await GeoService.geocode(validatedData.address.street)
                 coordinates = geocoded as number[] | null
             }
 
-            if (!coordinates && validatedData.address_text) {
-                throw new Error(`Geocoding failed for ${validatedData.address_text}`)
+            if (!coordinates && validatedData.address?.street) {
+                throw new Error(`Geocoding failed for ${validatedData.address.street}`)
             }
 
             // Create/Get Address
@@ -44,8 +52,10 @@ export default class StopService {
                 label: 'Stop',
                 lat: coordinates ? coordinates[1] : 0,
                 lng: coordinates ? coordinates[0] : 0,
-                formattedAddress: validatedData.address_text || '',
-                street: validatedData.address_text || '',
+                formattedAddress: validatedData.address?.street || '',
+                street: validatedData.address?.street || '',
+                city: validatedData.address?.city || null,
+                country: validatedData.address?.country || null,
                 isActive: true,
                 isDefault: false,
             }, { client: effectiveTrx })
@@ -68,7 +78,23 @@ export default class StopService {
                 sequence,
                 status: 'PENDING',
                 isPendingChange: !isDraft,
+                metadata: {
+                    ...(validatedData.metadata || {}),
+                    client: validatedData.client || null,
+                    address_extra: {
+                        call: validatedData.address?.call,
+                        room: validatedData.address?.room,
+                        stage: validatedData.address?.stage,
+                    }
+                }
             }, { client: effectiveTrx })
+
+            // Recursive Action Creation
+            if (validatedData.actions && validatedData.actions.length > 0) {
+                for (const actionData of validatedData.actions) {
+                    await this.actionService.addAction(stop.id, clientId, actionData, effectiveTrx)
+                }
+            }
 
             if (!trx) await (effectiveTrx as any).commit()
 
@@ -170,29 +196,67 @@ export default class StopService {
                 }
             }
 
-            // Update Geocode if address changed
-            if (validatedData.address_text || validatedData.coordinates) {
-                let coords: number[] | undefined | null = validatedData.coordinates as number[] | undefined
-                if (!coords && validatedData.address_text) {
-                    const geocoded = await GeoService.geocode(validatedData.address_text)
+            // Update Address if provided
+            if (validatedData.address) {
+                let coords: number[] | undefined | null = validatedData.address.lat && validatedData.address.lng
+                    ? [validatedData.address.lng, validatedData.address.lat]
+                    : undefined
+
+                if (!coords && validatedData.address.street) {
+                    const geocoded = await GeoService.geocode(validatedData.address.street)
                     coords = geocoded as number[] | null
                 }
 
-                if (coords) {
-                    const address = await Address.query().useTransaction(effectiveTrx).where('id', targetStop.addressId).first()
-                    if (address) {
+                const address = await Address.query().useTransaction(effectiveTrx).where('id', targetStop.addressId).first()
+                if (address) {
+                    if (coords) {
                         address.lat = coords[1]
                         address.lng = coords[0]
-                        address.formattedAddress = validatedData.address_text || address.formattedAddress
-                        await address.useTransaction(effectiveTrx).save()
                     }
+                    address.formattedAddress = validatedData.address.street || address.formattedAddress
+                    address.street = validatedData.address.street || address.street
+                    address.city = validatedData.address.city || address.city
+                    address.country = validatedData.address.country || address.country
+                    await address.useTransaction(effectiveTrx).save()
                 }
             }
 
             if (validatedData.sequence !== undefined) targetStop.sequence = validatedData.sequence
-            if (validatedData.metadata) targetStop.metadata = validatedData.metadata
+
+            // Merge metadata for client and address_extra
+            const currentMetadata = targetStop.metadata || {}
+            targetStop.metadata = {
+                ...currentMetadata,
+                ...(validatedData.metadata || {}),
+                client: validatedData.client || currentMetadata.client,
+                address_extra: {
+                    ...(currentMetadata.address_extra || {}),
+                    ...(validatedData.address ? {
+                        call: validatedData.address.call,
+                        room: validatedData.address.room,
+                        stage: validatedData.address.stage,
+                    } : {})
+                }
+            }
 
             await targetStop.useTransaction(effectiveTrx).save()
+
+            // Recursive Action Sync (Simplified: Clear and re-add if DRAFT, or use shadow logic if needed)
+            // For now, let's implement basic re-add for DRAFT consistency
+            if (validatedData.actions && isDraft) {
+                await Action.query({ client: effectiveTrx }).where('stopId', targetStop.id).delete()
+                for (const actionData of validatedData.actions) {
+                    await this.actionService.addAction(targetStop.id, clientId, actionData, effectiveTrx)
+                }
+            } else if (validatedData.actions) {
+                // If not DRAFT, complex shadow sync would be needed. 
+                // However, the user wants services to handle it.
+                // We'll re-add to the shadow stop.
+                await Action.query({ client: effectiveTrx }).where('stopId', targetStop.id).delete()
+                for (const actionData of validatedData.actions) {
+                    await this.actionService.addAction(targetStop.id, clientId, actionData, effectiveTrx)
+                }
+            }
 
             if (!trx) await (effectiveTrx as any).commit()
 

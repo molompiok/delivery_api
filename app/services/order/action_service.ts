@@ -8,8 +8,13 @@ import { LogisticsOperationResult } from '../../types/logistics.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addActionSchema, updateActionSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
+import { inject } from '@adonisjs/core'
+import TransitItemService from './transit_item_service.js'
 
+@inject()
 export default class ActionService {
+    constructor(protected transitItemService: TransitItemService) { }
+
     /**
      * Adds an action to a stop.
      */
@@ -27,12 +32,38 @@ export default class ActionService {
 
             const isService = (validatedData.type || 'SERVICE').toLowerCase() === 'service'
 
+            // Priority Logic for TransitItem + Strict Consistency Check
+            let transitItemId: string | null = null
+            if (!isService) {
+                if (validatedData.transit_item) {
+                    // Rule 2: Strict ID Consistency Check
+                    if (validatedData.transit_item_id && validatedData.transit_item.id) {
+                        if (validatedData.transit_item_id !== validatedData.transit_item.id) {
+                            throw new Error('E_INCONSISTENT_TRANSIT_ITEM_ID: transit_item_id must match transit_item.id')
+                        }
+                    }
+
+                    const tiId = validatedData.transit_item.id || validatedData.transit_item_id
+                    if (tiId) {
+                        // Update existing (Rule 2: recursive update even if ID present)
+                        await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
+                        transitItemId = tiId
+                    } else {
+                        // Create new
+                        const tiRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx)
+                        transitItemId = tiRes.entity!.id
+                    }
+                } else if (validatedData.transit_item_id) {
+                    transitItemId = validatedData.transit_item_id
+                }
+            }
+
             const newAction = await Action.create({
                 orderId: stop.orderId,
                 stopId: stopId,
                 type: (validatedData.type || 'SERVICE').toUpperCase() as any,
                 quantity: isService ? 0 : (validatedData.quantity || 1),
-                transitItemId: isService ? null : (validatedData.transit_item_id || null),
+                transitItemId: transitItemId,
                 serviceTime: validatedData.service_time || 300,
                 status: 'PENDING',
                 confirmationRules: validatedData.confirmation_rules || {},
@@ -109,15 +140,36 @@ export default class ActionService {
                 targetAction.quantity = 0
             }
 
-            if (isService) {
-                targetAction.transitItemId = null
-            } else if (validatedData.transit_item_id !== undefined) {
-                targetAction.transitItemId = validatedData.transit_item_id
-            }
-
             if (validatedData.service_time !== undefined) targetAction.serviceTime = validatedData.service_time
             if (validatedData.confirmation_rules) targetAction.confirmationRules = validatedData.confirmation_rules
             if (validatedData.metadata) targetAction.metadata = validatedData.metadata
+
+            // Sync nested TransitItem if provided and not a service
+            if (finalType !== 'service') {
+                if (validatedData.transit_item) {
+                    // Rule 2: Strict ID Consistency Check
+                    if (validatedData.transit_item_id && validatedData.transit_item.id) {
+                        if (validatedData.transit_item_id !== validatedData.transit_item.id) {
+                            throw new Error('E_INCONSISTENT_TRANSIT_ITEM_ID: transit_item_id must match transit_item.id')
+                        }
+                    }
+
+                    const tiId = validatedData.transit_item.id || validatedData.transit_item_id || targetAction.transitItemId
+                    if (tiId) {
+                        // Update existing (Rule 2: recursive update even if ID present)
+                        await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
+                        targetAction.transitItemId = tiId
+                    } else {
+                        // Create new
+                        const tiRes = await this.transitItemService.addTransitItem(actionOrder.id, clientId, validatedData.transit_item, effectiveTrx)
+                        targetAction.transitItemId = tiRes.entity!.id
+                    }
+                } else if (validatedData.transit_item_id) {
+                    targetAction.transitItemId = validatedData.transit_item_id
+                }
+            } else {
+                targetAction.transitItemId = null
+            }
 
             await targetAction.useTransaction(effectiveTrx).save()
 

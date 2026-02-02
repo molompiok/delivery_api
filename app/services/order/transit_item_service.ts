@@ -5,7 +5,9 @@ import { LogisticsOperationResult } from '../../types/logistics.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { transitItemSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
+import { inject } from '@adonisjs/core'
 
+@inject()
 export default class TransitItemService {
     /**
      * Adds a transit item to an order.
@@ -22,16 +24,51 @@ export default class TransitItemService {
                 name: validatedData.name,
                 description: validatedData.description,
                 packagingType: validatedData.packaging_type || 'box',
-                weight: validatedData.weight_g ? validatedData.weight_g / 1000 : null,
+                weight: validatedData.weight_g ?? null,
+                dimensions: validatedData.dimensions,
+                unitaryPrice: validatedData.unitary_price,
+                metadata: validatedData.metadata || {},
+            }, { client: effectiveTrx })
+
+            if (!trx) await (effectiveTrx as any).commit()
+
+            return {
+                entity: ti,
+                validationErrors: []
+            }
+        } catch (error) {
+            if (!trx) await (effectiveTrx as any).rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Updates a transit item.
+     */
+    async updateTransitItem(itemId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<TransitItem>> {
+        const validatedData = await vine.validate({ schema: transitItemSchema, data })
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const ti = await TransitItem.query({ client: effectiveTrx }).where('id', itemId).firstOrFail()
+            await Order.query({ client: effectiveTrx }).where('id', ti.orderId).where('clientId', clientId).firstOrFail()
+
+            ti.merge({
+                productId: validatedData.product_id,
+                name: validatedData.name,
+                description: validatedData.description,
+                packagingType: validatedData.packaging_type || 'box',
+                weight: validatedData.weight_g ?? null,
                 dimensions: validatedData.dimensions,
                 unitaryPrice: validatedData.unitary_price,
                 metadata: {
+                    ...(ti.metadata || {}),
                     ...validatedData.metadata,
-                    volumeL: validatedData.volume_l || null,
+                    volumeL: validatedData.dimensions?.volume_l || null,
                     requirements: validatedData.requirements || [],
-                    typeProduct: validatedData.type_product || [],
                 }
-            }, { client: effectiveTrx })
+            })
+
+            await ti.useTransaction(effectiveTrx).save()
 
             if (!trx) await (effectiveTrx as any).commit()
 
@@ -58,14 +95,13 @@ export default class TransitItemService {
                 name: itemData.name,
                 description: itemData.description,
                 packagingType: itemData.packaging_type || 'box',
-                weight: itemData.weight_g ? itemData.weight_g / 1000 : null,
+                weight: itemData.weight_g ?? null,
                 dimensions: itemData.dimensions,
                 unitaryPrice: itemData.unitary_price,
                 metadata: {
                     ...itemData.metadata,
-                    volumeL: itemData.volume_l || null,
+                    volumeL: itemData.dimensions?.volume_l || null,
                     requirements: itemData.requirements || [],
-                    typeProduct: itemData.type_product || [],
                 }
             }, { client: trx })
 

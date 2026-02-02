@@ -42,62 +42,13 @@ export default class OrderService {
         const trx = await db.transaction()
         try {
             // 1. Initiate Draft
-            let order;
-            try {
-                order = await this.orderDraftService.initiateOrder(clientId, validatedPayload, trx)
-            } catch (e) {
-                throw new Error(`Failed to initiate order draft: ${e.message}`)
-            }
+            const order = await this.orderDraftService.initiateOrder(clientId, validatedPayload, trx)
 
-            // 2. Create TransitItems
-            let itemMap;
-            try {
-                itemMap = await this.transitItemService.createBulk(order.id, validatedPayload.transit_items || [], trx)
-            } catch (e) {
-                throw new Error(`Failed to create transit items: ${e.message}`)
-            }
+            // 2. Sync Structure (Steps, Stops, Actions, Items)
+            await this.syncOrderStructure(order.id, clientId, validatedPayload, trx)
 
-            // 3. Process Steps, Stops and Actions
-            for (let i = 0; i < validatedPayload.steps.length; i++) {
-                const stepData = validatedPayload.steps[i]
-                let stepRes;
-                try {
-                    stepRes = await this.stepService.addStep(order.id, clientId, stepData, trx)
-                } catch (e) {
-                    throw new Error(`Failed to add step at index ${i}: ${e.message}`)
-                }
-
-                for (let j = 0; j < stepData.stops.length; j++) {
-                    const stopData = stepData.stops[j]
-                    let stopRes;
-                    try {
-                        stopRes = await this.stopService.addStop(stepRes.entity!.id, clientId, stopData, trx)
-                    } catch (e) {
-                        throw new Error(`Failed to add stop at index ${j} for step ${i}: ${e.message}`)
-                    }
-
-                    for (let k = 0; k < stopData.actions.length; k++) {
-                        const actionData = stopData.actions[k]
-                        const actionPayload = { ...actionData }
-                        if (actionPayload.transit_item_id) {
-                            actionPayload.transit_item_id = itemMap.get(actionPayload.transit_item_id)?.id
-                        }
-                        try {
-                            await this.actionService.addAction(stopRes.entity!.id, clientId, actionPayload, trx)
-                        } catch (e) {
-                            throw new Error(`Failed to add action at index ${k} for stop ${j}, step ${i}: ${e.message}`)
-                        }
-                    }
-                }
-            }
-
-            // 4. Submit Order (Final Validation + Routing + Pricing + Dispatch)
-            let finalizedOrder;
-            try {
-                finalizedOrder = await this.orderDraftService.submitOrder(order.id, clientId, trx)
-            } catch (e) {
-                throw new Error(`Failed to finalize order: ${e.message}`)
-            }
+            // 3. Submit Order (Final Validation + Routing + Pricing + Dispatch)
+            const finalizedOrder = await this.orderDraftService.submitOrder(order.id, clientId, trx)
 
             await trx.commit()
             return finalizedOrder
@@ -278,17 +229,74 @@ export default class OrderService {
     }
 
     async updateOrder(orderId: string, clientId: string, payload: any) {
-        const order = await this.orderDraftService.getOrderDetails(orderId, clientId)
+        // If payload contains steps or transit_items, we use the complex sync logic
+        const hasComplexPayload = payload.steps || payload.transit_items
+
         const trx = await db.transaction()
         try {
+            const order = await Order.query({ client: trx })
+                .where('id', orderId)
+                .where('clientId', clientId)
+                .forUpdate()
+                .firstOrFail()
+
             if (payload.metadata) order.metadata = payload.metadata
             if (payload.ref_id) order.refId = payload.ref_id
+            if (payload.assignment_mode) order.assignmentMode = payload.assignment_mode
+            if (payload.priority) order.priority = payload.priority
+
             await order.useTransaction(trx).save()
+
+            if (hasComplexPayload) {
+                // For updates, we clear existing structure before syncing if the order is still a DRAFT
+                if (order.status === 'DRAFT') {
+                    await db.from('actions').whereIn('stop_id', db.from('stops').whereIn('step_id', db.from('steps').where('order_id', orderId).select('id')).select('id')).useTransaction(trx).delete()
+                    await db.from('stops').whereIn('step_id', db.from('steps').where('order_id', orderId).select('id')).useTransaction(trx).delete()
+                    await db.from('steps').where('order_id', orderId).useTransaction(trx).delete()
+                    await db.from('transit_items').where('order_id', orderId).useTransaction(trx).delete()
+                } else {
+                    // If it's not a draft, we might want to use the "shadow" system in the future
+                    // For now, let's keep it simple for the unified experience
+                }
+
+                await this.syncOrderStructure(orderId, clientId, payload, trx)
+            }
+
             await trx.commit()
             return order
         } catch (error) {
             await trx.rollback()
             throw error
+        }
+    }
+
+    /**
+     * Internal method to populate/sync steps, stops and actions.
+     */
+    private async syncOrderStructure(orderId: string, clientId: string, payload: any, trx: any) {
+        // 1. Create TransitItems
+        const itemMap = await this.transitItemService.createBulk(orderId, payload.transit_items || [], trx)
+
+        // 2. Process Steps, Stops and Actions
+        if (payload.steps) {
+            for (let i = 0; i < payload.steps.length; i++) {
+                const stepData = payload.steps[i]
+                const stepRes = await this.stepService.addStep(orderId, clientId, stepData, trx)
+
+                for (let j = 0; j < stepData.stops.length; j++) {
+                    const stopData = stepData.stops[j]
+                    const stopRes = await this.stopService.addStop(stepRes.entity!.id, clientId, stopData, trx)
+
+                    for (let k = 0; k < stopData.actions.length; k++) {
+                        const actionData = stopData.actions[k]
+                        const actionPayload = { ...actionData }
+                        if (actionPayload.transit_item_id && itemMap.has(actionPayload.transit_item_id)) {
+                            actionPayload.transit_item_id = itemMap.get(actionPayload.transit_item_id)!.id
+                        }
+                        await this.actionService.addAction(stopRes.entity!.id, clientId, actionPayload, trx)
+                    }
+                }
+            }
         }
     }
 

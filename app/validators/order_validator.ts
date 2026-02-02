@@ -12,46 +12,24 @@ export const confirmationRuleItemSchema = vine.object({
 })
 
 /**
- * Action Schemas
+ * Order Schemas
  */
-export const addActionSchema = vine.object({
-    type: vine.enum(['pickup', 'delivery', 'service'] as const),
-    quantity: vine.number().min(0).optional(),
-    transit_item_id: vine.string().trim().optional(),
-    service_time: vine.number().min(0).optional(),
-    confirmation_rules: vine.object({
-        photo: vine.array(confirmationRuleItemSchema).optional(),
-        code: vine.array(confirmationRuleItemSchema).optional(),
-    }).optional(),
-    metadata: vine.any().optional(),
-})
-
-export const updateActionSchema = vine.object({
-    type: vine.enum(['pickup', 'delivery', 'service'] as const).optional(),
-    quantity: vine.number().min(0).optional(),
-    transit_item_id: vine.string().trim().optional(),
-    service_time: vine.number().min(0).optional(),
-    confirmation_rules: vine.object({
-        photo: vine.array(confirmationRuleItemSchema).optional(),
-        code: vine.array(confirmationRuleItemSchema).optional(),
-    }).optional(),
-    metadata: vine.any().optional(),
-})
-
-/**
- * Stop Schemas
- */
-export const addStopSchema = vine.object({
-    address_text: vine.string().trim().minLength(5).maxLength(255),
-    coordinates: vine.array(vine.number()).minLength(2).maxLength(2).optional(),
-    sequence: vine.number().optional(),
-    metadata: vine.any().optional(),
-})
-
-export const updateStopSchema = vine.object({
-    address_text: vine.string().trim().minLength(5).maxLength(255).optional(),
-    coordinates: vine.array(vine.number()).minLength(2).maxLength(2).optional(),
-    sequence: vine.number().optional(),
+export const createOrderSchema = vine.object({
+    steps: vine.array(vine.object({
+        sequence: vine.number().optional(),
+        linked: vine.boolean().optional(),
+        stops: vine.array(vine.any()), // Detailed expansion happens in StopService
+    })).optional(),
+    transit_items: vine.array(vine.object({
+        id: vine.string().trim().optional(),
+        name: vine.string().trim().minLength(1).optional(),
+        weight_g: vine.number().optional(),
+        dimensions: vine.any().optional(),
+        metadata: vine.any().optional(),
+    })).optional(),
+    assignment_mode: vine.enum(['GLOBAL', 'INTERNAL', 'TARGET', 'global', 'internal', 'target'] as const).transform((v) => v.toUpperCase() as 'GLOBAL' | 'INTERNAL' | 'TARGET').optional(),
+    ref_id: vine.string().trim().optional(),
+    priority: vine.enum(['LOW', 'MEDIUM', 'HIGH', 'low', 'medium', 'high'] as const).transform((v) => v.toUpperCase() as 'LOW' | 'MEDIUM' | 'HIGH').optional(),
     metadata: vine.any().optional(),
 })
 
@@ -71,50 +49,145 @@ export const updateStepSchema = vine.object({
 })
 
 /**
- * Transit Item Schemas
+ * Action Schemas
  */
-export const transitItemSchema = vine.object({
-    id: vine.string().trim().optional(), // For bulk mapping
-    product_id: vine.string().trim().optional(),
-    name: vine.string().trim().minLength(1).maxLength(100),
-    description: vine.string().trim().optional(),
-    packaging_type: vine.enum(['box', 'fluid'] as const).optional(),
-    weight_g: vine.number().optional(),
-    volume_l: vine.number().optional(),
-    dimensions: vine.object({
-        width_cm: vine.number().optional(),
-        height_cm: vine.number().optional(),
-        length_cm: vine.number().optional(),
+export const addActionSchema = vine.object({
+    type: vine.enum(['pickup', 'delivery', 'service', 'PICKUP', 'DELIVERY', 'SERVICE'] as const).transform((v) => v.toLowerCase() as 'pickup' | 'delivery' | 'service'),
+    quantity: vine.number().min(0).optional(),
+    transit_item_id: vine.string().trim().optional(),
+    transit_item: vine.object({
+        id: vine.string().trim().optional(),
+        name: vine.string().trim().minLength(1).maxLength(100).optional(),
+        description: vine.string().trim().optional(),
+        product_url: vine.string().trim().url().optional(),
+        packaging_type: vine.enum(['box', 'fluid'] as const).optional(),
+        weight_g: vine.number().optional(), // No conversion, stored as is
+        unitary_price: vine.number().optional(),
+        dimensions: vine.object({
+            width_cm: vine.number().optional(),
+            height_cm: vine.number().optional(),
+            depth_cm: vine.number().optional(),
+            volume_l: vine.number().optional(),
+        }).optional(),
+        requirements: vine.array(vine.enum(['froid', 'fragile', 'dangerous', 'sec'] as const)).optional(),
+        metadata: vine.any().optional(),
     }).optional(),
-    unitary_price: vine.number().optional(),
-    requirements: vine.array(vine.enum(['froid', 'fragile', 'dangerous', 'sec'] as const)).optional(),
-    type_product: vine.array(vine.enum(['liquide', 'poudre', 'papier', 'food', 'electronic', 'other'] as const)).optional(),
+    service_time: vine.number().min(0).optional(),
+    confirmation_rules: vine.object({
+        photo: vine.array(confirmationRuleItemSchema).optional(),
+        code: vine.array(confirmationRuleItemSchema).optional(),
+    }).optional(),
+    metadata: vine.any().optional(),
+})
+
+export const updateActionSchema = vine.object({
+    type: vine.enum(['pickup', 'delivery', 'service', 'PICKUP', 'DELIVERY', 'SERVICE'] as const).transform((v) => v.toLowerCase() as 'pickup' | 'delivery' | 'service').optional(),
+    quantity: vine.number().min(0).optional(),
+    transit_item_id: vine.string().trim().optional(),
+    transit_item: vine.object({
+        id: vine.string().trim().optional(),
+        name: vine.string().trim().minLength(1).maxLength(100),
+        description: vine.string().trim().optional(),
+        product_url: vine.string().trim().url().optional(),
+        packaging_type: vine.enum(['box', 'fluid'] as const).optional(),
+        weight_g: vine.number().optional(), // No conversion, stored as is
+        unitary_price: vine.number().optional(),
+        dimensions: vine.object({
+            width_cm: vine.number().optional(),
+            height_cm: vine.number().optional(),
+            depth_cm: vine.number().optional(),
+            volume_l: vine.number().optional(),
+        }).optional(),
+        requirements: vine.array(vine.enum(['froid', 'fragile', 'dangerous', 'sec'] as const)).optional(),
+        metadata: vine.any().optional(),
+    }).optional(),
+    service_time: vine.number().min(0).optional(),
+    confirmation_rules: vine.object({
+        photo: vine.array(confirmationRuleItemSchema).optional(),
+        code: vine.array(confirmationRuleItemSchema).optional(),
+    }).optional(),
     metadata: vine.any().optional(),
 })
 
 /**
- * Bulk Order Schema
+ * Stop Schemas
  */
-export const createOrderSchema = vine.object({
-    steps: vine.array(
-        vine.object({
-            sequence: vine.number().optional(),
-            linked: vine.boolean().optional(),
-            stops: vine.array(
-                vine.object({
-                    address_text: vine.string().trim().minLength(5).maxLength(255),
-                    coordinates: vine.array(vine.number()).minLength(2).maxLength(2).optional(),
-                    sequence: vine.number().optional(),
-                    actions: vine.array(addActionSchema).minLength(1)
-                })
-            ).minLength(1)
-        })
-    ).minLength(1),
-    transit_items: vine.array(transitItemSchema).optional(),
-    ref_id: vine.string().trim().optional(),
-    assignment_mode: vine.enum(['GLOBAL', 'INTERNAL', 'TARGET']).optional(),
-    priority: vine.enum(['LOW', 'MEDIUM', 'HIGH'] as const).optional(),
-    optimize_route: vine.boolean().optional(),
-    allow_overload: vine.boolean().optional(),
+export const addStopSchema = vine.object({
+    address: vine.object({
+        address_id: vine.string().trim().optional(),
+        street: vine.string().trim().minLength(5).maxLength(255),
+        city: vine.string().trim().optional(),
+        country: vine.string().trim().optional(),
+        lat: vine.number().optional(),
+        lng: vine.number().optional(),
+        call: vine.string().trim().optional(),
+        room: vine.string().trim().optional(),
+        stage: vine.string().trim().optional(),
+    }),
+    client: vine.object({
+        client_id: vine.string().trim().optional(),
+        name: vine.string().trim().minLength(1).maxLength(100).optional(),
+        phone: vine.string().trim().optional(),
+        email: vine.string().trim().optional(),
+        avatar: vine.string().trim().optional(),
+        opening_hours: vine.object({
+            start: vine.string().trim().optional(),
+            end: vine.string().trim().optional(),
+            duration: vine.number().optional(),
+        }).optional(),
+    }).optional(),
+    sequence: vine.number().optional(),
+    actions: vine.array(addActionSchema).optional(),
+    metadata: vine.any().optional(),
+})
+
+export const updateStopSchema = vine.object({
+    address: vine.object({
+        address_id: vine.string().trim().optional(),
+        street: vine.string().trim().minLength(5).maxLength(255).optional(),
+        city: vine.string().trim().optional(),
+        country: vine.string().trim().optional(),
+        lat: vine.number().optional(),
+        lng: vine.number().optional(),
+        call: vine.string().trim().optional(),
+        room: vine.string().trim().optional(),
+        stage: vine.string().trim().optional(),
+    }).optional(),
+    client: vine.object({
+        client_id: vine.string().trim().optional(),
+        name: vine.string().trim().minLength(1).maxLength(100).optional(),
+        phone: vine.string().trim().optional(),
+        email: vine.string().trim().optional(),
+        avatar: vine.string().trim().optional(),
+        opening_hours: vine.object({
+            start: vine.string().trim().optional(),
+            end: vine.string().trim().optional(),
+            duration: vine.number().optional(),
+        }).optional(),
+    }).optional(),
+    sequence: vine.number().optional(),
+    actions: vine.array(addActionSchema).optional(),
+    metadata: vine.any().optional(),
+})
+
+/**
+ * Transit Item Schema
+ */
+export const transitItemSchema = vine.object({
+    id: vine.string().trim().optional(),
+    product_id: vine.string().trim().optional(),
+    name: vine.string().trim().minLength(1).maxLength(100).optional(),
+    description: vine.string().trim().optional(),
+    product_url: vine.string().trim().url().optional(),
+    packaging_type: vine.enum(['box', 'fluid', 'BOX', 'FLUID'] as const).transform((v) => v.toLowerCase() as 'box' | 'fluid').optional(),
+    weight_g: vine.number().optional(), // No conversion
+    unitary_price: vine.number().optional(),
+    dimensions: vine.object({
+        width_cm: vine.number().optional(),
+        height_cm: vine.number().optional(),
+        depth_cm: vine.number().optional(),
+        volume_l: vine.number().optional(),
+    }).optional(),
+    requirements: vine.array(vine.enum(['froid', 'fragile', 'dangerous', 'sec', 'FROID', 'FRAGILE', 'DANGEROUS', 'SEC'] as const).transform((v) => v.toLowerCase() as any)).optional(),
     metadata: vine.any().optional(),
 })
