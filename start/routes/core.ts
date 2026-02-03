@@ -6,6 +6,7 @@ const AddressController = () => import('#controllers/address_controller')
 const VehicleController = () => import('#controllers/vehicle_controller')
 const VehicleDocumentController = () => import('#controllers/vehicle_document_controller')
 const StorageController = () => import('#controllers/storage_controller')
+const FileTestsController = () => import('#controllers/file_tests_controller')
 
 // Public File Access (permission check handled inside controller)
 router.get('/fs/:filename', [StorageController, 'serve'])
@@ -52,6 +53,14 @@ router.group(() => {
 
     // Vehicle Documents (Admin validation)
     router.post('/vehicle-documents/:docId/validate', [VehicleDocumentController, 'validate'])
+
+    // File Tests
+    router.get('/file-tests/:id', [FileTestsController, 'show'])
+    router.post('/file-tests', [FileTestsController, 'store'])
+    router.put('/file-tests/:id', [FileTestsController, 'update'])
+    router.delete('/file-tests/:id', [FileTestsController, 'destroy'])
+    router.post('/file-tests/:id/share', [FileTestsController, 'share'])
+    router.post('/file-tests/:id/revoke', [FileTestsController, 'revoke'])
 })
     .prefix('/v1')
     .use(middleware.auth())

@@ -13,6 +13,7 @@ import { createOrderSchema } from '../validators/order_validator.js'
 import vine from '@vinejs/vine'
 import wsService from '#services/ws_service'
 import LogisticsService from '#services/logistics_service'
+import PayloadMapper from './order/payload_mapper.js'
 
 @inject()
 export default class OrderService {
@@ -95,13 +96,15 @@ export default class OrderService {
             // 1. Validate the shadow state (intended final state)
             const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
             const validation = LogisticsService.validateOrderConsistency(virtualState, 'SUBMIT')
-            if (!validation.success) {
-                const errorMessages = validation.errors.map(e => `[${e.path}] ${e.message}`).join(', ')
-                throw new Error(`Proposed changes are invalid: ${errorMessages}`)
+            if (!validation.success || (validation.warnings && validation.warnings.length > 0)) {
+                const errors = validation.errors.map(e => `[ERROR] [${e.path}] ${e.message}`)
+                const warnings = (validation.warnings || []).map(w => `[WARNING] [${w.path}] ${w.message}`)
+                const allMessages = [...errors, ...warnings].join(', ')
+                throw new Error(`Proposed changes are invalid: ${allMessages}`)
             }
 
             // 2. Apply Shadows
-            await this.orderDraftService.applyShadowChanges(orderId, clientId, trx)
+            await this.orderDraftService.applyShadowChanges(orderId, trx)
 
             // 3. Re-calculate accounting (routing, pricing, legs)
             // Re-fetch to get merged state with relations
@@ -228,6 +231,10 @@ export default class OrderService {
         return this.transitItemService.addTransitItem(orderId, clientId, data)
     }
 
+    async updateTransitItem(itemId: string, clientId: string, data: any) {
+        return this.transitItemService.updateTransitItem(itemId, clientId, data)
+    }
+
     async updateOrder(orderId: string, clientId: string, payload: any) {
         // If payload contains steps or transit_items, we use the complex sync logic
         const hasComplexPayload = payload.steps || payload.transit_items
@@ -274,26 +281,23 @@ export default class OrderService {
      * Internal method to populate/sync steps, stops and actions.
      */
     private async syncOrderStructure(orderId: string, clientId: string, payload: any, trx: any) {
-        // 1. Create TransitItems
-        const itemMap = await this.transitItemService.createBulk(orderId, payload.transit_items || [], trx)
+        // 1. Prepare IDs and Structure using PayloadMapper
+        const { items: mappedItems, map: idMap } = PayloadMapper.mapTransitItems(payload.transit_items || [])
+        // Replace user IDs with system UUIDs in the steps structure
+        const mappedSteps = PayloadMapper.replaceReferenceIds(payload.steps || [], idMap)
 
-        // 2. Process Steps, Stops and Actions
-        if (payload.steps) {
-            for (let i = 0; i < payload.steps.length; i++) {
-                const stepData = payload.steps[i]
+        // 2. Create TransitItems (using the pre-generated UUIDs)
+        await this.transitItemService.createBulk(orderId, mappedItems, trx)
+
+        // 3. Create Steps (stops and actions are nested)
+        if (mappedSteps) {
+            for (const stepData of mappedSteps) {
                 const stepRes = await this.stepService.addStep(orderId, clientId, stepData, trx)
 
-                for (let j = 0; j < stepData.stops.length; j++) {
-                    const stopData = stepData.stops[j]
-                    const stopRes = await this.stopService.addStop(stepRes.entity!.id, clientId, stopData, trx)
-
-                    for (let k = 0; k < stopData.actions.length; k++) {
-                        const actionData = stopData.actions[k]
-                        const actionPayload = { ...actionData }
-                        if (actionPayload.transit_item_id && itemMap.has(actionPayload.transit_item_id)) {
-                            actionPayload.transit_item_id = itemMap.get(actionPayload.transit_item_id)!.id
-                        }
-                        await this.actionService.addAction(stopRes.entity!.id, clientId, actionPayload, trx)
+                if (stepData.stops) {
+                    for (const stopData of stepData.stops) {
+                        // IDs are already mapped in stopData.actions
+                        await this.stopService.addStop(stepRes.entity!.id, clientId, stopData, trx)
                     }
                 }
             }

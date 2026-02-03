@@ -48,6 +48,12 @@ export default class Stop extends BaseModel {
     })
     declare metadata: any
 
+    @column({
+        prepare: (v) => v ? JSON.stringify(v) : null,
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare client: any
+
     @column()
     declare originalId: string | null
 

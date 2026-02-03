@@ -7,6 +7,7 @@ const IdepVehicleController = () => import('#controllers/idep_vehicle_controller
 const StepsController = () => import('#controllers/steps_controller')
 const StopsController = () => import('#controllers/stops_controller')
 const ActionsController = () => import('#controllers/actions_controller')
+const TransitItemsController = () => import('#controllers/transit_items_controller')
 
 router.group(() => {
     // Orders
@@ -35,6 +36,8 @@ router.group(() => {
     router.post('/stops/:stopId/actions', [ActionsController, 'store'])
     router.patch('/actions/:id', [ActionsController, 'update'])
     router.delete('/actions/:id', [ActionsController, 'destroy'])
+
+    router.patch('/items/:id', [TransitItemsController, 'update'])
 
     // Missions
     router.get('/missions/me', [MissionsController, 'list'])

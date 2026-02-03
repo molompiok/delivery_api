@@ -1,15 +1,5 @@
 import Action from '#models/action'
-
-export interface LogisticsValidationError {
-    message: string
-    path: string
-    field?: string
-}
-
-export interface LogisticsValidationResult {
-    success: boolean
-    errors: LogisticsValidationError[]
-}
+import { LogisticsValidationError, LogisticsValidationResult } from '../types/logistics.js'
 
 export default class LogisticsService {
     /**
@@ -21,9 +11,10 @@ export default class LogisticsService {
 
     static validateOrderConsistency(orderState: any, context: 'EDIT' | 'SUBMIT' = 'SUBMIT'): LogisticsValidationResult {
         const errors: LogisticsValidationError[] = []
+        const warnings: LogisticsValidationError[] = []
 
         if (!orderState.steps || orderState.steps.length === 0) {
-            errors.push({ message: 'Order must have at least one step', path: 'steps' })
+            errors.push({ message: 'Order must have at least one step', path: 'steps', severity: 'error' })
         }
 
         const transitItems = orderState.transit_items || []
@@ -33,12 +24,12 @@ export default class LogisticsService {
             orderState.steps.forEach((step: any, stepIdx: number) => {
                 const stepPath = `steps[${stepIdx}]`
                 if (!step.stops || step.stops.length === 0) {
-                    errors.push({ message: `Step must have at least one stop`, path: stepPath, field: 'stops' })
+                    errors.push({ message: `Step must have at least one stop`, path: stepPath, field: 'stops', severity: 'error' })
                 } else {
                     step.stops.forEach((stop: any, stopIdx: number) => {
                         const stopPath = `${stepPath}.stops[${stopIdx}]`
                         if (!stop.actions || stop.actions.length === 0) {
-                            errors.push({ message: `Stop must have at least one action`, path: stopPath, field: 'actions' })
+                            errors.push({ message: `Stop must have at least one action`, path: stopPath, field: 'actions', severity: 'error' })
                         } else {
                             stop.actions.forEach((action: any, actionIdx: number) => {
                                 const actionPath = `${stopPath}.actions[${actionIdx}]`
@@ -47,11 +38,11 @@ export default class LogisticsService {
                                 // Enforce quantity/type logic
                                 if (actType === 'service') {
                                     if (action.quantity !== undefined && action.quantity !== 0) {
-                                        errors.push({ message: 'Quantity must be 0 for service actions', path: actionPath, field: 'quantity' })
+                                        errors.push({ message: 'Quantity must be 0 for service actions', path: actionPath, field: 'quantity', severity: 'error' })
                                     }
                                 } else {
                                     if (action.quantity === undefined || action.quantity <= 0) {
-                                        errors.push({ message: 'Quantity must be greater than 0 for pickup or delivery', path: actionPath, field: 'quantity' })
+                                        errors.push({ message: 'Quantity must be greater than 0 for pickup or delivery', path: actionPath, field: 'quantity', severity: 'error' })
                                     }
                                 }
 
@@ -61,7 +52,8 @@ export default class LogisticsService {
                                         errors.push({
                                             message: `Action refers to unknown transit item: ${action.transit_item_id}`,
                                             path: actionPath,
-                                            field: 'transit_item_id'
+                                            field: 'transit_item_id',
+                                            severity: 'error'
                                         })
                                     }
                                 }
@@ -103,7 +95,8 @@ export default class LogisticsService {
                     if (balanceBefore + totalPickupInStep < totalDelivery) {
                         errors.push({
                             message: `Step is non-viable for item ${itemId}: Available ${balanceBefore + totalPickupInStep} < Required ${totalDelivery}`,
-                            path: stepPath
+                            path: stepPath,
+                            severity: 'error'
                         })
                     }
                 })
@@ -118,21 +111,71 @@ export default class LogisticsService {
             })
         }
 
-        // 3. Final Balance Check (Only for SUBMIT)
-        if (context === 'SUBMIT') {
-            runningItemBalances.forEach((balance, itemId) => {
-                if (balance !== 0) {
-                    errors.push({
-                        message: `Quantity mismatch for item ${itemId}: Final balance is ${balance} (should be 0)`,
-                        path: 'transit_items'
+        // 3. Final Balance Check (Warning vs Error)
+        runningItemBalances.forEach((balance, itemId) => {
+            const item = transitItems.find((t: any) => t.id === itemId)
+            const itemName = item ? ` (${item.name || 'Unknown'})` : ''
+
+            if (balance < 0) {
+                // Should have been caught by step check, but double safety
+                errors.push({
+                    message: `Impossible state for item ${itemId}${itemName}: Final balance is negative (${balance})`,
+                    path: 'transit_items',
+                    severity: 'error'
+                })
+            } else if (balance > 0) {
+                // Warning: Items left in truck
+                warnings.push({
+                    message: `Incomplete mission for item ${itemId}${itemName}: ${balance} units remaining on board`,
+                    path: 'transit_items',
+                    severity: 'warning'
+                })
+            }
+        })
+
+        // 4. Orphaned Item Check
+        // Check if any declared transit item is never referenced in any action
+        // We can collect all referenced item IDs during the step iteration
+        const referencedItemIds = new Set<string>()
+        if (orderState.steps) {
+            orderState.steps.forEach((step: any) => {
+                if (step.stops) {
+                    step.stops.forEach((stop: any) => {
+                        if (stop.actions) {
+                            stop.actions.forEach((action: any) => {
+                                if (action.transit_item_id) {
+                                    referencedItemIds.add(action.transit_item_id)
+                                }
+                            })
+                        }
                     })
                 }
             })
         }
 
+        transitItems.forEach((item: any, index: number) => {
+            if (!referencedItemIds.has(item.id)) {
+                warnings.push({
+                    message: `Unused transit item: ${item.id} (${item.name || 'Unknown'})`,
+                    path: `transit_items[${index}]`,
+                    severity: 'warning'
+                })
+            }
+        })
+
+        // If context is SUBMIT, we might want to block warnings depending on strictness
+        // For now, consistent with user req: Warning doesn't block "creation" but might block "submit" logic in controller if we choose so.
+        // The user said "Warning ... blocks Submit or Push".
+        // So validation success depends on errors only? Or should we include warnings in failure for SUBMIT?
+        // User said: "Warning ... blocks submit". So if context is SUBMIT and warnings > 0, is it valid?
+        // Usually `valid = errors.length === 0`.
+        // The controller/service calling this will decide if it proceeds with warnings.
+        // We just return both.
+
         return {
             success: errors.length === 0,
-            errors
+            errors,
+            warnings
         }
     }
 

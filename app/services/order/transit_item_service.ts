@@ -12,6 +12,13 @@ export default class TransitItemService {
     /**
      * Adds a transit item to an order.
      */
+    async findTransitItem(itemId: string, trx?: TransactionClientContract): Promise<TransitItem | null> {
+        return TransitItem.query({ client: trx }).where('id', itemId).first()
+    }
+
+    /**
+     * Adds a transit item to an order.
+     */
     async addTransitItem(orderId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<TransitItem>> {
         const validatedData = await vine.validate({ schema: transitItemSchema, data })
         const effectiveTrx = trx || await db.transaction()
@@ -49,24 +56,31 @@ export default class TransitItemService {
         const validatedData = await vine.validate({ schema: transitItemSchema, data })
         const effectiveTrx = trx || await db.transaction()
         try {
-            const ti = await TransitItem.query({ client: effectiveTrx }).where('id', itemId).firstOrFail()
+            const ti = await TransitItem.query({ client: effectiveTrx }).where('id', itemId).first()
+            if (!ti) return { entity: null as any, validationErrors: [] }
+
             await Order.query({ client: effectiveTrx }).where('id', ti.orderId).where('clientId', clientId).firstOrFail()
 
-            ti.merge({
-                productId: validatedData.product_id,
-                name: validatedData.name,
-                description: validatedData.description,
-                packagingType: validatedData.packaging_type || 'box',
-                weight: validatedData.weight_g ?? null,
-                dimensions: validatedData.dimensions,
-                unitaryPrice: validatedData.unitary_price,
-                metadata: {
-                    ...(ti.metadata || {}),
-                    ...validatedData.metadata,
-                    volumeL: validatedData.dimensions?.volume_l || null,
-                    requirements: validatedData.requirements || [],
+            if (validatedData.product_id !== undefined) ti.productId = validatedData.product_id
+            if (validatedData.name !== undefined) ti.name = validatedData.name
+            if (validatedData.description !== undefined) ti.description = validatedData.description
+            if (validatedData.packaging_type !== undefined) ti.packagingType = validatedData.packaging_type
+            if (validatedData.weight_g !== undefined) ti.weight = validatedData.weight_g
+            if (validatedData.unitary_price !== undefined) ti.unitaryPrice = validatedData.unitary_price
+
+            if (validatedData.dimensions !== undefined) {
+                ti.dimensions = {
+                    ...(ti.dimensions || {}),
+                    ...(validatedData.dimensions || {})
                 }
-            })
+            }
+
+            if (validatedData.metadata !== undefined) {
+                ti.metadata = {
+                    ...(ti.metadata || {}),
+                    ...(validatedData.metadata || {}),
+                }
+            }
 
             await ti.useTransaction(effectiveTrx).save()
 
@@ -90,6 +104,7 @@ export default class TransitItemService {
 
         for (const itemData of transitItems) {
             const ti = await TransitItem.create({
+                id: itemData.id, // Use pre-generated ID if available
                 orderId: orderId,
                 productId: itemData.product_id,
                 name: itemData.name,
@@ -98,11 +113,7 @@ export default class TransitItemService {
                 weight: itemData.weight_g ?? null,
                 dimensions: itemData.dimensions,
                 unitaryPrice: itemData.unitary_price,
-                metadata: {
-                    ...itemData.metadata,
-                    volumeL: itemData.dimensions?.volume_l || null,
-                    requirements: itemData.requirements || [],
-                }
+                metadata: itemData.metadata || {}
             }, { client: trx })
 
             transitItemsMap.set(itemData.id, ti)
@@ -111,24 +122,4 @@ export default class TransitItemService {
         return transitItemsMap
     }
 
-    /**
-     * Removes a transit item.
-     */
-    async removeTransitItem(itemId: string, clientId: string, trx?: TransactionClientContract) {
-        const effectiveTrx = trx || await db.transaction()
-
-        try {
-            const ti = await TransitItem.query({ client: effectiveTrx }).where('id', itemId).first()
-            if (!ti) throw new Error('Transit item not found')
-
-            await Order.query({ client: effectiveTrx }).where('id', ti.orderId).where('clientId', clientId).firstOrFail()
-
-            await ti.useTransaction(effectiveTrx).delete()
-            if (!trx) await (effectiveTrx as any).commit()
-            return { success: true }
-        } catch (error) {
-            if (!trx) await (effectiveTrx as any).rollback()
-            throw error
-        }
-    }
 }

@@ -115,7 +115,7 @@ export const updateActionSchema = vine.object({
 export const addStopSchema = vine.object({
     address: vine.object({
         address_id: vine.string().trim().optional(),
-        street: vine.string().trim().minLength(5).maxLength(255),
+        street: vine.string().trim().maxLength(255).optional(),
         city: vine.string().trim().optional(),
         country: vine.string().trim().optional(),
         lat: vine.number().optional(),
@@ -123,7 +123,7 @@ export const addStopSchema = vine.object({
         call: vine.string().trim().optional(),
         room: vine.string().trim().optional(),
         stage: vine.string().trim().optional(),
-    }),
+    }).optional(),
     client: vine.object({
         client_id: vine.string().trim().optional(),
         name: vine.string().trim().minLength(1).maxLength(100).optional(),
@@ -144,7 +144,7 @@ export const addStopSchema = vine.object({
 export const updateStopSchema = vine.object({
     address: vine.object({
         address_id: vine.string().trim().optional(),
-        street: vine.string().trim().minLength(5).maxLength(255).optional(),
+        street: vine.string().trim().maxLength(255).optional(),
         city: vine.string().trim().optional(),
         country: vine.string().trim().optional(),
         lat: vine.number().optional(),

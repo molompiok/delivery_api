@@ -54,6 +54,15 @@ export default class Address extends BaseModel {
     declare country: string | null
 
     @column()
+    declare call: string | null
+
+    @column()
+    declare room: string | null
+
+    @column()
+    declare stage: string | null
+
+    @column()
     declare details: string | null
 
     @column.dateTime({ autoCreate: true })

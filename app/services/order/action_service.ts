@@ -45,15 +45,27 @@ export default class ActionService {
 
                     const tiId = validatedData.transit_item.id || validatedData.transit_item_id
                     if (tiId) {
-                        // Update existing (Rule 2: recursive update even if ID present)
-                        await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
-                        transitItemId = tiId
+                        // Attempt Update
+                        const tiRes = await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
+
+                        if (tiRes.entity) {
+                            transitItemId = tiId
+                        } else {
+                            // Fallback: Create if not found (Upsert resilience)
+                            const createRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx)
+                            transitItemId = createRes.entity!.id
+                        }
                     } else {
                         // Create new
                         const tiRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx)
                         transitItemId = tiRes.entity!.id
                     }
                 } else if (validatedData.transit_item_id) {
+                    // Rule 3: Verify existence
+                    const exists = await this.transitItemService.findTransitItem(validatedData.transit_item_id, effectiveTrx)
+                    if (!exists) {
+                        throw new Error(`Transit item not found: ${validatedData.transit_item_id}`)
+                    }
                     transitItemId = validatedData.transit_item_id
                 }
             }
@@ -141,8 +153,18 @@ export default class ActionService {
             }
 
             if (validatedData.service_time !== undefined) targetAction.serviceTime = validatedData.service_time
-            if (validatedData.confirmation_rules) targetAction.confirmationRules = validatedData.confirmation_rules
-            if (validatedData.metadata) targetAction.metadata = validatedData.metadata
+            if (validatedData.confirmation_rules !== undefined) {
+                targetAction.confirmationRules = {
+                    ...(targetAction.confirmationRules || {}),
+                    ...(validatedData.confirmation_rules || {})
+                }
+            }
+            if (validatedData.metadata !== undefined) {
+                targetAction.metadata = {
+                    ...(targetAction.metadata || {}),
+                    ...(validatedData.metadata || {})
+                }
+            }
 
             // Sync nested TransitItem if provided and not a service
             if (finalType !== 'service') {

@@ -12,7 +12,9 @@ export default class TransitItem extends BaseModel {
 
     @beforeCreate()
     static assignId(item: TransitItem) {
-        item.id = generateId('tri')
+        if (!item.id) {
+            item.id = generateId('tri')
+        }
     }
 
     /**

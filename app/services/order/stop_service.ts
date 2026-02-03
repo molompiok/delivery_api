@@ -1,4 +1,3 @@
-import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import Action from '#models/action'
 import ActionProof from '#models/action_proof'
@@ -56,6 +55,9 @@ export default class StopService {
                 street: validatedData.address?.street || '',
                 city: validatedData.address?.city || null,
                 country: validatedData.address?.country || null,
+                call: validatedData.address?.call || null,
+                room: validatedData.address?.room || null,
+                stage: validatedData.address?.stage || null,
                 isActive: true,
                 isDefault: false,
             }, { client: effectiveTrx })
@@ -78,15 +80,8 @@ export default class StopService {
                 sequence,
                 status: 'PENDING',
                 isPendingChange: !isDraft,
-                metadata: {
-                    ...(validatedData.metadata || {}),
-                    client: validatedData.client || null,
-                    address_extra: {
-                        call: validatedData.address?.call,
-                        room: validatedData.address?.room,
-                        stage: validatedData.address?.stage,
-                    }
-                }
+                client: validatedData.client || null,
+                metadata: validatedData.metadata || {}
             }, { client: effectiveTrx })
 
             // Recursive Action Creation
@@ -145,6 +140,11 @@ export default class StopService {
                         lng: originalAddress.lng,
                         formattedAddress: originalAddress.formattedAddress,
                         street: originalAddress.street,
+                        city: originalAddress.city,
+                        country: originalAddress.country,
+                        call: originalAddress.call,
+                        room: originalAddress.room,
+                        stage: originalAddress.stage,
                         isActive: true,
                         isDefault: false,
                     }, { client: effectiveTrx })
@@ -155,6 +155,7 @@ export default class StopService {
                         addressId: newAddress.id,
                         sequence: stop.sequence,
                         status: stop.status,
+                        client: stop.client,
                         metadata: stop.metadata,
                         originalId: stop.id,
                         isPendingChange: true
@@ -213,10 +214,15 @@ export default class StopService {
                         address.lat = coords[1]
                         address.lng = coords[0]
                     }
-                    address.formattedAddress = validatedData.address.street || address.formattedAddress
-                    address.street = validatedData.address.street || address.street
-                    address.city = validatedData.address.city || address.city
-                    address.country = validatedData.address.country || address.country
+                    if (validatedData.address.street !== undefined) {
+                        address.formattedAddress = validatedData.address.street
+                        address.street = validatedData.address.street
+                    }
+                    if (validatedData.address.city !== undefined) address.city = validatedData.address.city
+                    if (validatedData.address.country !== undefined) address.country = validatedData.address.country
+                    if (validatedData.address.call !== undefined) address.call = validatedData.address.call
+                    if (validatedData.address.room !== undefined) address.room = validatedData.address.room
+                    if (validatedData.address.stage !== undefined) address.stage = validatedData.address.stage
                     await address.useTransaction(effectiveTrx).save()
                 }
             }
@@ -224,18 +230,21 @@ export default class StopService {
             if (validatedData.sequence !== undefined) targetStop.sequence = validatedData.sequence
 
             // Merge metadata for client and address_extra
-            const currentMetadata = targetStop.metadata || {}
             targetStop.metadata = {
-                ...currentMetadata,
+                ...(targetStop.metadata || {}),
                 ...(validatedData.metadata || {}),
-                client: validatedData.client || currentMetadata.client,
-                address_extra: {
-                    ...(currentMetadata.address_extra || {}),
-                    ...(validatedData.address ? {
-                        call: validatedData.address.call,
-                        room: validatedData.address.room,
-                        stage: validatedData.address.stage,
-                    } : {})
+            }
+
+            if (validatedData.client !== undefined) {
+                const baseClient = targetStop.client || {}
+                const newClientData = validatedData.client || {}
+
+                targetStop.client = {
+                    ...baseClient,
+                    ...newClientData,
+                    opening_hours: newClientData.opening_hours
+                        ? { ...(baseClient.opening_hours || {}), ...newClientData.opening_hours }
+                        : baseClient.opening_hours
                 }
             }
 

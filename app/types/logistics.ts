@@ -44,7 +44,21 @@ export enum CalculationEngine {
     FALLBACK = 'fallback'
 }
 
+export interface LogisticsValidationError {
+    message: string
+    path: string
+    field?: string
+    severity: 'error' | 'warning'
+}
+
+export interface LogisticsValidationResult {
+    success: boolean
+    errors: LogisticsValidationError[]
+    warnings: LogisticsValidationError[]
+}
+
 export interface LogisticsOperationResult<T> {
     entity: T
-    validationErrors: string[]
+    validationErrors: LogisticsValidationError[]
+    warnings?: LogisticsValidationError[]
 }

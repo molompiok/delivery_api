@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import emitter from '@adonisjs/core/services/emitter'
 import Order from '#models/order'
+import Step from '#models/step'
 import OrderLeg from '#models/order_leg'
 import GeoService from '#services/geo_service'
 import PricingService, { SimplePackageInfo } from '#services/pricing_service'
@@ -23,16 +24,34 @@ export default class OrderDraftService {
      * Initiates a new order in DRAFT status.
      */
     async initiateOrder(clientId: string, data: any = {}, trx?: TransactionClientContract) {
-        const order = await Order.create({
-            clientId,
-            status: 'DRAFT',
-            assignmentMode: data.assignment_mode || 'GLOBAL',
-            priority: data.priority || 'MEDIUM',
-            refId: data.ref_id || null,
-            assignmentAttemptCount: 0,
-            metadata: data.metadata || {}
-        }, { client: trx })
-        return order
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const order = await Order.create({
+                clientId,
+                status: 'DRAFT',
+                assignmentMode: data.assignment_mode || 'GLOBAL',
+                priority: data.priority || 'MEDIUM',
+                refId: data.ref_id || null,
+                assignmentAttemptCount: 0,
+                metadata: data.metadata || {}
+            }, { client: effectiveTrx })
+
+            // Create default step
+            await Step.create({
+                orderId: order.id,
+                sequence: 0,
+                linked: false,
+                status: 'PENDING',
+                metadata: {},
+                isPendingChange: false
+            }, { client: effectiveTrx })
+
+            if (!trx) await effectiveTrx.commit()
+            return order
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
     }
 
     /**
@@ -42,13 +61,41 @@ export default class OrderDraftService {
         const order = await Order.query()
             .where('id', orderId)
             .where('clientId', clientId)
-            .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('sequence', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
+            .preload('steps', (q) => q.orderBy('sequence', 'asc')
+                .preload('stops', (sq) => sq.orderBy('sequence', 'asc')
+                    .preload('address')
+                    .preload('actions', (aq) => aq.preload('transitItem'))
+                )
+            )
             .preload('transitItems')
             .first()
 
         if (!order) {
             throw new Error('Order not found')
         }
+
+        // Apply shadow filtering before returning
+        // A shadow stop (isPendingChange=true) hides its originalId stop
+        const filterShadows = (list: any[]) => {
+            const shadows = list.filter(item => item.isPendingChange)
+            const originalsToReplace = shadows.map((s: any) => s.originalId).filter(Boolean)
+            const activeItems = [
+                ...list.filter(item => !item.isPendingChange && !originalsToReplace.includes(item.id)),
+                ...shadows
+            ]
+            // Filter deletions (if any)
+            return activeItems.filter(item => !item.isDeleteRequired)
+        }
+
+            ; (order as any).steps = order.steps.map(step => {
+                const stepWithFilteredStops = step
+                    ; (stepWithFilteredStops as any).stops = filterShadows(step.stops || [])
+                stepWithFilteredStops.stops.forEach(stop => {
+                    const stopWithFilteredActions = stop
+                        ; (stopWithFilteredActions as any).actions = filterShadows(stop.actions || [])
+                })
+                return stepWithFilteredStops
+            })
 
         return order
     }
@@ -199,13 +246,15 @@ export default class OrderDraftService {
 
             const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
             const validation = LogisticsService.validateOrderConsistency(virtualState, 'SUBMIT')
-            if (!validation.success) {
-                const errorMessages = validation.errors.map(e => `[${e.path}] ${e.message}`).join(', ')
-                throw new Error(`Order validation failed: ${errorMessages}`)
+            if (!validation.success || (validation.warnings && validation.warnings.length > 0)) {
+                const errors = validation.errors.map(e => `[ERROR] [${e.path}] ${e.message}`)
+                const warnings = (validation.warnings || []).map(w => `[WARNING] [${w.path}] ${w.message}`)
+                const allMessages = [...errors, ...warnings].join(', ')
+                throw new Error(`Order validation failed: ${allMessages}`)
             }
 
             // Apply shadow changes (if any, though in DRAFT there shouldn't be much, but good practice)
-            await this.applyShadowChanges(order.id, clientId, effectiveTrx)
+            await this.applyShadowChanges(order.id, effectiveTrx)
 
             // Re-fetch to have merged state
             await order.load('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('sequence', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
@@ -243,7 +292,7 @@ export default class OrderDraftService {
     /**
      * Merges shadow clones into originals and handles deletions.
      */
-    async applyShadowChanges(orderId: string, clientId: string, trx: TransactionClientContract) {
+    async applyShadowChanges(orderId: string, trx: TransactionClientContract) {
         // Re-fetch order with all shadows
         const order = await Order.query({ client: trx })
             .where('id', orderId)
@@ -295,6 +344,7 @@ export default class OrderDraftService {
                 if (original) {
                     original.sequence = stop.sequence
                     original.addressId = stop.addressId
+                    original.client = stop.client
                     original.metadata = stop.metadata
                     await original.useTransaction(trx).save()
 
@@ -333,6 +383,7 @@ export default class OrderDraftService {
 
         // 5. Cleanup orbits
         await this.cleanupOrphanedAddresses(orderId, trx)
+        await this.cleanupOrphanedTransitItems(orderId, trx)
     }
 
     /**
@@ -349,6 +400,24 @@ export default class OrderDraftService {
         for (const addr of ownedAddresses) {
             if (!activeAddressIds.includes(addr.id)) {
                 await db.from('addresses').useTransaction(trx).where('id', addr.id).delete()
+            }
+        }
+    }
+
+    /**
+     * Deletes transit items that are no longer linked to any action of this order.
+     */
+    async cleanupOrphanedTransitItems(orderId: string, trx: TransactionClientContract) {
+        // Find all transit item IDs currently linked to any action of this order
+        const activeActions = await db.from('actions').useTransaction(trx).where('order_id', orderId).whereNotNull('transit_item_id').select('transit_item_id')
+        const activeItemIds = activeActions.map(a => a.transit_item_id)
+
+        // Find all transit items owned by this order
+        const orderItems = await db.from('transit_items').useTransaction(trx).where('order_id', orderId).select('id')
+
+        for (const item of orderItems) {
+            if (!activeItemIds.includes(item.id)) {
+                await db.from('transit_items').useTransaction(trx).where('id', item.id).delete()
             }
         }
     }
