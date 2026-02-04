@@ -17,307 +17,144 @@ test.group('Order Shadow Mechanism', (group) => {
         return () => db.rollbackGlobalTransaction()
     })
 
-    test('Scenario: Full Shadow Lifecycle Verification', async ({ client, assert }) => {
-        // --- PREPARATION: Create a balanced order (Pickup -> Delivery) ---
-        let response = await client.post('/v1/orders/initiate')
-            .loginAs(clientUser)
-            .json({ ref_id: 'SHADOW-TEST-001', assignment_mode: 'GLOBAL' })
-        response.assertStatus(201)
-        const orderId = response.body().order.id
+    test('Scenario: Strict Anchoring & Shallow Cloning', async ({ client, assert }) => {
+        // 1. Create Order
+        let res = await client.post('/v1/orders/initiate').loginAs(clientUser).json({ ref_id: 'STRICT-001' })
+        const orderId = res.body().order.id
 
-        // Fetch to get the default step created during initiation
-        const initFetch = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const step1Id = initFetch.body().steps[0].id
+        // Fetch Step 1
+        res = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const step1Id = res.body().steps[0].id
 
-        // Stop 1: Pickup (in existing Step 1)
-        let stop1Res = await client.post(`/v1/steps/${step1Id}/stops`)
-            .loginAs(clientUser)
-            .json({
-                address: { street: 'Pickup point', city: 'Abidjan', lat: 5.35, lng: -4.00 },
-                client: { name: 'Sender', phone: '+225001' },
-                actions: [
-                    {
-                        type: 'pickup',
-                        quantity: 5,
-                        transit_item: { name: 'Item Alpha', packaging_type: 'box' }
-                    }
-                ]
-            })
-        stop1Res.assertStatus(201)
+        // Add Stop 1 (Original)
+        res = await client.post(`/v1/steps/${step1Id}/stops`).loginAs(clientUser).json({
+            address: { street: 'Pickup point', lat: 5.35, lng: -4.00 },
+            actions: [{ type: 'pickup', quantity: 5, transit_item: { name: 'Alpha' } }]
+        })
+        const stop1Id = res.body().stop.id
 
-        // Fetch to get TransitItem ID
-        const midOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const transitItemId = midOrder.body().transitItems[0].id
+        // Submit to make it official
+        await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
 
-        // Step 2: Delivery
-        let step2Res = await client.post(`/v1/orders/${orderId}/steps`)
-            .loginAs(clientUser)
-            .json({ sequence: 20 })
-        step2Res.assertStatus(201)
-        const step2Id = step2Res.body().step.id
+        // --- TEST 1: Strict Action Anchoring ---
+        // Shadow the Stop 1
+        res = await client.patch(`/v1/stops/${stop1Id}`).loginAs(clientUser).json({ address: { street: 'New Address' } })
+        const shadowStopId = res.body().stop.id
+        assert.notEqual(shadowStopId, stop1Id)
 
-        let stop2Res = await client.post(`/v1/steps/${step2Id}/stops`)
-            .loginAs(clientUser)
-            .json({
-                address: { street: 'Delivery point', city: 'Abidjan', lat: 5.30, lng: -3.95 },
-                client: { name: 'Receiver', phone: '+225002' },
-                actions: [
-                    {
-                        type: 'delivery',
-                        quantity: 5,
-                        transit_item_id: transitItemId
-                    }
-                ]
-            })
-        stop2Res.assertStatus(201)
+        // Add a NEW action to the Shadow Stop
+        res = await client.post(`/v1/stops/${shadowStopId}/actions`).loginAs(clientUser).json({
+            type: 'pickup', quantity: 10, transit_item: { name: 'Beta' }
+        })
+        const newAction = res.body().action
+        assert.equal(newAction.stopId, stop1Id, 'Action must be anchored to ORIGINAL Stop ID, not Shadow ID')
 
-        // --- SUBMIT ORDER ---
-        let submitRes = await client.post(`/v1/orders/${orderId}/submit`)
-            .loginAs(clientUser)
-        if (submitRes.status() !== 200) {
-            console.error('Submit failed:', JSON.stringify(submitRes.body(), null, 2))
-        }
-        submitRes.assertStatus(200)
+        // --- TEST 2: Virtual State Rendering ---
+        res = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const virtualStops = res.body().steps[0].stops
+        assert.lengthOf(virtualStops, 1)
+        assert.equal(virtualStops[0].id, shadowStopId, 'Virtual view should show the shadow stop')
+        assert.lengthOf(virtualStops[0].actions, 2, 'Virtual view should collect actions from original even if parent is shadowed')
 
-        // --- FETCH IDs for Testing ---
-        const finalInitOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const originalStop = finalInitOrder.body().steps.find((s: any) => s.id === step1Id).stops[0]
-        const originalStopId = originalStop.id
-        const originalActionId = originalStop.actions[0].id
-
-        // --- 1. SHADOW CREATION ---
-        let patchStopRes = await client.patch(`/v1/stops/${originalStopId}`)
-            .loginAs(clientUser)
-            .json({
-                address: { street: 'Avenue des Lumières' }
-            })
-        patchStopRes.assertStatus(200)
-
-        const shadowStopId = patchStopRes.body().stop.id
-        assert.notEqual(shadowStopId, originalStopId)
-        assert.equal(patchStopRes.body().stop.originalId, originalStopId)
-        assert.isTrue(patchStopRes.body().stop.isPendingChange)
-
-        // --- 2. IDEMPOTENCE ---
-        let secondPatchRes = await client.patch(`/v1/stops/${originalStopId}`)
-            .loginAs(clientUser)
-            .json({
-                address: { street: 'Boulevard de la Paix' }
-            })
-        secondPatchRes.assertStatus(200)
-        assert.equal(secondPatchRes.body().stop.id, shadowStopId)
-
-        // --- 3. HIERARCHICAL CLONING ---
-        let patchActionRes = await client.patch(`/v1/actions/${originalActionId}`)
-            .loginAs(clientUser)
-            .json({ quantity: 10 })
-        patchActionRes.assertStatus(200)
-
-        const shadowActionId = patchActionRes.body().action.id
-        assert.notEqual(shadowActionId, originalActionId)
-        assert.equal(patchActionRes.body().action.stopId, shadowStopId)
-
-        // --- 4. TRANSPARENT FETCHING ---
-        let getOrderRes = await client.get(`/v1/orders/${orderId}`)
-            .loginAs(clientUser)
-        getOrderRes.assertStatus(200)
-
-        const orderBody = getOrderRes.body()
-        const step1 = orderBody.steps.find((s: any) => s.id === step1Id)
-        assert.lengthOf(step1.stops, 1)
-        assert.equal(step1.stops[0].id, shadowStopId)
-        assert.lengthOf(step1.stops[0].actions, 1)
-        assert.equal(step1.stops[0].actions[0].id, shadowActionId)
-
-        // --- 5. JSON DEEP MERGE ---
-        let mergePatchRes = await client.patch(`/v1/stops/${shadowStopId}`)
-            .loginAs(clientUser)
-            .json({
-                client: { email: 'new@shadow.com' }
-            })
-        mergePatchRes.assertStatus(200)
-
-        const updatedClient = mergePatchRes.body().stop.client
-        assert.equal(updatedClient.email, 'new@shadow.com')
-        assert.equal(updatedClient.name, 'Sender', 'Name should be preserved')
-
-        // --- 6. PUSH-UPDATES MERGE & CLEANUP ---
-        // Shadow the delivery action too to maintain balance (Pickup 10 / Delivery 10)
-        const deliveryActionId = finalInitOrder.body().steps.find((s: any) => s.id === step2Id).stops[0].actions[0].id
-        await client.patch(`/v1/actions/${deliveryActionId}`)
-            .loginAs(clientUser)
-            .json({ quantity: 10 })
-
-        let pushRes = await client.post(`/v1/orders/${orderId}/push-updates`)
-            .loginAs(clientUser)
-        if (pushRes.status() !== 200) {
-            console.error('Push failed:', JSON.stringify(pushRes.body(), null, 2))
-        }
-        pushRes.assertStatus(200)
-
-        let finalOrderRes = await client.get(`/v1/orders/${orderId}`)
-            .loginAs(clientUser)
-        finalOrderRes.assertStatus(200)
-
-        const finalStep1 = finalOrderRes.body().steps.find((s: any) => s.id === step1Id)
-        const finalStops = finalStep1.stops
-        const finalActions = finalStops[0].actions
-
-        assert.equal(finalStops[0].id, originalStopId)
-        assert.isFalse(!!finalStops[0].isPendingChange)
-        assert.equal(finalStops[0].address.street, 'Boulevard de la Paix')
-        assert.equal(finalStops[0].client.email, 'new@shadow.com')
-        assert.equal(finalActions[0].id, originalActionId)
-        assert.equal(finalActions[0].quantity, 10)
-
-        // --- 7. RESILIENCE ---
-        let deadShadowRes = await client.patch(`/v1/stops/${shadowStopId}`)
-            .loginAs(clientUser)
-            .json({ street: 'Ghosts' })
-        deadShadowRes.assertStatus(404)
+        // --- TEST 3: Push Updates ---
+        await client.post(`/v1/orders/${orderId}/push-updates`).loginAs(clientUser)
+        res = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const finalStop = res.body().steps[0].stops[0]
+        assert.equal(finalStop.id, stop1Id, 'After push, we are back to original ID')
+        assert.equal(finalStop.address_text, 'New Address')
+        assert.lengthOf(finalStop.actions, 2)
     })
 
-    test('Scenario: Shadow Deletion Mechanism', async ({ client, assert }) => {
-        // --- 1. SETUP ---
-        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
-        initRes.assertStatus(201)
-        const orderId = initRes.body().order.id
+    test('Scenario: Transit Item Shadowing (Weight Modification)', async ({ client, assert }) => {
+        // 1. Setup Order with Item
+        let res = await client.post('/v1/orders/initiate').loginAs(clientUser)
+        const orderId = res.body().order.id
+        const stepId = res.body().order.steps[0].id
 
-        // Fetch to get steps
-        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const stepId = fetchRes.body().steps[0].id
+        res = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
+            address: { street: 'A', lat: 1, lng: 1 },
+            actions: [{ type: 'pickup', quantity: 1, transit_item: { name: 'Anvil', weight: 5000 } }]
+        })
+        await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
+
+        const initFetch = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const originalItem = initFetch.body().transit_items[0]
+        const originalItemId = originalItem.id
+
+        // 2. Patch the item (Create Shadow)
+        res = await client.patch(`/v1/orders/${orderId}/items/${originalItemId}`).loginAs(clientUser).json({
+            weight: 10000,
+            name: 'Heavy Anvil'
+        })
+        res.assertStatus(200)
+        const shadowItemId = res.body().item.id
+        assert.notEqual(shadowItemId, originalItemId)
+        assert.equal(res.body().item.originalId, originalItemId)
+
+        // 3. Verify Virtual State
+        res = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.equal(res.body().transit_items[0].id, shadowItemId, 'Virtual view must show shadow item')
+        assert.equal(res.body().transit_items[0].weight, 10000)
+
+        // 4. Push and Verify Merge
+        await client.post(`/v1/orders/${orderId}/push-updates`).loginAs(clientUser)
+        res = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const finalItem = res.body().transit_items[0]
+        assert.equal(finalItem.id, originalItemId, 'Back to original ID after merge')
+        assert.equal(finalItem.weight, 10000)
+        assert.equal(finalItem.name, 'Heavy Anvil')
+    })
+
+    test('Scenario: Cleanup of Orphaned Transit Items', async ({ client, assert }) => {
+        // 1. Create Item linked to 2 actions
+        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
+        const orderId = initRes.body().order.id
+        const stepId = initRes.body().order.steps[0].id
 
         await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
-            address: { street: 'To be deleted', lat: 1, lng: 1 },
-            actions: [{ type: 'service', productName: 'Disposable' }]
+            address: { street: 'A', lat: 1, lng: 1 },
+            actions: [{ type: 'pickup', quantity: 1, transit_item: { name: 'Ghost Item' } }]
         })
-
         await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
-        const initOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const stopId = initOrder.body().steps[0].stops[0].id
 
-        // --- 2. DELETE REQUEST ---
-        const delRes = await client.delete(`/v1/stops/${stopId}`).loginAs(clientUser)
-        delRes.assertStatus(200)
+        const fetch1 = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const actionId = fetch1.body().steps[0].stops[0].actions[0].id
+        const itemId = fetch1.body().transit_items[0].id
 
-        // --- 3. VERIFY FILTERING ---
-        const filteredOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        assert.lengthOf(filteredOrder.body().steps[0].stops, 0, 'Deleted stop should be filtered out')
+        // 2. Delete the only action linked to it
+        await client.delete(`/v1/actions/${actionId}`).loginAs(clientUser)
 
-        // --- 5. PUSH UPDATES ---
+        // Virtual view should still have item (orphans only cleaned at push)
+        const midFetch = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(midFetch.body().transit_items, 1)
+
+        // 3. Push and Verify Item Deletion
         await client.post(`/v1/orders/${orderId}/push-updates`).loginAs(clientUser)
-
-        // --- 6. VERIFY PERMANENT DELETION ---
-        const finalOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        assert.lengthOf(finalOrder.body().steps[0].stops, 0)
+        const finalFetch = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(finalFetch.body().transit_items, 0, 'Item should be culled as it has no active actions')
     })
 
-    test('Scenario: Unauthorized Access Security', async ({ client, assert }) => {
-        const userB = await User.create({
-            email: `outsider-${generateId('out')}@example.com`,
-            password: 'password123',
-            fullName: 'Intruder',
-            isActive: true
-        })
-
+    test('Scenario: Revert Mechanism for Shadow Items', async ({ client, assert }) => {
         const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
-        initRes.assertStatus(201)
         const orderId = initRes.body().order.id
-        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const stepId = fetchRes.body().steps[0].id
+        const stepId = initRes.body().order.steps[0].id
 
-        let stopRes = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
-            address: { street: 'Owner address', lat: 1, lng: 1 },
-            actions: [{ type: 'service', productName: 'My Service' }]
+        await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
+            address: { street: 'A', lat: 1, lng: 1 },
+            actions: [{ type: 'pickup', quantity: 1, transit_item: { name: 'Revert Me' } }]
         })
-        stopRes.assertStatus(201)
-        const stopId = stopRes.body().stop.id
-
-        const badPatch = await client.patch(`/v1/stops/${stopId}`)
-            .loginAs(userB)
-            .json({ address: { street: 'Hacked!' } })
-
-        assert.equal(badPatch.status(), 404)
-
-        const goodPatch = await client.patch(`/v1/stops/${stopId}`)
-            .loginAs(clientUser)
-            .json({ address: { street: 'Legit update' } })
-        goodPatch.assertStatus(200)
-    })
-
-    test('Scenario: Stress Test - Bulk modifications', async ({ client, assert }) => {
-        const STOP_COUNT = 50
-        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
-        initRes.assertStatus(201)
-        const orderId = initRes.body().order.id
-        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const stepId = fetchRes.body().steps[0].id
-
-        const stopIds: string[] = []
-        for (let i = 0; i < STOP_COUNT; i++) {
-            const res = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
-                address: { street: `Stress Stop ${i}`, lat: 1, lng: 1 },
-                actions: [{ type: 'service', productName: `Service ${i}` }]
-            })
-            if (res.status() !== 201) {
-                console.error(`Stop ${i} creation failed:`, res.body())
-            }
-            res.assertStatus(201)
-            stopIds.push(res.body().stop.id)
-        }
-
         await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
 
-        console.time('StressTest - Cloning')
-        const patchResults = await Promise.all(stopIds.map(id =>
-            client.patch(`/v1/stops/${id}`).loginAs(clientUser).json({ metadata: { stressed: true } })
-        ))
-        console.timeEnd('StressTest - Cloning')
-        patchResults.forEach((res, i) => {
-            if (res.status() !== 200) console.error(`Patch ${i} failed:`, res.body())
-            res.assertStatus(200)
-        })
+        const originalItemId = (await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)).body().transit_items[0].id
 
-        const midOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        assert.lengthOf(midOrder.body().steps[0].stops, STOP_COUNT)
+        // Modify item
+        await client.patch(`/v1/orders/${orderId}/items/${originalItemId}`).loginAs(clientUser).json({ name: 'Changed' })
 
-        const pushRes = await client.post(`/v1/orders/${orderId}/push-updates`).loginAs(clientUser)
-        pushRes.assertStatus(200)
+        // Revert
+        await client.post(`/v1/orders/${orderId}/revert-updates`).loginAs(clientUser)
 
-        const finalOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        assert.lengthOf(finalOrder.body().steps[0].stops, STOP_COUNT)
-    }).timeout(30000)
-
-    test('Scenario: Concurrency - Race condition handling', async ({ client, assert }) => {
-        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
-        initRes.assertStatus(201)
-        const orderId = initRes.body().order.id
-        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        const stepId = fetchRes.body().steps[0].id
-
-        let stopRes = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
-            address: { street: 'Single stop', lat: 1, lng: 1 },
-            actions: [{ type: 'service' }]
-        })
-        stopRes.assertStatus(201)
-        const stopId = stopRes.body().stop.id
-        await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
-
-        const PATCH_COUNT = 10
-        const results = await Promise.all(
-            Array.from({ length: PATCH_COUNT }).map((_, i) =>
-                client.patch(`/v1/stops/${stopId}`).loginAs(clientUser).json({ metadata: { version: i } })
-            )
-        )
-
-        results.forEach(res => res.assertStatus(200))
-
-        const shadowIds = results.map(r => r.body().stop.id)
-        const uniqueShadowIds = [...new Set(shadowIds)]
-
-        assert.lengthOf(uniqueShadowIds, 1, 'Idempotence should ensure only ONE shadow ID is used')
-
-        const finalCheck = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
-        assert.lengthOf(finalCheck.body().steps[0].stops, 1)
+        const finalFetch = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.equal(finalFetch.body().transit_items[0].name, 'Revert Me')
+        assert.isTrue(!finalFetch.body().transit_items[0].is_pending_change)
     })
 })

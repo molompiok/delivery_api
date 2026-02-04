@@ -1,9 +1,5 @@
 import db from '@adonisjs/lucid/services/db'
 import Step from '#models/step'
-import Stop from '#models/stop'
-import Action from '#models/action'
-import ActionProof from '#models/action_proof'
-import Address from '#models/address'
 import Order from '#models/order'
 import { LogisticsOperationResult } from '../../types/logistics.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
@@ -98,70 +94,8 @@ export default class StepService {
                         isPendingChange: true,
                     }, { client: effectiveTrx })
 
-                    // Recursive cloning of stops (which will clone actions)
-                    const originalStops = await Stop.query({ client: effectiveTrx })
-                        .where('stepId', step.id)
-                        .where('isPendingChange', false)
-
-                    for (const st of originalStops) {
-                        // Clone address first
-                        const originalAddress = await Address.query({ client: effectiveTrx }).where('id', st.addressId).firstOrFail()
-                        const newAddress = await Address.create({
-                            ownerType: 'Order',
-                            ownerId: originalAddress.ownerId,
-                            label: originalAddress.label,
-                            lat: originalAddress.lat,
-                            lng: originalAddress.lng,
-                            formattedAddress: originalAddress.formattedAddress,
-                            street: originalAddress.street,
-                            isActive: true,
-                            isDefault: false,
-                        }, { client: effectiveTrx })
-
-                        const newStop = await Stop.create({
-                            orderId: step.orderId,
-                            stepId: targetStep.id,
-                            addressId: newAddress.id,
-                            sequence: st.sequence,
-                            status: st.status,
-                            metadata: st.metadata,
-                            originalId: st.id,
-                            isPendingChange: true
-                        }, { client: effectiveTrx })
-
-                        // Recursive actions
-                        const originalActions = await Action.query({ client: effectiveTrx })
-                            .where('stopId', st.id)
-                            .where('isPendingChange', false)
-
-                        for (const act of originalActions) {
-                            const newAction = await Action.create({
-                                orderId: step.orderId,
-                                stopId: newStop.id,
-                                transitItemId: act.transitItemId,
-                                type: act.type,
-                                quantity: act.quantity,
-                                status: act.status,
-                                serviceTime: act.serviceTime,
-                                confirmationRules: act.confirmationRules,
-                                metadata: act.metadata,
-                                originalId: act.id,
-                                isPendingChange: true,
-                            }, { client: effectiveTrx })
-
-                            const proofs = await ActionProof.query({ client: effectiveTrx }).where('actionId', act.id)
-                            for (const proof of proofs) {
-                                await ActionProof.create({
-                                    actionId: newAction.id,
-                                    type: proof.type,
-                                    key: proof.key,
-                                    expectedValue: proof.expectedValue,
-                                    isVerified: proof.isVerified,
-                                    metadata: proof.metadata
-                                }, { client: effectiveTrx })
-                            }
-                        }
-                    }
+                    // Recursive cloning of stops (and children) REMOVED for Shallow Cloning
+                    // Stops remain linked to the original step ID
                 }
             }
 

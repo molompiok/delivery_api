@@ -73,9 +73,11 @@ export default class StopService {
 
             const isDraft = order.status === 'DRAFT'
 
+            const targetStepId = step.isPendingChange && step.originalId ? step.originalId : step.id
+
             const stop = await Stop.create({
                 orderId: order.id,
-                stepId: step.id,
+                stepId: targetStepId,
                 addressId: address.id,
                 sequence,
                 status: 'PENDING',
@@ -166,39 +168,8 @@ export default class StopService {
                         isPendingChange: true
                     }, { client: effectiveTrx })
 
-                    // Recursive cloning of actions for this stop
-                    const originalActions = await Action.query({ client: effectiveTrx })
-                        .where('stopId', stop.id)
-                        .where('isPendingChange', false)
-
-                    for (const act of originalActions) {
-                        const newAction = await Action.create({
-                            orderId: stop.orderId,
-                            stopId: targetStop.id,
-                            transitItemId: act.transitItemId,
-                            type: act.type,
-                            quantity: act.quantity,
-                            status: act.status,
-                            serviceTime: act.serviceTime,
-                            confirmationRules: act.confirmationRules,
-                            metadata: act.metadata,
-                            originalId: act.id,
-                            isPendingChange: true,
-                        }, { client: effectiveTrx })
-
-                        // Clone proofs too
-                        const proofs = await ActionProof.query({ client: effectiveTrx }).where('actionId', act.id)
-                        for (const proof of proofs) {
-                            await ActionProof.create({
-                                actionId: newAction.id,
-                                type: proof.type,
-                                key: proof.key,
-                                expectedValue: proof.expectedValue,
-                                isVerified: proof.isVerified,
-                                metadata: proof.metadata
-                            }, { client: effectiveTrx })
-                        }
-                    }
+                    // Recursive cloning of actions REMOVED for Shallow Cloning
+                    // Actions remain linked to the original stop ID
                 }
             }
 

@@ -69,7 +69,7 @@ When creating an order via `POST /v1/orders`, the server expects the following h
             "name": "iPhone 15",
             "description": "Black, 128GB",
             "packaging_type": "box | fluid",
-            "weight_g": 500,
+            "weight": 500,
             "volume_l": 0.5, // For fluid items (liters)
             "dimensions": {
                 "width_cm": 15,

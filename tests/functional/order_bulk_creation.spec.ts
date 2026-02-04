@@ -57,10 +57,10 @@ test.group('Order Bulk Creation (Complex Scenarios)', (group) => {
             priority: 'HIGH',
             ref_id: 'GRAND-TOUR-001',
             transit_items: [
-                { id: 'item_a', name: 'Item A (Long Trip)', weight_g: 1000 },
-                { id: 'item_b', name: 'Item B (Hub Transfer Part 1)', weight_g: 500 },
-                { id: 'item_c', name: 'Item C (Hub Transfer Part 2)', weight_g: 500 },
-                { id: 'item_d', name: 'Item D (Quick Delivery)', weight_g: 200 }
+                { id: 'item_a', name: 'Item A (Long Trip)', weight: 1000 },
+                { id: 'item_b', name: 'Item B (Hub Transfer Part 1)', weight: 500 },
+                { id: 'item_c', name: 'Item C (Hub Transfer Part 2)', weight: 500 },
+                { id: 'item_d', name: 'Item D (Quick Delivery)', weight: 200 }
             ],
             steps: [
                 // STEP 1: Initial Pickups

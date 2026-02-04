@@ -24,6 +24,7 @@ export default class TransitItemService {
         const effectiveTrx = trx || await db.transaction()
         try {
             const order = await Order.query({ client: effectiveTrx }).where('id', orderId).where('clientId', clientId).firstOrFail()
+            const isDraft = order.status === 'DRAFT'
 
             const ti = await TransitItem.create({
                 orderId: order.id,
@@ -31,11 +32,17 @@ export default class TransitItemService {
                 name: validatedData.name,
                 description: validatedData.description,
                 packagingType: validatedData.packaging_type || 'box',
-                weight: validatedData.weight_g ?? null,
+                weight: validatedData.weight ?? null,
                 dimensions: validatedData.dimensions,
                 unitaryPrice: validatedData.unitary_price,
                 metadata: validatedData.metadata || {},
+                isPendingChange: !isDraft,
             }, { client: effectiveTrx })
+
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
 
             if (!trx) await (effectiveTrx as any).commit()
 
@@ -59,35 +66,69 @@ export default class TransitItemService {
             const ti = await TransitItem.query({ client: effectiveTrx }).where('id', itemId).first()
             if (!ti) return { entity: null as any, validationErrors: [] }
 
-            await Order.query({ client: effectiveTrx }).where('id', ti.orderId).where('clientId', clientId).firstOrFail()
+            const order = await Order.query({ client: effectiveTrx }).where('id', ti.orderId).where('clientId', clientId).firstOrFail()
+            const isDraft = order.status === 'DRAFT'
 
-            if (validatedData.product_id !== undefined) ti.productId = validatedData.product_id
-            if (validatedData.name !== undefined) ti.name = validatedData.name
-            if (validatedData.description !== undefined) ti.description = validatedData.description
-            if (validatedData.packaging_type !== undefined) ti.packagingType = validatedData.packaging_type
-            if (validatedData.weight_g !== undefined) ti.weight = validatedData.weight_g
-            if (validatedData.unitary_price !== undefined) ti.unitaryPrice = validatedData.unitary_price
+            let targetTi = ti
+            if (!isDraft && !ti.isPendingChange) {
+                // Check for existing shadow
+                const existingShadow = await TransitItem.query({ client: effectiveTrx })
+                    .where('originalId', ti.id)
+                    .where('isPendingChange', true)
+                    .first()
+
+                if (existingShadow) {
+                    targetTi = existingShadow
+                } else {
+                    // Create shadow clone
+                    targetTi = await TransitItem.create({
+                        orderId: ti.orderId,
+                        productId: ti.productId,
+                        name: ti.name,
+                        description: ti.description,
+                        packagingType: ti.packagingType,
+                        weight: ti.weight,
+                        dimensions: ti.dimensions,
+                        unitaryPrice: ti.unitaryPrice,
+                        metadata: ti.metadata,
+                        originalId: ti.id,
+                        isPendingChange: true
+                    }, { client: effectiveTrx })
+                }
+            }
+
+            if (validatedData.product_id !== undefined) targetTi.productId = validatedData.product_id
+            if (validatedData.name !== undefined) targetTi.name = validatedData.name
+            if (validatedData.description !== undefined) targetTi.description = validatedData.description
+            if (validatedData.packaging_type !== undefined) targetTi.packagingType = validatedData.packaging_type
+            if (validatedData.weight !== undefined) targetTi.weight = validatedData.weight
+            if (validatedData.unitary_price !== undefined) targetTi.unitaryPrice = validatedData.unitary_price
 
             if (validatedData.dimensions !== undefined) {
-                ti.dimensions = {
-                    ...(ti.dimensions || {}),
+                targetTi.dimensions = {
+                    ...(targetTi.dimensions || {}),
                     ...(validatedData.dimensions || {})
                 }
             }
 
             if (validatedData.metadata !== undefined) {
-                ti.metadata = {
-                    ...(ti.metadata || {}),
+                targetTi.metadata = {
+                    ...(targetTi.metadata || {}),
                     ...(validatedData.metadata || {}),
                 }
             }
 
-            await ti.useTransaction(effectiveTrx).save()
+            await targetTi.useTransaction(effectiveTrx).save()
+
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
 
             if (!trx) await (effectiveTrx as any).commit()
 
             return {
-                entity: ti,
+                entity: targetTi,
                 validationErrors: []
             }
         } catch (error) {
@@ -110,7 +151,7 @@ export default class TransitItemService {
                 name: itemData.name,
                 description: itemData.description,
                 packagingType: itemData.packaging_type || 'box',
-                weight: itemData.weight_g ?? null,
+                weight: itemData.weight ?? null,
                 dimensions: itemData.dimensions,
                 unitaryPrice: itemData.unitary_price,
                 metadata: itemData.metadata || {}

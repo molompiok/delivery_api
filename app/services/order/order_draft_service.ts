@@ -15,6 +15,7 @@ import LogisticsService from '#services/logistics_service'
 import { inject } from '@adonisjs/core'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import ActionService from './action_service.js'
+import TransitItem from '#models/transit_item'
 
 @inject()
 export default class OrderDraftService {
@@ -91,15 +92,29 @@ export default class OrderDraftService {
             return activeItems.filter(item => !item.isDeleteRequired)
         }
 
-        (order as any).steps = filterShadows(order.steps || []).map(step => {
-            const stepWithFilteredStops = step
-                ; (stepWithFilteredStops as any).stops = filterShadows(step.stops || [])
-            stepWithFilteredStops.stops.forEach(stop => {
-                const stopWithFilteredActions = stop
-                    ; (stopWithFilteredActions as any).actions = filterShadows(stop.actions || [])
-            })
-            return stepWithFilteredStops
-        })
+        const allStepsInOrder = order.steps || []
+        const allStopsInOrder = allStepsInOrder.flatMap(s => s.stops || [])
+        const allActionsInOrder = allStopsInOrder.flatMap(s => s.actions || [])
+
+            ; (order as any).steps = filterShadows(allStepsInOrder)
+                .sort((a: any, b: any) => a.sequence - b.sequence)
+                .map(step => {
+                    const conceptualStepId = step.isPendingChange ? step.originalId : step.id
+                    const stepStops = allStopsInOrder.filter(s => s.stepId === conceptualStepId || s.stepId === step.id)
+
+                        ; (step as any).stops = filterShadows(stepStops)
+                            .sort((a: any, b: any) => a.sequence - b.sequence)
+                            .map(stop => {
+                                const conceptualStopId = stop.isPendingChange ? stop.originalId : stop.id
+                                const stopActions = allActionsInOrder.filter(a => a.stopId === conceptualStopId || a.stopId === stop.id)
+
+                                    ; (stop as any).actions = filterShadows(stopActions)
+                                return stop
+                            })
+                    return step
+                })
+
+            ; (order as any).transitItems = filterShadows(order.transitItems || [])
 
         return order
     }
@@ -132,47 +147,74 @@ export default class OrderDraftService {
         filteredSteps.sort((a, b) => a.sequence - b.sequence)
 
         const steps = filteredSteps.map(step => {
-            let filteredStops = filterDeleted(step.stops || [])
+            const conceptualStepId = step.isPendingChange ? step.originalId : step.id
+
+            // All stops in the order to find those conceptually belonging to this step
+            const allStops = order.steps.flatMap(s => s.stops || [])
+            let stepStops = allStops.filter(s => s.stepId === conceptualStepId || s.stepId === step.id)
+
             if (options.view === 'CLIENT') {
-                filteredStops = applyShadows(filteredStops)
+                stepStops = applyShadows(stepStops)
             } else {
-                filteredStops = filteredStops.filter(s => !s.isPendingChange)
+                stepStops = stepStops.filter(s => !s.isPendingChange && !s.isDeleteRequired)
             }
-            filteredStops.sort((a, b) => a.sequence - b.sequence)
+            stepStops = filterDeleted(stepStops)
+            stepStops.sort((a, b) => a.sequence - b.sequence)
 
             return {
                 id: step.id,
                 sequence: step.sequence,
                 linked: step.linked,
-                stops: filteredStops.map(stop => {
-                    let filteredActions = filterDeleted(stop.actions || [])
+                is_pending_change: step.isPendingChange,
+                is_delete_required: step.isDeleteRequired,
+                stops: stepStops.map(stop => {
+                    const conceptualStopId = stop.isPendingChange ? stop.originalId : stop.id
+
+                    // All actions in the order to find those conceptually belonging to this stop
+                    const allActions = allStops.flatMap(s => s.actions || [])
+                    let stopActions = allActions.filter(a => a.stopId === conceptualStopId || a.stopId === stop.id)
+
                     if (options.view === 'CLIENT') {
-                        filteredActions = applyShadows(filteredActions)
+                        stopActions = applyShadows(stopActions)
                     } else {
-                        filteredActions = filteredActions.filter(a => !a.isPendingChange)
+                        stopActions = stopActions.filter(a => !a.isPendingChange && !a.isDeleteRequired)
                     }
+                    stopActions = filterDeleted(stopActions)
 
                     return {
                         id: stop.id,
                         address_text: stop.address?.formattedAddress || '',
                         sequence: stop.sequence,
-                        actions: filteredActions.map(action => ({
+                        is_pending_change: stop.isPendingChange,
+                        is_delete_required: stop.isDeleteRequired,
+                        actions: stopActions.map(action => ({
                             id: action.id,
                             type: action.type,
                             quantity: action.quantity,
-                            transit_item_id: action.transitItemId
+                            transit_item_id: action.transitItemId,
+                            is_pending_change: action.isPendingChange,
+                            is_delete_required: action.isDeleteRequired
                         }))
                     }
                 })
             }
         })
 
-        const transitItems = order.transitItems ? order.transitItems.map(ti => ({
+        let filteredTransitItems = filterDeleted(order.transitItems || [])
+        if (options.view === 'CLIENT') {
+            filteredTransitItems = applyShadows(filteredTransitItems)
+        } else {
+            filteredTransitItems = filteredTransitItems.filter(ti => !ti.isPendingChange)
+        }
+
+        const transitItems = filteredTransitItems.map(ti => ({
             id: ti.id,
             name: ti.name,
-            weight_g: ti.weight ? ti.weight * 1000 : null,
-            dimensions: ti.dimensions
-        })) : []
+            weight: ti.weight ?? null,
+            dimensions: ti.dimensions,
+            is_pending_change: ti.isPendingChange,
+            is_delete_required: ti.isDeleteRequired
+        }))
 
         return {
             transit_items: transitItems,
@@ -206,7 +248,7 @@ export default class OrderDraftService {
 
         const pricingPackages: SimplePackageInfo[] = order.transitItems.map(ti => ({
             dimensions: {
-                weight_g: ti.weight ? ti.weight * 1000 : 0,
+                weight: ti.weight ?? 0,
                 ...ti.dimensions
             },
             quantity: 1
@@ -320,6 +362,7 @@ export default class OrderDraftService {
             const order = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
                 .preload('steps', (q) => q.preload('stops', (sq) => sq.preload('actions')))
+                .preload('transitItems')
                 .first()
 
             if (!order) {
@@ -355,6 +398,35 @@ export default class OrderDraftService {
                 }
             }
 
+            // 1.5 Merge Transit Items
+            for (const item of order.transitItems || []) {
+                if (item.isDeleteRequired) {
+                    if (item.isPendingChange && item.originalId) {
+                        const original = order.transitItems.find(ti => ti.id === item.originalId)
+                        if (original) await original.useTransaction(effectiveTrx).delete()
+                    }
+                    await item.useTransaction(effectiveTrx).delete()
+                    continue
+                }
+                if (item.isPendingChange && item.originalId) {
+                    const original = order.transitItems.find(ti => ti.id === item.originalId)
+                    if (original) {
+                        original.name = item.name
+                        original.description = item.description
+                        original.weight = item.weight
+                        original.dimensions = item.dimensions
+                        original.packagingType = item.packagingType
+                        original.unitaryPrice = item.unitaryPrice
+                        original.metadata = item.metadata
+                        await original.useTransaction(effectiveTrx).save()
+
+                        // Relink actions that point to the shadow item
+                        await db.from('actions').useTransaction(effectiveTrx).where('transit_item_id', item.id).update({ transit_item_id: original.id })
+                    }
+                    await item.useTransaction(effectiveTrx).delete()
+                }
+            }
+
             // 2. Merge Stops
             for (const stop of allStops) {
                 if (stop.isDeleteRequired) {
@@ -370,9 +442,6 @@ export default class OrderDraftService {
                         original.client = stop.client
                         original.metadata = stop.metadata
                         await original.useTransaction(effectiveTrx).save()
-
-                        // Relink actions to original stop
-                        await db.from('actions').useTransaction(effectiveTrx).where('stop_id', stop.id).update({ stop_id: original.id })
                     }
                     await stop.useTransaction(effectiveTrx).delete()
                 }
@@ -391,9 +460,6 @@ export default class OrderDraftService {
                         original.linked = step.linked
                         original.metadata = step.metadata
                         await original.useTransaction(effectiveTrx).save()
-
-                        // Relink stops to original step
-                        await db.from('stops').useTransaction(effectiveTrx).where('step_id', step.id).update({ step_id: original.id })
                     }
                     await step.useTransaction(effectiveTrx).delete()
                 }
@@ -403,6 +469,7 @@ export default class OrderDraftService {
             await db.from('steps').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
             await db.from('stops').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
             await db.from('actions').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
+            await db.from('transit_items').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
 
             // RESET ORDER FLAG
             await db.from('orders').useTransaction(effectiveTrx).where('id', orderId).update({ has_pending_changes: false })
@@ -438,6 +505,9 @@ export default class OrderDraftService {
             // 3. Delete all shadow Steps
             await Step.query({ client: effectiveTrx }).where('orderId', orderId).where('isPendingChange', true).delete()
 
+            // 3.5 Delete all shadow Transit Items
+            await TransitItem.query({ client: effectiveTrx }).where('orderId', orderId).where('isPendingChange', true).delete()
+
             // 4. Reset isDeleteRequired flags on original Actions
             await Action.query({ client: effectiveTrx }).where('orderId', orderId).where('isDeleteRequired', true).update({ isDeleteRequired: false })
 
@@ -447,8 +517,15 @@ export default class OrderDraftService {
             // 6. Reset isDeleteRequired flags on original Steps
             await Step.query({ client: effectiveTrx }).where('orderId', orderId).where('isDeleteRequired', true).update({ isDeleteRequired: false })
 
+            // 6.5 Reset isDeleteRequired flags on original Transit Items
+            await TransitItem.query({ client: effectiveTrx }).where('orderId', orderId).where('isDeleteRequired', true).update({ isDeleteRequired: false })
+
             // 7. Reset Order Flag
             await Order.query({ client: effectiveTrx }).where('id', orderId).update({ hasPendingChanges: false })
+
+            // 8. Cleanup orbits
+            await this.cleanupOrphanedAddresses(orderId, effectiveTrx)
+            await this.cleanupOrphanedTransitItems(orderId, effectiveTrx)
 
             if (!trx) await effectiveTrx.commit()
         } catch (error) {
@@ -501,10 +578,14 @@ export default class OrderDraftService {
             }
 
             // Find all transit items owned by this order
-            const orderItems = await db.from('transit_items').useTransaction(effectiveTrx).where('order_id', orderId).select('id')
+            const orderItems = await db.from('transit_items').useTransaction(effectiveTrx).where('order_id', orderId).select('id', 'original_id')
 
             for (const item of orderItems) {
-                if (!activeItemIds.includes(item.id)) {
+                const isIdUsed = activeItemIds.includes(item.id)
+                // Also check if any shadow of this item is used
+                const isAnyShadowUsed = orderItems.some(other => other.original_id === item.id && activeItemIds.includes(other.id))
+
+                if (!isIdUsed && !isAnyShadowUsed) {
                     await db.from('transit_items').useTransaction(effectiveTrx).where('id', item.id).delete()
                 }
             }
@@ -572,7 +653,7 @@ export default class OrderDraftService {
 
         const pricingPackages: SimplePackageInfo[] = order.transitItems.map(ti => ({
             dimensions: {
-                weight_g: ti.weight ? ti.weight * 1000 : 0,
+                weight: ti.weight ?? 0,
                 ...ti.dimensions
             },
             quantity: 1
@@ -583,5 +664,51 @@ export default class OrderDraftService {
             order.totalDurationSeconds!,
             pricingPackages
         )
+    }
+
+    /**
+     * Pushes pending changes (shadows) to the live order.
+     */
+    async pushUpdates(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const order = await Order.find(orderId, { client: effectiveTrx })
+            if (!order || order.clientId !== clientId) {
+                throw new Error('Order not found or access denied')
+            }
+
+            // 1. Apply merge logic
+            await this.applyShadowChanges(order.id, effectiveTrx)
+
+            // 2. Recalculate accounting
+            // Reload order to get fresh state
+            const freshOrder = await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('sequence', 'asc').preload('actions', (aq) => aq.preload('transitItem'))))
+                .preload('transitItems')
+                .firstOrFail()
+
+            await this.finalizeOrderAccounting(freshOrder, effectiveTrx)
+            await freshOrder.useTransaction(effectiveTrx).save()
+
+            if (!trx) await effectiveTrx.commit()
+
+            // 3. Notify real-time listeners
+            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                orderId: order.id,
+                status: order.status,
+                clientId: order.clientId,
+                //@ts-ignore // error ici payload n'est pas reconnu
+                payload: {
+                    type: 'order_updated',
+                    message: 'Order has been updated by client'
+                }
+            }))
+
+            return freshOrder
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
     }
 }

@@ -2,7 +2,7 @@ import logger from '@adonisjs/core/services/logger'
 
 export interface SimplePackageInfo {
     dimensions: {
-        weight_g?: number
+        weight?: number
         depth_cm?: number
         width_cm?: number
         height_cm?: number
@@ -44,7 +44,7 @@ class PricingService {
 
             for (const pkg of packages) {
                 const quantity = pkg.quantity || 1
-                const weight = pkg.dimensions?.weight_g || 10 * quantity
+                const weight = pkg.dimensions?.weight || 10 * quantity
                 totalWeightG += weight
 
                 if (pkg.dimensions?.depth_cm && pkg.dimensions?.width_cm && pkg.dimensions?.height_cm) {

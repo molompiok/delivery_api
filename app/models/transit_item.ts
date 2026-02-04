@@ -59,6 +59,15 @@ export default class TransitItem extends BaseModel {
     })
     declare metadata: any
 
+    @column()
+    declare originalId: string | null
+
+    @column()
+    declare isPendingChange: boolean
+
+    @column()
+    declare isDeleteRequired: boolean
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 

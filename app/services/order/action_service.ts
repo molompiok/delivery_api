@@ -66,13 +66,16 @@ export default class ActionService {
                     if (!exists) {
                         throw new Error(`Transit item not found: ${validatedData.transit_item_id}`)
                     }
-                    transitItemId = validatedData.transit_item_id
+                    // Anchoring: Link to original if it's a shadow
+                    transitItemId = (exists.isPendingChange && exists.originalId) ? exists.originalId : exists.id
                 }
             }
 
+            const targetStopId = stop.isPendingChange && stop.originalId ? stop.originalId : stop.id
+
             const newAction = await Action.create({
                 orderId: stop.orderId,
-                stopId: stopId,
+                stopId: targetStopId,
                 type: (validatedData.type || 'SERVICE').toUpperCase() as any,
                 quantity: isService ? 0 : (validatedData.quantity || 1),
                 transitItemId: transitItemId,
@@ -192,7 +195,11 @@ export default class ActionService {
                         targetAction.transitItemId = tiRes.entity!.id
                     }
                 } else if (validatedData.transit_item_id) {
-                    targetAction.transitItemId = validatedData.transit_item_id
+                    const exists = await this.transitItemService.findTransitItem(validatedData.transit_item_id, effectiveTrx)
+                    if (exists) {
+                        // Anchoring: Link to original if it's a shadow
+                        targetAction.transitItemId = (exists.isPendingChange && exists.originalId) ? exists.originalId : exists.id
+                    }
                 }
             } else {
                 targetAction.transitItemId = null
