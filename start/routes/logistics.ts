@@ -16,6 +16,7 @@ router.group(() => {
     router.post('/orders/initiate', [OrdersController, 'initiate'])
     router.post('/orders/:id/submit', [OrdersController, 'submit'])
     router.post('/orders/:id/push-updates', [OrdersController, 'pushUpdates'])
+    router.post('/orders/:id/revert', [OrdersController, 'revertChanges'])
     router.get('/orders/:id/estimate-draft', [OrdersController, 'estimateDraft'])
     router.post('/orders/:id/items', [OrdersController, 'addItem'])
     router.post('/orders/complex', [OrdersController, 'store'])

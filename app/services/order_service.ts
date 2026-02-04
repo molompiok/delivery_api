@@ -14,6 +14,7 @@ import vine from '@vinejs/vine'
 import wsService from '#services/ws_service'
 import LogisticsService from '#services/logistics_service'
 import PayloadMapper from './order/payload_mapper.js'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 @inject()
 export default class OrderService {
@@ -72,30 +73,45 @@ export default class OrderService {
     /**
      * Facade methods for backward compatibility or controller use
      */
-    async initiateOrder(clientId: string, data?: any) {
-        return this.orderDraftService.initiateOrder(clientId, data)
+    async initiateOrder(clientId: string, data?: any, trx?: TransactionClientContract) {
+        return this.orderDraftService.initiateOrder(clientId, data, trx)
     }
 
-    async getOrderDetails(orderId: string, clientId: string) {
-        return this.orderDraftService.getOrderDetails(orderId, clientId)
+    async getOrderDetails(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        return this.orderDraftService.getOrderDetails(orderId, clientId, trx)
     }
 
-    async submitOrder(orderId: string, clientId: string) {
-        return this.orderDraftService.submitOrder(orderId, clientId)
+    async submitOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        return this.orderDraftService.submitOrder(orderId, clientId, trx)
     }
 
-    async estimateDraft(orderId: string, clientId: string) {
-        return this.orderDraftService.estimateDraft(orderId, clientId)
+    async estimateDraft(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        return this.orderDraftService.estimateDraft(orderId, clientId, trx)
     }
 
-    async pushUpdates(orderId: string, clientId: string) {
-        const trx = await db.transaction()
+    async pushUpdates(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
         try {
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId)
+            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, effectiveTrx)
 
-            // 1. Validate the shadow state (intended final state)
+            // 1. Calculate and cleanup orphaned transit items BEFORE validation
             const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
-            const validation = LogisticsService.validateOrderConsistency(virtualState, 'SUBMIT')
+            const activeTransitItemIds = new Set<string>()
+            virtualState.steps.forEach((step: any) => {
+                step.stops.forEach((stop: any) => {
+                    stop.actions.forEach((action: any) => {
+                        if (action.transit_item_id) activeTransitItemIds.add(action.transit_item_id)
+                    })
+                })
+            })
+
+            await this.orderDraftService.cleanupOrphanedTransitItems(orderId, effectiveTrx, activeTransitItemIds)
+
+            // Re-fetch order to have clean items for validation
+            const orderForValidation = await this.orderDraftService.getOrderDetails(orderId, clientId, effectiveTrx)
+            const virtualStateForValidation = this.orderDraftService.buildVirtualState(orderForValidation, { view: 'CLIENT' })
+
+            const validation = LogisticsService.validateOrderConsistency(virtualStateForValidation, 'SUBMIT')
             if (!validation.success || (validation.warnings && validation.warnings.length > 0)) {
                 const errors = validation.errors.map(e => `[ERROR] [${e.path}] ${e.message}`)
                 const warnings = (validation.warnings || []).map(w => `[WARNING] [${w.path}] ${w.message}`)
@@ -104,20 +120,20 @@ export default class OrderService {
             }
 
             // 2. Apply Shadows
-            await this.orderDraftService.applyShadowChanges(orderId, trx)
+            await this.orderDraftService.applyShadowChanges(orderId, effectiveTrx)
 
             // 3. Re-calculate accounting (routing, pricing, legs)
             // Re-fetch to get merged state with relations
-            const mergedOrder = await Order.query({ client: trx })
+            const mergedOrder = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
                 .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('sequence', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
                 .preload('transitItems')
                 .firstOrFail()
 
-            await this.orderDraftService.finalizeOrderAccounting(mergedOrder, trx)
-            await mergedOrder.useTransaction(trx).save()
+            await this.orderDraftService.finalizeOrderAccounting(mergedOrder, effectiveTrx)
+            await mergedOrder.useTransaction(effectiveTrx).save()
 
-            await trx.commit()
+            if (!trx) await effectiveTrx.commit()
 
             // 4. Notifications
             if (mergedOrder.driverId) {
@@ -126,113 +142,204 @@ export default class OrderService {
 
             return mergedOrder
         } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    async revertPendingChanges(orderId: string, clientId: string) {
+        const trx = await db.transaction()
+        try {
+            const order = await Order.query({ client: trx })
+                .where('id', orderId)
+                .where('clientId', clientId)
+                .firstOrFail()
+
+            await this.orderDraftService.revertPendingChanges(order.id, trx)
+
+            await trx.commit()
+            return order
+        } catch (error) {
             await trx.rollback()
             throw error
         }
     }
 
-    async addStep(orderId: string, clientId: string, data: any, options: { recalculate?: boolean } = {}) {
-        const res = await this.stepService.addStep(orderId, clientId, data)
-        const order = await this.orderDraftService.getOrderDetails(orderId, clientId)
+    async addStep(orderId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const res = await this.stepService.addStep(orderId, clientId, data, effectiveTrx)
+            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, effectiveTrx)
 
-        if (options.recalculate) {
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction()) // Use a temp transaction or just db
+            if (options.recalculate) {
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+
+            const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
+            res.validationErrors = LogisticsService.validateDraftConsistency(virtualState).errors
+
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-
-        const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
-        res.validationErrors = LogisticsService.validateDraftConsistency(virtualState).errors
-        return res
     }
 
-    async updateStep(stepId: string, clientId: string, data: any, options: { recalculate?: boolean } = {}) {
-        const res = await this.stepService.updateStep(stepId, clientId, data)
-        if (options.recalculate) {
-            const step = await db.from('steps').where('id', stepId).first()
-            const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async updateStep(stepId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const res = await this.stepService.updateStep(stepId, clientId, data, effectiveTrx)
+            if (options.recalculate) {
+                const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
+                const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async removeStep(stepId: string, clientId: string, options: { recalculate?: boolean } = {}) {
-        const step = await db.from('steps').where('id', stepId).first()
-        const orderId = step.order_id
-        const res = await this.stepService.removeStep(stepId, clientId)
-        if (options.recalculate) {
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async removeStep(stepId: string, clientId: string, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
+            const orderId = step.order_id
+            const res = await this.stepService.removeStep(stepId, clientId, effectiveTrx)
+            if (options.recalculate) {
+                const order = await this.orderDraftService.getOrderDetails(orderId, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async addStop(stepId: string, clientId: string, data: any, options: { recalculate?: boolean } = {}) {
-        const res = await this.stopService.addStop(stepId, clientId, data)
-        if (options.recalculate) {
-            const step = await db.from('steps').where('id', stepId).first()
-            const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async addStop(stepId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const res = await this.stopService.addStop(stepId, clientId, data, effectiveTrx)
+            if (options.recalculate) {
+                const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
+                const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async updateStop(stopId: string, clientId: string, data: any, options: { recalculate?: boolean } = {}) {
-        const res = await this.stopService.updateStop(stopId, clientId, data)
-        if (options.recalculate) {
-            const stop = await db.from('stops').where('id', stopId).first()
-            const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async updateStop(stopId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const res = await this.stopService.updateStop(stopId, clientId, data, effectiveTrx)
+            if (options.recalculate) {
+                const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+                const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async removeStop(stopId: string, clientId: string, options: { recalculate?: boolean } = {}) {
-        const stop = await db.from('stops').where('id', stopId).first()
-        const orderId = stop.order_id
-        const res = await this.stopService.removeStop(stopId, clientId)
-        if (options.recalculate) {
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async removeStop(stopId: string, clientId: string, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+            const orderId = stop.order_id
+            const res = await this.stopService.removeStop(stopId, clientId, effectiveTrx)
+            if (options.recalculate) {
+                const order = await this.orderDraftService.getOrderDetails(orderId, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async addAction(stopId: string, clientId: string, data: any, options: { recalculate?: boolean } = {}) {
-        const res = await this.actionService.addAction(stopId, clientId, data)
-        if (options.recalculate) {
-            const stop = await db.from('stops').where('id', stopId).first()
-            const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async addAction(stopId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const res = await this.actionService.addAction(stopId, clientId, data, effectiveTrx)
+            if (options.recalculate) {
+                const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+                const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async updateAction(actionId: string, clientId: string, data: any, options: { recalculate?: boolean } = {}) {
-        const res = await this.actionService.updateAction(actionId, clientId, data)
-        if (options.recalculate) {
-            const action = await db.from('actions').where('id', actionId).first()
-            const order = await this.orderDraftService.getOrderDetails(action.order_id, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async updateAction(actionId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const res = await this.actionService.updateAction(actionId, clientId, data, effectiveTrx)
+            if (options.recalculate) {
+                const action = await db.from('actions').useTransaction(effectiveTrx).where('id', actionId).first()
+                const order = await this.orderDraftService.getOrderDetails(action.order_id, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async removeAction(actionId: string, clientId: string, options: { recalculate?: boolean } = {}) {
-        const action = await db.from('actions').where('id', actionId).first()
-        const orderId = action.order_id
-        const res = await this.actionService.removeAction(actionId, clientId)
-        if (options.recalculate) {
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId)
-            await this.orderDraftService.finalizeOrderAccounting(order, await db.transaction())
+    async removeAction(actionId: string, clientId: string, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
+        try {
+            const action = await db.from('actions').useTransaction(effectiveTrx).where('id', actionId).first()
+            const orderId = action.order_id
+            const res = await this.actionService.removeAction(actionId, clientId, effectiveTrx)
+            if (options.recalculate) {
+                const order = await this.orderDraftService.getOrderDetails(orderId, clientId, effectiveTrx)
+                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
+                await order.useTransaction(effectiveTrx).save()
+            }
+            if (!options.trx) await effectiveTrx.commit()
+            return res
+        } catch (error) {
+            if (!options.trx) await effectiveTrx.rollback()
+            throw error
         }
-        return res
     }
 
-    async addTransitItem(orderId: string, clientId: string, data: any) {
-        return this.transitItemService.addTransitItem(orderId, clientId, data)
+    async addTransitItem(orderId: string, clientId: string, data: any, trx?: TransactionClientContract) {
+        return this.transitItemService.addTransitItem(orderId, clientId, data, trx)
     }
 
-    async updateTransitItem(itemId: string, clientId: string, data: any) {
-        return this.transitItemService.updateTransitItem(itemId, clientId, data)
+    async updateTransitItem(itemId: string, clientId: string, data: any, trx?: TransactionClientContract) {
+        return this.transitItemService.updateTransitItem(itemId, clientId, data, trx)
     }
 
     async updateOrder(orderId: string, clientId: string, payload: any) {

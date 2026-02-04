@@ -3,6 +3,9 @@ import db from '@adonisjs/lucid/services/db'
 import emitter from '@adonisjs/core/services/emitter'
 import Order from '#models/order'
 import Step from '#models/step'
+import Stop from '#models/stop'
+import Action from '#models/action'
+import ActionProof from '#models/action_proof'
 import OrderLeg from '#models/order_leg'
 import GeoService from '#services/geo_service'
 import PricingService, { SimplePackageInfo } from '#services/pricing_service'
@@ -47,6 +50,8 @@ export default class OrderDraftService {
             }, { client: effectiveTrx })
 
             if (!trx) await effectiveTrx.commit()
+
+            await order.load('steps')
             return order
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()
@@ -57,8 +62,8 @@ export default class OrderDraftService {
     /**
      * Fetches detailed order with all relations preloaded.
      */
-    async getOrderDetails(orderId: string, clientId: string) {
-        const order = await Order.query()
+    async getOrderDetails(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        const order = await Order.query({ client: trx })
             .where('id', orderId)
             .where('clientId', clientId)
             .preload('steps', (q) => q.orderBy('sequence', 'asc')
@@ -75,7 +80,6 @@ export default class OrderDraftService {
         }
 
         // Apply shadow filtering before returning
-        // A shadow stop (isPendingChange=true) hides its originalId stop
         const filterShadows = (list: any[]) => {
             const shadows = list.filter(item => item.isPendingChange)
             const originalsToReplace = shadows.map((s: any) => s.originalId).filter(Boolean)
@@ -87,15 +91,15 @@ export default class OrderDraftService {
             return activeItems.filter(item => !item.isDeleteRequired)
         }
 
-            ; (order as any).steps = order.steps.map(step => {
-                const stepWithFilteredStops = step
-                    ; (stepWithFilteredStops as any).stops = filterShadows(step.stops || [])
-                stepWithFilteredStops.stops.forEach(stop => {
-                    const stopWithFilteredActions = stop
-                        ; (stopWithFilteredActions as any).actions = filterShadows(stop.actions || [])
-                })
-                return stepWithFilteredStops
+        (order as any).steps = filterShadows(order.steps || []).map(step => {
+            const stepWithFilteredStops = step
+                ; (stepWithFilteredStops as any).stops = filterShadows(step.stops || [])
+            stepWithFilteredStops.stops.forEach(stop => {
+                const stopWithFilteredActions = stop
+                    ; (stopWithFilteredActions as any).actions = filterShadows(stop.actions || [])
             })
+            return stepWithFilteredStops
+        })
 
         return order
     }
@@ -179,8 +183,8 @@ export default class OrderDraftService {
     /**
      * Estimates a draft order (route + pricing).
      */
-    async estimateDraft(orderId: string, clientId: string) {
-        const order = await this.getOrderDetails(orderId, clientId)
+    async estimateDraft(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        const order = await this.getOrderDetails(orderId, clientId, trx)
         const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
 
         const allStopsForRouting: any[] = []
@@ -244,8 +248,25 @@ export default class OrderDraftService {
                 throw new Error('Only draft orders can be submitted')
             }
 
+            // 1. Calculate and cleanup orphaned transit items BEFORE validation
             const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
-            const validation = LogisticsService.validateOrderConsistency(virtualState, 'SUBMIT')
+            const activeTransitItemIds = new Set<string>()
+            virtualState.steps.forEach((step: any) => {
+                step.stops.forEach((stop: any) => {
+                    stop.actions.forEach((action: any) => {
+                        if (action.transit_item_id) activeTransitItemIds.add(action.transit_item_id)
+                    })
+                })
+            })
+
+            await this.cleanupOrphanedTransitItems(order.id, effectiveTrx, activeTransitItemIds)
+
+            // Re-fetch or update virtualState to reflect the cleanup
+            // In DRAFT mode, it's safer to reload or just build state from re-fetched order
+            const orderForValidation = await this.getOrderDetails(order.id, clientId, effectiveTrx)
+            const virtualStateForValidation = this.buildVirtualState(orderForValidation, { view: 'CLIENT' })
+
+            const validation = LogisticsService.validateOrderConsistency(virtualStateForValidation, 'SUBMIT')
             if (!validation.success || (validation.warnings && validation.warnings.length > 0)) {
                 const errors = validation.errors.map(e => `[ERROR] [${e.path}] ${e.message}`)
                 const warnings = (validation.warnings || []).map(w => `[WARNING] [${w.path}] ${w.message}`)
@@ -292,133 +313,206 @@ export default class OrderDraftService {
     /**
      * Merges shadow clones into originals and handles deletions.
      */
-    async applyShadowChanges(orderId: string, trx: TransactionClientContract) {
-        // Re-fetch order with all shadows
-        const order = await Order.query({ client: trx })
-            .where('id', orderId)
-            .preload('steps', (q) => q.preload('stops', (sq) => sq.preload('actions')))
-            .first()
+    async applyShadowChanges(orderId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            // Re-fetch order with all shadows
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .preload('steps', (q) => q.preload('stops', (sq) => sq.preload('actions')))
+                .first()
 
-        if (!order) {
-            throw new Error(`Order not found [ID: ${orderId}] during shadow merge`)
-        }
-
-        // 1. Merge Actions
-        const allStops = order.steps.flatMap(s => s.stops || [])
-        const allActions = allStops.flatMap(s => s.actions || [])
-
-        for (const action of allActions) {
-            if (action.isDeleteRequired) {
-                await db.from('action_proofs').useTransaction(trx).where('action_id', action.id).delete()
-                await action.useTransaction(trx).delete()
-                continue
+            if (!order) {
+                throw new Error(`Order not found [ID: ${orderId}] during shadow merge`)
             }
-            if (action.isPendingChange && action.originalId) {
-                const original = allActions.find(a => a.id === action.originalId)
-                if (original) {
-                    original.type = action.type
-                    original.quantity = action.quantity
-                    original.transitItemId = action.transitItemId
-                    original.serviceTime = action.serviceTime
-                    original.confirmationRules = action.confirmationRules
-                    original.metadata = action.metadata
-                    await original.useTransaction(trx).save()
 
-                    // Move proofs
-                    await db.from('action_proofs').useTransaction(trx).where('action_id', original.id).delete()
-                    await db.from('action_proofs').useTransaction(trx).where('action_id', action.id).update({ action_id: original.id })
+            // 1. Merge Actions
+            const allStops = order.steps.flatMap(s => s.stops || [])
+            const allActions = allStops.flatMap(s => s.actions || [])
+
+            for (const action of allActions) {
+                if (action.isDeleteRequired) {
+                    await db.from('action_proofs').useTransaction(effectiveTrx).where('action_id', action.id).delete()
+                    await action.useTransaction(effectiveTrx).delete()
+                    continue
                 }
-                await action.useTransaction(trx).delete()
-            }
-        }
+                if (action.isPendingChange && action.originalId) {
+                    const original = allActions.find(a => a.id === action.originalId)
+                    if (original) {
+                        original.type = action.type
+                        original.quantity = action.quantity
+                        original.transitItemId = action.transitItemId
+                        original.serviceTime = action.serviceTime
+                        original.confirmationRules = action.confirmationRules
+                        original.metadata = action.metadata
+                        await original.useTransaction(effectiveTrx).save()
 
-        // 2. Merge Stops
-        for (const stop of allStops) {
-            if (stop.isDeleteRequired) {
-                // Actions should already be deleted above or cascade
-                await stop.useTransaction(trx).delete()
-                continue
-            }
-            if (stop.isPendingChange && stop.originalId) {
-                const original = allStops.find(s => s.id === stop.originalId)
-                if (original) {
-                    original.sequence = stop.sequence
-                    original.addressId = stop.addressId
-                    original.client = stop.client
-                    original.metadata = stop.metadata
-                    await original.useTransaction(trx).save()
-
-                    // Relink actions to original stop
-                    await db.from('actions').useTransaction(trx).where('stop_id', stop.id).update({ stop_id: original.id })
+                        // Move proofs
+                        await db.from('action_proofs').useTransaction(effectiveTrx).where('action_id', original.id).delete()
+                        await db.from('action_proofs').useTransaction(effectiveTrx).where('action_id', action.id).update({ action_id: original.id })
+                    }
+                    await action.useTransaction(effectiveTrx).delete()
                 }
-                await stop.useTransaction(trx).delete()
             }
-        }
 
-        // 3. Merge Steps
-        for (const step of order.steps) {
-            if (step.isDeleteRequired) {
-                await step.useTransaction(trx).delete()
-                continue
-            }
-            if (step.isPendingChange && step.originalId) {
-                const original = order.steps.find(s => s.id === step.originalId)
-                if (original) {
-                    original.sequence = step.sequence
-                    original.linked = step.linked
-                    original.metadata = step.metadata
-                    await original.useTransaction(trx).save()
-
-                    // Relink stops to original step
-                    await db.from('stops').useTransaction(trx).where('step_id', step.id).update({ step_id: original.id })
+            // 2. Merge Stops
+            for (const stop of allStops) {
+                if (stop.isDeleteRequired) {
+                    // Actions should already be deleted above or cascade
+                    await stop.useTransaction(effectiveTrx).delete()
+                    continue
                 }
-                await step.useTransaction(trx).delete()
+                if (stop.isPendingChange && stop.originalId) {
+                    const original = allStops.find(s => s.id === stop.originalId)
+                    if (original) {
+                        original.sequence = stop.sequence
+                        original.addressId = stop.addressId
+                        original.client = stop.client
+                        original.metadata = stop.metadata
+                        await original.useTransaction(effectiveTrx).save()
+
+                        // Relink actions to original stop
+                        await db.from('actions').useTransaction(effectiveTrx).where('stop_id', stop.id).update({ stop_id: original.id })
+                    }
+                    await stop.useTransaction(effectiveTrx).delete()
+                }
             }
+
+            // 3. Merge Steps
+            for (const step of order.steps) {
+                if (step.isDeleteRequired) {
+                    await step.useTransaction(effectiveTrx).delete()
+                    continue
+                }
+                if (step.isPendingChange && step.originalId) {
+                    const original = order.steps.find(s => s.id === step.originalId)
+                    if (original) {
+                        original.sequence = step.sequence
+                        original.linked = step.linked
+                        original.metadata = step.metadata
+                        await original.useTransaction(effectiveTrx).save()
+
+                        // Relink stops to original step
+                        await db.from('stops').useTransaction(effectiveTrx).where('step_id', step.id).update({ step_id: original.id })
+                    }
+                    await step.useTransaction(effectiveTrx).delete()
+                }
+            }
+
+            // 4. Reveal new components
+            await db.from('steps').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
+            await db.from('stops').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
+            await db.from('actions').useTransaction(effectiveTrx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
+
+            // RESET ORDER FLAG
+            await db.from('orders').useTransaction(effectiveTrx).where('id', orderId).update({ has_pending_changes: false })
+
+            // 5. Cleanup orbits
+            await this.cleanupOrphanedAddresses(orderId, effectiveTrx)
+            await this.cleanupOrphanedTransitItems(orderId, effectiveTrx)
+
+            if (!trx) await effectiveTrx.commit()
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
         }
+    }
 
-        // 4. Reveal new components
-        await db.from('steps').useTransaction(trx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
-        await db.from('stops').useTransaction(trx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
-        await db.from('actions').useTransaction(trx).where('order_id', orderId).where('is_pending_change', true).update({ is_pending_change: false })
+    /**
+     * Reverts all pending changes (shadows) and resets the order status.
+     */
+    async revertPendingChanges(orderId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            // 1. Delete all shadow Actions
+            const shadowActions = await Action.query({ client: effectiveTrx }).where('orderId', orderId).where('isPendingChange', true)
+            for (const action of shadowActions) {
+                // Delete proofs first
+                await ActionProof.query({ client: effectiveTrx }).where('actionId', action.id).delete()
+                await action.useTransaction(effectiveTrx).delete()
+            }
 
-        // 5. Cleanup orbits
-        await this.cleanupOrphanedAddresses(orderId, trx)
-        await this.cleanupOrphanedTransitItems(orderId, trx)
+            // 2. Delete all shadow Stops
+            await Stop.query({ client: effectiveTrx }).where('orderId', orderId).where('isPendingChange', true).delete()
+
+            // 3. Delete all shadow Steps
+            await Step.query({ client: effectiveTrx }).where('orderId', orderId).where('isPendingChange', true).delete()
+
+            // 4. Reset isDeleteRequired flags on original Actions
+            await Action.query({ client: effectiveTrx }).where('orderId', orderId).where('isDeleteRequired', true).update({ isDeleteRequired: false })
+
+            // 5. Reset isDeleteRequired flags on original Stops
+            await Stop.query({ client: effectiveTrx }).where('orderId', orderId).where('isDeleteRequired', true).update({ isDeleteRequired: false })
+
+            // 6. Reset isDeleteRequired flags on original Steps
+            await Step.query({ client: effectiveTrx }).where('orderId', orderId).where('isDeleteRequired', true).update({ isDeleteRequired: false })
+
+            // 7. Reset Order Flag
+            await Order.query({ client: effectiveTrx }).where('id', orderId).update({ hasPendingChanges: false })
+
+            if (!trx) await effectiveTrx.commit()
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
     }
 
     /**
      * Deletes addresses that are no longer linked to any stop of this order.
      */
-    async cleanupOrphanedAddresses(orderId: string, trx: TransactionClientContract) {
-        // Find all address IDs currently linked to any stop of this order
-        const activeStops = await db.from('stops').useTransaction(trx).where('order_id', orderId).select('address_id')
-        const activeAddressIds = activeStops.map(s => s.address_id)
+    async cleanupOrphanedAddresses(orderId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            // Find all address IDs currently linked to any stop of this order
+            const activeStops = await db.from('stops').useTransaction(effectiveTrx).where('order_id', orderId).select('address_id')
+            const activeAddressIds = activeStops.map(s => s.address_id)
 
-        // Find all addresses owned by this order
-        const ownedAddresses = await db.from('addresses').useTransaction(trx).where('owner_id', orderId).where('owner_type', 'Order').select('id')
+            // Find all addresses owned by this order
+            const ownedAddresses = await db.from('addresses').useTransaction(effectiveTrx).where('owner_id', orderId).where('owner_type', 'Order').select('id')
 
-        for (const addr of ownedAddresses) {
-            if (!activeAddressIds.includes(addr.id)) {
-                await db.from('addresses').useTransaction(trx).where('id', addr.id).delete()
+            for (const addr of ownedAddresses) {
+                if (!activeAddressIds.includes(addr.id)) {
+                    await db.from('addresses').useTransaction(effectiveTrx).where('id', addr.id).delete()
+                }
             }
+
+            if (!trx) await effectiveTrx.commit()
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
         }
     }
 
     /**
      * Deletes transit items that are no longer linked to any action of this order.
+     * If usedItemIds is provided, it uses that set instead of querying the current DB state.
      */
-    async cleanupOrphanedTransitItems(orderId: string, trx: TransactionClientContract) {
-        // Find all transit item IDs currently linked to any action of this order
-        const activeActions = await db.from('actions').useTransaction(trx).where('order_id', orderId).whereNotNull('transit_item_id').select('transit_item_id')
-        const activeItemIds = activeActions.map(a => a.transit_item_id)
+    async cleanupOrphanedTransitItems(orderId: string, trx?: TransactionClientContract, usedItemIds?: Set<string>) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            let activeItemIds: string[] = []
 
-        // Find all transit items owned by this order
-        const orderItems = await db.from('transit_items').useTransaction(trx).where('order_id', orderId).select('id')
-
-        for (const item of orderItems) {
-            if (!activeItemIds.includes(item.id)) {
-                await db.from('transit_items').useTransaction(trx).where('id', item.id).delete()
+            if (usedItemIds) {
+                activeItemIds = Array.from(usedItemIds)
+            } else {
+                // Find all transit item IDs currently linked to any action of this order (Current DB state)
+                const activeActions = await db.from('actions').useTransaction(effectiveTrx).where('order_id', orderId).whereNotNull('transit_item_id').select('transit_item_id')
+                activeItemIds = activeActions.map(a => a.transit_item_id)
             }
+
+            // Find all transit items owned by this order
+            const orderItems = await db.from('transit_items').useTransaction(effectiveTrx).where('order_id', orderId).select('id')
+
+            for (const item of orderItems) {
+                if (!activeItemIds.includes(item.id)) {
+                    await db.from('transit_items').useTransaction(effectiveTrx).where('id', item.id).delete()
+                }
+            }
+
+            if (!trx) await effectiveTrx.commit()
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
         }
     }
 

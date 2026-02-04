@@ -64,6 +64,9 @@ export default class Order extends BaseModel {
     @column()
     declare isDeleted: boolean
 
+    @column()
+    declare hasPendingChanges: boolean
+
     @column({
         prepare: (value: PricingDetails) => value ? JSON.stringify(value) : JSON.stringify({}),
         consume: (value) => typeof value === 'string' ? JSON.parse(value) : value

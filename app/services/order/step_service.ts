@@ -1,4 +1,3 @@
-import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import Step from '#models/step'
 import Stop from '#models/stop'
@@ -44,6 +43,11 @@ export default class StepService {
                 metadata: validatedData.metadata || {},
                 isPendingChange: !isDraft,
             }, { client: effectiveTrx })
+
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
 
             if (!trx) await (effectiveTrx as any).commit()
 
@@ -167,6 +171,11 @@ export default class StepService {
 
             await targetStep.useTransaction(effectiveTrx).save()
 
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
 
             return {
@@ -201,7 +210,13 @@ export default class StepService {
                 step.isDeleteRequired = true
                 await step.useTransaction(effectiveTrx).save()
             }
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
+
             return { success: true }
         } catch (error) {
             if (!trx) await (effectiveTrx as any).rollback()

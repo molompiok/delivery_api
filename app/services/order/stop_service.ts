@@ -91,6 +91,11 @@ export default class StopService {
                 }
             }
 
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
 
             return {
@@ -267,6 +272,12 @@ export default class StopService {
                 }
             }
 
+            // If not draft, mark order as having pending changes
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
 
             return {
@@ -299,7 +310,14 @@ export default class StopService {
                 await stop.useTransaction(effectiveTrx).save()
             }
 
+            // If not draft, mark order as having pending changes
+            if (!isDraft) {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
+
             return { success: true }
         } catch (error) {
             if (!trx) await (effectiveTrx as any).rollback()

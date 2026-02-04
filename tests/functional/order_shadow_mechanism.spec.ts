@@ -176,4 +176,148 @@ test.group('Order Shadow Mechanism', (group) => {
             .json({ street: 'Ghosts' })
         deadShadowRes.assertStatus(404)
     })
+
+    test('Scenario: Shadow Deletion Mechanism', async ({ client, assert }) => {
+        // --- 1. SETUP ---
+        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
+        initRes.assertStatus(201)
+        const orderId = initRes.body().order.id
+
+        // Fetch to get steps
+        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const stepId = fetchRes.body().steps[0].id
+
+        await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
+            address: { street: 'To be deleted', lat: 1, lng: 1 },
+            actions: [{ type: 'service', productName: 'Disposable' }]
+        })
+
+        await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
+        const initOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const stopId = initOrder.body().steps[0].stops[0].id
+
+        // --- 2. DELETE REQUEST ---
+        const delRes = await client.delete(`/v1/stops/${stopId}`).loginAs(clientUser)
+        delRes.assertStatus(200)
+
+        // --- 3. VERIFY FILTERING ---
+        const filteredOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(filteredOrder.body().steps[0].stops, 0, 'Deleted stop should be filtered out')
+
+        // --- 5. PUSH UPDATES ---
+        await client.post(`/v1/orders/${orderId}/push-updates`).loginAs(clientUser)
+
+        // --- 6. VERIFY PERMANENT DELETION ---
+        const finalOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(finalOrder.body().steps[0].stops, 0)
+    })
+
+    test('Scenario: Unauthorized Access Security', async ({ client, assert }) => {
+        const userB = await User.create({
+            email: `outsider-${generateId('out')}@example.com`,
+            password: 'password123',
+            fullName: 'Intruder',
+            isActive: true
+        })
+
+        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
+        initRes.assertStatus(201)
+        const orderId = initRes.body().order.id
+        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const stepId = fetchRes.body().steps[0].id
+
+        let stopRes = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
+            address: { street: 'Owner address', lat: 1, lng: 1 },
+            actions: [{ type: 'service', productName: 'My Service' }]
+        })
+        stopRes.assertStatus(201)
+        const stopId = stopRes.body().stop.id
+
+        const badPatch = await client.patch(`/v1/stops/${stopId}`)
+            .loginAs(userB)
+            .json({ address: { street: 'Hacked!' } })
+
+        assert.equal(badPatch.status(), 404)
+
+        const goodPatch = await client.patch(`/v1/stops/${stopId}`)
+            .loginAs(clientUser)
+            .json({ address: { street: 'Legit update' } })
+        goodPatch.assertStatus(200)
+    })
+
+    test('Scenario: Stress Test - Bulk modifications', async ({ client, assert }) => {
+        const STOP_COUNT = 50
+        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
+        initRes.assertStatus(201)
+        const orderId = initRes.body().order.id
+        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const stepId = fetchRes.body().steps[0].id
+
+        const stopIds: string[] = []
+        for (let i = 0; i < STOP_COUNT; i++) {
+            const res = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
+                address: { street: `Stress Stop ${i}`, lat: 1, lng: 1 },
+                actions: [{ type: 'service', productName: `Service ${i}` }]
+            })
+            if (res.status() !== 201) {
+                console.error(`Stop ${i} creation failed:`, res.body())
+            }
+            res.assertStatus(201)
+            stopIds.push(res.body().stop.id)
+        }
+
+        await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
+
+        console.time('StressTest - Cloning')
+        const patchResults = await Promise.all(stopIds.map(id =>
+            client.patch(`/v1/stops/${id}`).loginAs(clientUser).json({ metadata: { stressed: true } })
+        ))
+        console.timeEnd('StressTest - Cloning')
+        patchResults.forEach((res, i) => {
+            if (res.status() !== 200) console.error(`Patch ${i} failed:`, res.body())
+            res.assertStatus(200)
+        })
+
+        const midOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(midOrder.body().steps[0].stops, STOP_COUNT)
+
+        const pushRes = await client.post(`/v1/orders/${orderId}/push-updates`).loginAs(clientUser)
+        pushRes.assertStatus(200)
+
+        const finalOrder = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(finalOrder.body().steps[0].stops, STOP_COUNT)
+    }).timeout(30000)
+
+    test('Scenario: Concurrency - Race condition handling', async ({ client, assert }) => {
+        const initRes = await client.post('/v1/orders/initiate').loginAs(clientUser)
+        initRes.assertStatus(201)
+        const orderId = initRes.body().order.id
+        const fetchRes = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        const stepId = fetchRes.body().steps[0].id
+
+        let stopRes = await client.post(`/v1/steps/${stepId}/stops`).loginAs(clientUser).json({
+            address: { street: 'Single stop', lat: 1, lng: 1 },
+            actions: [{ type: 'service' }]
+        })
+        stopRes.assertStatus(201)
+        const stopId = stopRes.body().stop.id
+        await client.post(`/v1/orders/${orderId}/submit`).loginAs(clientUser)
+
+        const PATCH_COUNT = 10
+        const results = await Promise.all(
+            Array.from({ length: PATCH_COUNT }).map((_, i) =>
+                client.patch(`/v1/stops/${stopId}`).loginAs(clientUser).json({ metadata: { version: i } })
+            )
+        )
+
+        results.forEach(res => res.assertStatus(200))
+
+        const shadowIds = results.map(r => r.body().stop.id)
+        const uniqueShadowIds = [...new Set(shadowIds)]
+
+        assert.lengthOf(uniqueShadowIds, 1, 'Idempotence should ensure only ONE shadow ID is used')
+
+        const finalCheck = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
+        assert.lengthOf(finalCheck.body().steps[0].stops, 1)
+    })
 })

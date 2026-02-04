@@ -87,6 +87,11 @@ export default class ActionService {
                 await this.processActionRules(newAction.id, validatedData.confirmation_rules, effectiveTrx)
             }
 
+            if (!isDraft) {
+                stopOrder.hasPendingChanges = true
+                await stopOrder.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
 
             return {
@@ -199,6 +204,11 @@ export default class ActionService {
                 await this.processActionRules(targetAction.id, validatedData.confirmation_rules, effectiveTrx)
             }
 
+            if (!isDraft) {
+                actionOrder.hasPendingChanges = true
+                await actionOrder.useTransaction(effectiveTrx).save()
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
 
             return {
@@ -233,6 +243,11 @@ export default class ActionService {
                 // If it's a stable component, we mark it for deletion
                 action.isDeleteRequired = true
                 await action.useTransaction(effectiveTrx).save()
+            }
+
+            if (!isDraft) {
+                actionOrder.hasPendingChanges = true
+                await actionOrder.useTransaction(effectiveTrx).save()
             }
 
             if (!trx) await (effectiveTrx as any).commit()

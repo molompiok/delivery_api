@@ -68,6 +68,22 @@ export default class OrdersController {
     }
 
     /**
+     * Reverts pending shadow updates.
+     */
+    async revertChanges({ params, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const order = await this.orderService.revertPendingChanges(params.id, user.id)
+            return response.ok({
+                message: 'Order changes reverted successfully',
+                order: order.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
      * Handle order creation (Bulk).
      */
     async store({ request, response, auth }: HttpContext) {
