@@ -29,6 +29,46 @@ export default class MissionsController {
         }
     }
 
+    async completeStop({ params, auth, response }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const stop = await this.missionService.completeStop(user.id, params.stopId)
+            return response.ok({
+                message: 'Stop completed',
+                stop: stop.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    async freezeStop({ params, auth, response, request }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const { reason } = request.all()
+            const stop = await this.missionService.freezeStop(user.id, params.stopId, reason)
+            return response.ok({
+                message: 'Stop frozen',
+                stop: stop.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    async unfreezeStop({ params, auth, response }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const stop = await this.missionService.unfreezeStop(user.id, params.stopId)
+            return response.ok({
+                message: 'Stop reactivated',
+                stop: stop.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
     async completeAction(ctx: HttpContext) {
         const { params, auth, response, request } = ctx
         try {
@@ -42,6 +82,33 @@ export default class MissionsController {
             const action = await this.missionService.completeAction(user.id, params.actionId, proofs, files)
             return response.ok({
                 message: 'Action completed',
+                action: action.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    async freezeAction({ params, auth, response, request }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const { reason } = request.all()
+            const action = await this.missionService.freezeAction(user.id, params.actionId, reason)
+            return response.ok({
+                message: 'Action frozen',
+                action: action.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    async unfreezeAction({ params, auth, response }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const action = await this.missionService.unfreezeAction(user.id, params.actionId)
+            return response.ok({
+                message: 'Action reactivated',
                 action: action.serialize()
             })
         } catch (error: any) {
@@ -63,7 +130,6 @@ export default class MissionsController {
                 message: 'Code verified successfully',
                 leg: {
                     id: leg.id,
-                    sequence: leg.sequence,
                     status: leg.status,
                 },
             })
@@ -82,6 +148,19 @@ export default class MissionsController {
             return response.ok({
                 message: 'Mission accepted successfully',
                 order: order.serialize(),
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    async finish({ params, auth, response }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const order = await this.missionService.completeOrder(user.id, params.id)
+            return response.ok({
+                message: 'Mission finished',
+                order: order.serialize()
             })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -128,7 +207,23 @@ export default class MissionsController {
     async list({ auth, response }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+
+            // Log Requester Info
+            const DriverSetting = (await import('#models/driver_setting')).default
+            const ds = await DriverSetting.query().where('userId', user.id).preload('currentCompany').first()
+            console.log(`\n[API] 📥 Mission Request from: ${user.fullName} (${user.phone})`)
+            console.log(`      🏢 Working for/Company: ${ds?.currentCompany?.name || 'Indépendant'}`)
+
             const missions = await this.missionService.listMissions(user.id)
+
+            // Log Missions Summary
+            console.log(`[API] 📤 Sending ${missions.length} Missions:`)
+            missions.forEach((m: any, i) => {
+                //@ts-ignore
+                console.log(`      #${i + 1}: ${m.id} | Status: ${m.status} | Client: ${m.client?.fullName} | Company: ${m.client?.company?.name || 'IDEP'}`)
+            })
+            console.log(`\n`)
+
             return response.ok(missions)
         } catch (error: any) {
             return response.internalServerError({ message: error.message })

@@ -64,7 +64,8 @@ export default defineConfig({
     () => import('./start/routes.js'),
     () => import('./start/kernel.js'),
     () => import('./start/init.js'),
-    () => import('./start/ws.js')
+    () => import('./start/ws.js'),
+    () => import('./start/events.js')
   ],
 
   /*

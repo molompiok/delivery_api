@@ -28,13 +28,22 @@ export default class Stop extends BaseModel {
     declare addressId: string
 
     /**
-     * Séquence ordonnée des arrêts
+     * Ordre d'affichage défini par le client dans le dashboard.
+     * Ne change JAMAIS par VROOM — uniquement par le client.
      */
     @column()
-    declare sequence: number
+    declare displayOrder: number
+
+    /**
+     * Ordre d'exécution optimisé par VROOM pour la route réelle.
+     * null jusqu'au premier calcul VROOM.
+     * Quand Step.linked === true, doit refléter displayOrder.
+     */
+    @column()
+    declare executionOrder: number | null
 
     @column()
-    declare status: 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'FAILED'
+    declare status: 'PENDING' | 'ARRIVED' | 'PARTIAL' | 'COMPLETED' | 'FAILED'
 
     @column.dateTime()
     declare arrivalTime: DateTime | null
@@ -47,6 +56,13 @@ export default class Stop extends BaseModel {
         consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: any
+
+    @column({
+        serializeAs: 'statusHistory',
+        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify([]),
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare statusHistory: Array<{ status: string; timestamp: string; note?: string }>
 
     @column({
         prepare: (v) => v ? JSON.stringify(v) : null,

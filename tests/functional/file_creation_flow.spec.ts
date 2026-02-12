@@ -158,7 +158,7 @@ test.group('File Creation Flow', (group) => {
         assert.notExists(deletedFile)
     })
 
-    test('permissions: access control (restricted vs shared)', async ({ client, assert }) => {
+    test('permissions: access control (restricted vs shared)', async ({ client, assert: _assert }) => {
         const createRes = await client
             .post('/v1/file-tests')
             .loginAs(user)
@@ -183,7 +183,7 @@ test.group('File Creation Flow', (group) => {
         accessRes2.assertStatus(200)
     })
 
-    test('token: access via signed temporary URL', async ({ client, assert }) => {
+    test('token: access via signed temporary URL', async ({ client, assert: _assert }) => {
         const createRes = await client
             .post('/v1/file-tests')
             .loginAs(user)

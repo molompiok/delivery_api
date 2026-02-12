@@ -134,7 +134,7 @@ export default class TestServicesShadow extends BaseCommand {
 
             // 6. Verify Virtual State (CLIENT VIEW)
             this.logger.info('--- Step 5: Verify Virtual State (CLIENT) ---')
-            const virtualOrder = await orderDraftService.getOrderDetails(order.id, clientUser.id, trx)
+            const virtualOrder = await orderDraftService.getOrderDetails(order.id, clientUser.id, { trx })
             await this.waitHere(200)
 
             const vStop = virtualOrder.steps[0].stops[0]
@@ -151,7 +151,7 @@ export default class TestServicesShadow extends BaseCommand {
             // Re-fetch raw order to simulate distinct Driver request (Driver View should ignore pending changes)
             const rawOrder = await (await import('#models/order')).default.query({ client: trx })
                 .where('id', order.id)
-                .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('sequence', 'asc').preload('actions', (aq) => aq.preload('transitItem'))))
+                .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('actions', (aq) => aq.preload('transitItem'))))
                 .preload('transitItems')
                 .firstOrFail()
 

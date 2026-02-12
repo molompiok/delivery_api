@@ -9,6 +9,8 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addActionSchema, updateActionSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
 import { inject } from '@adonisjs/core'
+import emitter from '@adonisjs/core/services/emitter'
+import OrderStructureChanged from '#events/order_structure_changed'
 import TransitItemService from './transit_item_service.js'
 
 @inject()
@@ -96,6 +98,12 @@ export default class ActionService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: stop.orderId,
+                clientId
+            }))
 
             return {
                 entity: newAction,
@@ -196,10 +204,11 @@ export default class ActionService {
                     }
                 } else if (validatedData.transit_item_id) {
                     const exists = await this.transitItemService.findTransitItem(validatedData.transit_item_id, effectiveTrx)
-                    if (exists) {
-                        // Anchoring: Link to original if it's a shadow
-                        targetAction.transitItemId = (exists.isPendingChange && exists.originalId) ? exists.originalId : exists.id
+                    if (!exists) {
+                        throw new Error(`E_TRANSIT_ITEM_NOT_FOUND: Item ${validatedData.transit_item_id} not found`)
                     }
+                    // Anchoring: Link to original if it's a shadow
+                    targetAction.transitItemId = (exists.isPendingChange && exists.originalId) ? exists.originalId : exists.id
                 }
             } else {
                 targetAction.transitItemId = null
@@ -217,6 +226,12 @@ export default class ActionService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: actionOrder.id,
+                clientId
+            }))
 
             return {
                 entity: targetAction,
@@ -258,6 +273,12 @@ export default class ActionService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: actionOrder.id,
+                clientId
+            }))
             return { success: true }
         } catch (error) {
             if (!trx) await (effectiveTrx as any).rollback()

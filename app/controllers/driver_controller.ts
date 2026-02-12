@@ -125,6 +125,54 @@ export default class DriverController {
         }
     }
 
+    public async getDriverLocation({ params, response }: HttpContext) {
+        try {
+            const RedisService = (await import('#services/redis_service')).default
+            const state = await RedisService.getDriverState(params.id)
+            if (!state || !state.last_lat || !state.last_lng) {
+                return response.notFound({ message: 'Driver location not found' })
+            }
+            return response.ok({
+                id: state.id,
+                lat: state.last_lat,
+                lng: state.last_lng,
+                heading: state.heading,
+                updated_at: state.updated_at
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    public async getAllDriversLocations({ response }: HttpContext) {
+        try {
+            const RedisService = (await import('#services/redis_service')).default
+            const redis = (await import('@adonisjs/redis/services/main')).default
+
+            const geoKey = 'sublymus:drivers:locations'
+            const driverIds = await redis.zrange(geoKey, 0, -1)
+
+            const locations = await Promise.all(driverIds.map(async (id) => {
+                const state = await RedisService.getDriverState(id)
+                if (state && state.last_lat && state.last_lng) {
+                    return {
+                        id: state.id,
+                        lat: state.last_lat,
+                        lng: state.last_lng,
+                        heading: state.heading,
+                        status: state.status,
+                        updated_at: state.updated_at
+                    }
+                }
+                return null
+            }))
+
+            return response.ok(locations.filter(l => l !== null))
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
     public async uploadDoc(ctx: HttpContext) {
         const { request, response, auth } = ctx
         try {

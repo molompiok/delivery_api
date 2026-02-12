@@ -43,7 +43,7 @@ export default class Action extends BaseModel {
     declare quantity: number
 
     @column()
-    declare status: 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+    declare status: 'PENDING' | 'ARRIVED' | 'COMPLETED' | 'FROZEN' | 'FAILED' | 'CANCELLED'
 
     /**
      * Temps de service estimé au stop pour cette action (secondes)
@@ -62,6 +62,13 @@ export default class Action extends BaseModel {
         consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: any
+
+    @column({
+        serializeAs: 'statusHistory',
+        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify([]),
+        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+    })
+    declare statusHistory: Array<{ status: string; timestamp: string; note?: string }>
 
     @column()
     declare originalId: string | null

@@ -1,6 +1,7 @@
-import Redis from '@adonisjs/lucid/services/db'
+import redis from '@adonisjs/redis/services/main'
 import RedisService from '#services/redis_service'
 import { DateTime } from 'luxon'
+import DriverLocationHistory from '#models/driver_location_history'
 
 /**
  * TrackingService
@@ -13,7 +14,7 @@ import { DateTime } from 'luxon'
  */
 export class TrackingService {
     private readonly BUFFER_KEY = 'sublymus:location:buffer'
-    private readonly MAX_BATCH_SIZE = 50
+    private readonly MAX_BATCH_SIZE = 100 // Augmenté pour plus d'efficacité en bulk
 
     /**
      * Reçoit une position GPS d'un mobile
@@ -24,11 +25,19 @@ export class TrackingService {
         // 1. Mise à jour Redis (Source de vérité immédiate pour le dispatch)
         await RedisService.updateDriverLocation(userId, lat, lng)
 
-        // 2. Buffering pour l'historique SQL
+        // 2. Buffering pour l'historique SQL global
         const pingData = JSON.stringify({ userId, lat, lng, heading, timestamp })
-        const batchSize = await (Redis.connection() as any).rpush(this.BUFFER_KEY, pingData)
+        const batchSize = await redis.rpush(this.BUFFER_KEY, pingData)
 
-        // 3. Si on atteint le seuil, on déclenche le flush via BullMQ
+        // 3. Suivi spécifique aux missions en cours via RedisService
+        const state = await RedisService.getDriverState(userId)
+        if (state && state.current_orders && state.current_orders.length > 0) {
+            for (const orderId of state.current_orders) {
+                await RedisService.pushOrderTracePoint(orderId, lng, lat, timestamp!)
+            }
+        }
+
+        // 4. Si on atteint le seuil global, on déclenche le flush via BullMQ
         if (batchSize >= this.MAX_BATCH_SIZE) {
             await this.enqueueFlush()
         }
@@ -45,7 +54,6 @@ export class TrackingService {
                 await locationQueue.add('flush-locations', { timestamp: new Date().toISOString() })
             } finally {
                 // On ne release pas tout de suite pour laisser le temps au worker de vider la liste
-                // ou on laisse le lock expirer
             }
         }
     }
@@ -54,19 +62,28 @@ export class TrackingService {
      * Utilisé par le worker pour vider le buffer et sauvegarder en SQL
      */
     async flushBufferToSQL(): Promise<number> {
-        const rawPings = await (Redis.connection() as any).lrange(this.BUFFER_KEY, 0, this.MAX_BATCH_SIZE - 1)
+        // On récupère tout le buffer pour vider au maximum
+        const rawPings = await redis.lrange(this.BUFFER_KEY, 0, -1)
         if (!rawPings || rawPings.length === 0) return 0
 
         const pings = rawPings.map((p: string) => JSON.parse(p))
 
-        // TODO: Bulk Insert into DriverLocationHistory table
-        // await DriverLocationHistory.createMany(pings)
+        // 1. Bulk Insert into DriverLocationHistory table
+        const historyData = pings.map(p => ({
+            userId: p.userId,
+            lat: p.lat,
+            lng: p.lng,
+            heading: p.heading || null,
+            timestamp: DateTime.fromISO(p.timestamp)
+        }))
 
-        // Mettre à jour la dernière position dans DriverSetting pour chaque driver du batch
+        await DriverLocationHistory.createMany(historyData)
+
+        // 2. Mettre à jour la dernière position dans DriverSetting
         await this.syncLastPositions(pings)
 
-        // Supprimer les éléments traités de la liste Redis
-        await (Redis.connection() as any).ltrim(this.BUFFER_KEY, rawPings.length, -1)
+        // 3. Supprimer les éléments traités de la liste Redis
+        await redis.ltrim(this.BUFFER_KEY, rawPings.length, -1)
 
         return rawPings.length
     }

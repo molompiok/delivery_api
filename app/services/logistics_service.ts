@@ -9,7 +9,7 @@ export default class LogisticsService {
         return this.validateOrderConsistency(orderState, 'EDIT')
     }
 
-    static validateOrderConsistency(orderState: any, context: 'EDIT' | 'SUBMIT' = 'SUBMIT'): LogisticsValidationResult {
+    static validateOrderConsistency(orderState: any, _context: 'EDIT' | 'SUBMIT' = 'SUBMIT'): LogisticsValidationResult {
         const errors: LogisticsValidationError[] = []
         const warnings: LogisticsValidationError[] = []
 

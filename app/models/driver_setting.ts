@@ -32,7 +32,7 @@ export default class DriverSetting extends BaseModel {
     @column()
     declare vehiclePlate: string | null
 
-    @column()
+    @column({ columnName: 'company_id' })
     declare currentCompanyId: string | null
 
     @column()

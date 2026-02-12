@@ -144,7 +144,46 @@ export default class OrdersController {
         try {
             const user = auth.getUserOrFail()
             const order = await this.orderService.getOrderDetails(params.id, user.id)
-            return response.ok(order.serialize())
+            return response.ok(order)
+        } catch (error: any) {
+            return response.notFound({ message: error.message })
+        }
+    }
+
+    /**
+     * Show order route details (geometry + waypoints).
+     */
+    async route({ params, request, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const { include, force } = request.qs() // e.g., ?include=live,pending,trace&force=true
+
+            const options = {
+                live: !include || include.includes('live'),
+                pending: include && include.includes('pending'),
+                trace: !include || include.includes('trace'),
+                force: force === 'true' || force === '1'
+            }
+
+            // If explicit "live_only" requested via custom params or just standard include
+            // Let's stick to a clean options object passed to service
+
+            const route = await this.orderService.getRoute(params.id, user.id, options)
+
+            let actualTrace = null
+            if (options.trace) {
+                const RouteService = (await import('#services/route_service')).default
+                const traceData = await RouteService.getActualTrace(params.id)
+                actualTrace = {
+                    type: 'LineString',
+                    coordinates: traceData
+                }
+            }
+
+            return response.ok({
+                ...route,
+                actual_trace: actualTrace
+            })
         } catch (error: any) {
             return response.notFound({ message: error.message })
         }
@@ -176,6 +215,36 @@ export default class OrdersController {
                 message: 'Order updated successfully',
                 order: order.serialize()
             })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Set the next stop for a driver.
+     */
+    async setNextStop({ params, request, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const { stop_id } = request.all()
+            await this.orderService.setNextStop(params.id, user.id, stop_id)
+            return response.ok({ message: 'Next stop updated successfully' })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Recalculate route on demand (e.g. from mobile app deviation detection).
+     */
+    async recalculate({ params, request, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const { lat, lng } = request.all()
+            const gps = (lat && lng) ? { lat: Number(lat), lng: Number(lng) } : undefined
+
+            const route = await this.orderService.recalculateRoute(params.id, user.id, gps)
+            return response.ok(route)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }

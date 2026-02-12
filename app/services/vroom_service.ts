@@ -1,23 +1,37 @@
 import env from '../../start/env.js'
 import logger from '@adonisjs/core/services/logger'
+import polyline from '@mapbox/polyline'
 import {
     VroomInput,
     VroomResult,
     VroomVehicle,
-    VroomShipment,
     VroomJob
 } from '../types/vroom.js'
 import Stop from '#models/stop'
 import Vehicle from '#models/vehicle'
+import redis from '@adonisjs/redis/services/main'
+import crypto from 'crypto'
 
 export default class VroomService {
     private vroomUrl = env.get('VROOM_URL', 'http://localhost:5000')
 
     /**
      * Sends a request to VROOM to solve a VRP.
+     * Caches the result in Redis using a hash of the input.
      */
     async solve(input: VroomInput): Promise<VroomResult | null> {
+        const cacheKey = this.generateCacheKey(input)
+
         try {
+            // Check cache
+            const cachedResult = await redis.get(cacheKey)
+            if (cachedResult) {
+                logger.info({ cacheKey }, 'VROOM Cache Hit')
+                return JSON.parse(cachedResult) as VroomResult
+            }
+
+            logger.info({ cacheKey }, 'VROOM Cache Miss')
+
             const response = await fetch(`${this.vroomUrl}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -29,115 +43,194 @@ export default class VroomService {
 
             if (!response.ok) {
                 const errorData = await response.text()
-                logger.error({ status: response.status, data: errorData }, 'VROOM API error')
+                logger.error({ status: response.status, data: errorData, input }, 'VROOM API error')
                 return null
             }
 
-            return await response.json() as VroomResult
+            const result = await response.json() as VroomResult
+
+            // Store in cache for 30 minutes
+            await redis.set(cacheKey, JSON.stringify(result), 'EX', 1800)
+
+            return result
         } catch (error) {
-            logger.error({ err: error }, 'Error calling VROOM')
+            logger.error({ err: error, input }, 'Error calling VROOM')
             return null
         }
     }
 
     /**
-     * Builds VROOM input from our New Action-Stop models.
-     * Note: In the new model, we group Actions by Stop.
+     * Generates a unique cache key based on the VroomInput.
      */
-    async buildInput(
-        vehicles: Vehicle[],
-        stops: Stop[]
-    ): Promise<{ input: VroomInput, idMapping: any }> {
+    private generateCacheKey(input: VroomInput): string {
+        const hash = crypto.createHash('sha256')
+            .update(JSON.stringify(input))
+            .digest('hex')
+        return `vroom:cache:${hash}`
+    }
+
+    /**
+     * Calculates an optimized route (geometry + stops order) from a virtual order state.
+     */
+    async calculate(state: any, vehicle?: Vehicle, options: { startLocation?: [number, number] } = {}): Promise<any> {
+        const buildRes = await this.buildInputFromState(state, vehicle, options)
+        if (!buildRes) return null
+
+        const { input, idMapping } = buildRes
+        const result = await this.solve(input)
+
+        if (!result || !result.routes || result.routes.length === 0) {
+            logger.warn({ orderId: state.id, result }, 'VROOM returned no routes or failed')
+            return null
+        }
+
+        const route = result.routes[0]
+        logger.info({ orderId: state.id, duration: route.duration, distance: route.distance }, 'VROOM Calculation Successful')
+
+        // Decode VROOM geometry (Encoded Polyline) to GeoJSON LineString
+        let geometry = null
+        if (route.geometry) {
+            // VROOM typically returns precision 5 for its polylines
+            const decodedShape = polyline.decode(route.geometry, 5) as [number, number][]
+            geometry = {
+                type: 'LineString',
+                coordinates: decodedShape.map(p => [p[1], p[0]]) // [lat, lon] -> [lon, lat]
+            }
+        }
+
+        // Map VROOM steps back to our stop execution order
+        const optimizedStops = route.steps
+            .filter(s => s.type === 'job' || s.type === 'pickup' || s.type === 'delivery')
+            .map((s, idx) => ({
+                stopId: idMapping.stops[s.id!],
+                execution_order: idx,
+                arrival: s.arrival,
+                arrival_time: this.formatSecondsToHm(s.arrival),
+                duration: s.duration,
+                distance: s.distance
+            }))
+
+        return {
+            summary: result.summary,
+            geometry: geometry,
+            stops: optimizedStops,
+            raw: route
+        }
+    }
+
+    formatSecondsToHm(totalSeconds: number): string {
+        const hours = Math.floor(totalSeconds / 3600)
+        const minutes = Math.floor((totalSeconds % 3600) / 60)
+        const seconds = totalSeconds % 60
+
+        const parts = []
+        if (hours > 0) parts.push(`${hours}h`)
+        if (minutes > 0) parts.push(`${minutes}min`)
+        if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`)
+
+        return `{ ${parts.join(' , ')} }`
+    }
+
+    /**
+     * Builds VROOM input from Virtual Order State.
+     */
+    async buildInputFromState(
+        state: any,
+        vehicle?: Vehicle,
+        options: { startLocation?: [number, number] } = {}
+    ): Promise<{ input: VroomInput, idMapping: any } | null> {
         const vroomVehicles: VroomVehicle[] = []
-        const vroomShipments: VroomShipment[] = []
         const vroomJobs: VroomJob[] = []
 
         const mapping = {
             stops: new Map<number, string>(),
-            vehicles: new Map<number, string>(),
             count: 1
         }
 
-        // 1. Process Vehicles
-        for (const vhc of vehicles) {
-            const vroomVhcId = mapping.count++
-            mapping.vehicles.set(vroomVhcId, vhc.id)
+        // 1. Process Vehicle
+        // Determine start location: prioritize provided option, then first stop coordinates
+        const startCoords = options.startLocation || state.steps?.[0]?.stops?.[0]?.coordinates
 
-            const vroomVhc: VroomVehicle = {
-                id: vroomVhcId,
-                description: `${vhc.brand} ${vhc.model}`,
-                capacity: vhc.specs?.maxWeight ? [vhc.specs.maxWeight] : [1000],
-            }
-            vroomVehicles.push(vroomVhc)
+        if (!startCoords) {
+            logger.warn({ orderId: state.id }, 'No start location provided for VROOM vehicle, and no stops found.')
         }
 
-        // 2. Process Stops as Jobs/Shipments
-        // For simplicity in this v1 of Action-Stop conversion:
-        // - PICKUP + DELIVERY combo for the same Item across two stops => VroomShipment
-        // - Single stop SERVICE => VroomJob
+        vroomVehicles.push({
+            id: 1,
+            profile: 'auto',
+            description: vehicle ? `${vehicle.brand} ${vehicle.model}` : 'Generic Vehicle',
+            start: startCoords || undefined,
+            capacity: vehicle?.specs?.maxWeight ? [vehicle.specs.maxWeight] : [2000000], // Default 2t if not specified
+        })
 
-        // This is a complex mapping because VROOM expects Shipments or Jobs.
-        // For now, let's treat every Action as a Job if it's SERVICE or standalone,
-        // but the goal is to group them.
+        // 2. Map Stops as VROOM Jobs
+        for (const step of state.steps) {
+            for (const stop of step.stops) {
+                const vroomStopId = mapping.count++
+                mapping.stops.set(vroomStopId, stop.id)
 
-        for (const stop of stops) {
-            await stop.load('actions')
-            await stop.load('address')
+                let totalServiceTime = 0
+                let stopWeight = 0
+                const stopSkills: number[] = []
 
-            const vroomStopId = mapping.count++
-            mapping.stops.set(vroomStopId, stop.id)
+                for (const action of stop.actions) {
+                    totalServiceTime += action.service_time
 
-            for (const action of stop.actions) {
-                // If it's a service, it's definitely a Job
-                if (action.type === 'SERVICE') {
-                    vroomJobs.push({
-                        id: vroomStopId,
-                        description: `Action ${action.id}`,
-                        location: [stop.address.lng, stop.address.lat],
-                        service: action.serviceTime,
-                        priority: 1
-                    })
-                } else {
-                    // For PICKUP/DELIVERY, we could try to pair them into VroomShipments
-                    // BUT VroomShipment requires two locations. 
-                    // If we only have stops, we can treat them as Jobs with pickup/delivery amounts (VROOM supports this too)
-                    vroomJobs.push({
-                        id: vroomStopId,
-                        description: `${action.type} ${action.id}`,
-                        location: [stop.address.lng, stop.address.lat],
-                        service: action.serviceTime,
-                        amount: action.type === 'PICKUP' ? [action.quantity] : [-action.quantity],
-                        priority: 1
-                    })
+                    const type = action.type?.toLowerCase()
+
+                    if (action.transit_item_id) {
+                        const item = state.transit_items?.find((ti: any) => ti.id === action.transit_item_id)
+                        if (!item) {
+                            logger.error({ stopId: stop.id, transitItemId: action.transit_item_id }, 'Transit item not found during VROOM input build')
+                            throw new Error(`Transit item not found: ${action.transit_item_id}`)
+                        }
+                        if (item.weight) {
+                            stopWeight += (type === 'pickup' ? item.weight : -item.weight)
+                        }
+                        // Mapping Requirements to Skills from Item Metadata
+                        const requirements = item.metadata?.requirements || []
+                        if (requirements.includes('froid')) stopSkills.push(1)
+                        if (requirements.includes('chaud')) stopSkills.push(2)
+                    }
                 }
+
+                vroomJobs.push({
+                    id: vroomStopId,
+                    description: `Stop ${stop.id}`,
+                    location: stop.coordinates,
+                    service: totalServiceTime,
+                    amount: [stopWeight],
+                    skills: stopSkills.length > 0 ? stopSkills : undefined,
+                    time_windows: stop.opening_hours ? [[
+                        Math.floor(new Date(stop.opening_hours.start).getTime() / 1000),
+                        Math.floor(new Date(stop.opening_hours.end).getTime() / 1000)
+                    ]] : undefined
+                })
             }
         }
 
         return {
             input: {
                 vehicles: vroomVehicles,
-                shipments: vroomShipments,
-                jobs: vroomJobs
+                jobs: vroomJobs,
+                options: { g: true }
             },
             idMapping: {
-                stops: Object.fromEntries(mapping.stops),
-                vehicles: Object.fromEntries(mapping.vehicles)
+                stops: Object.fromEntries(mapping.stops)
             }
         }
     }
 
     /**
      * Applies a VROOM solution to the database.
-     * Updates Missions and Tasks with the optimized sequence.
+     * Updates Stop.executionOrder with the optimized sequence.
+     * Does NOT touch displayOrder.
      */
     async applySolution(result: VroomResult, mapping: any) {
         if (!result.routes) return
 
         for (const route of result.routes) {
-            const vhcId = mapping.vehicles[route.vehicle]
-            if (!vhcId) continue
-
-            let sequence = 0
+            let executionOrder = 0
             for (const step of route.steps) {
                 if (step.type === 'start' || step.type === 'end' || step.type === 'break') continue
 
@@ -145,8 +238,7 @@ export default class VroomService {
                 if (stopId) {
                     const stop = await Stop.find(stopId)
                     if (stop) {
-                        stop.sequence = sequence++
-                        // On pourra aussi estimer l'heure d'arriv au stop
+                        stop.executionOrder = executionOrder++
                         await stop.save()
                     }
                 }

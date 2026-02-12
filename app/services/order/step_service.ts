@@ -5,6 +5,8 @@ import { LogisticsOperationResult } from '../../types/logistics.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addStepSchema, updateStepSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
+import emitter from '@adonisjs/core/services/emitter'
+import OrderStructureChanged from '#events/order_structure_changed'
 
 export default class StepService {
     /**
@@ -46,6 +48,12 @@ export default class StepService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId,
+                clientId
+            }))
 
             return {
                 entity: step,
@@ -112,6 +120,12 @@ export default class StepService {
 
             if (!trx) await (effectiveTrx as any).commit()
 
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
+
             return {
                 entity: targetStep,
                 validationErrors: []
@@ -150,6 +164,12 @@ export default class StepService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
 
             return { success: true }
         } catch (error) {

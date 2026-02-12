@@ -1,8 +1,9 @@
 import db from '@adonisjs/lucid/services/db'
 import emitter from '@adonisjs/core/services/emitter'
 import Order from '#models/order'
-import Mission from '#models/mission'
 import OrderStatusUpdated from '#events/order_status_updated'
+import StopStatusUpdated from '#events/stop_status_updated'
+import ActionStatusUpdated from '#events/action_status_updated'
 import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import RedisService from '#services/redis_service'
@@ -16,19 +17,27 @@ import { isValidCodeFormat } from '#utils/verification_code'
 import { MultipartFile } from '@adonisjs/core/bodyparser'
 import FileManager from '#services/file_manager'
 import File from '#models/file'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import logisticsConfig from '#config/logistics'
+import { getDistance } from '#utils/geo'
+import OrderDraftService from '#services/order/order_draft_service'
+import { GeoCompressor } from '#utils/geo_compressor'
 
 @inject()
 export default class MissionService {
-    constructor(protected dispatchService: DispatchService) { }
+    constructor(
+        protected dispatchService: DispatchService,
+        protected orderDraftService: OrderDraftService
+    ) { }
 
     /**
      * Driver accepts a mission.
      */
-    async acceptMission(driverId: string, orderId: string) {
-        const trx = await db.transaction()
+    async acceptMission(driverId: string, orderId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
 
         try {
-            const order = await Order.query({ client: trx })
+            const order = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
                 .forUpdate()
                 .first()
@@ -58,21 +67,17 @@ export default class MissionService {
             order.offeredDriverId = null
             order.offerExpiresAt = null
             order.status = 'ACCEPTED'
-            await order.useTransaction(trx).save()
 
-            // Update Mission model
-            let mission = await Mission.query({ client: trx }).where('orderId', orderId).first()
-            if (!mission) {
-                mission = new Mission()
-                mission.orderId = orderId
-            }
-            mission.driverId = driverId
-            mission.status = 'ASSIGNED'
-            mission.startAt = DateTime.now()
-            await mission.useTransaction(trx).save()
+            // HISTORY
+            order.statusHistory = [
+                ...(order.statusHistory || []),
+                { status: 'ACCEPTED', timestamp: DateTime.now().toISO()!, note: 'Accepted by driver' }
+            ]
+
+            await order.useTransaction(effectiveTrx).save()
 
             // Redis Warmup
-            await order.load('stops', (q) => q.orderBy('sequence', 'desc').limit(1).preload('address'))
+            await order.load('stops', (q) => q.orderBy('display_order', 'desc').limit(1).preload('address'))
             const lastStop = order.stops[0]
 
             if (lastStop?.address) {
@@ -82,17 +87,20 @@ export default class MissionService {
                 })
             }
 
-            await trx.commit()
+            // Register after('commit') BEFORE committing
+            (effectiveTrx as any).after('commit', () => {
+                emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                    orderId: order.id,
+                    status: order.status,
+                    clientId: order.clientId
+                }))
+            })
 
-            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
-                orderId: order.id,
-                status: order.status,
-                clientId: order.clientId
-            }))
+            if (!trx) await effectiveTrx.commit()
 
             return order
         } catch (error) {
-            await trx.rollback()
+            if (!trx) await effectiveTrx.rollback()
             logger.error({ err: error }, 'Mission acceptance failed')
             throw error
         }
@@ -101,10 +109,10 @@ export default class MissionService {
     /**
      * Driver signals arrival at a stop.
      */
-    async arrivedAtStop(driverId: string, stopId: string) {
-        const trx = await db.transaction()
+    async arrivedAtStop(driverId: string, stopId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
         try {
-            const stop = await Stop.query({ client: trx })
+            const stop = await Stop.query({ client: effectiveTrx })
                 .where('id', stopId)
                 .preload('order' as any)
                 .forUpdate()
@@ -114,16 +122,87 @@ export default class MissionService {
                 throw new Error('Stop not assigned to you')
             }
 
-            stop.status = 'ARRIVED'
-            stop.arrivalTime = DateTime.now()
-            await stop.useTransaction(trx).save()
+            if (stop.status === 'PENDING') {
+                // 1. GPS PROXIMITY VALIDATION
+                const driverState = await RedisService.getDriverState(driverId)
+                if (driverState?.last_lat && driverState?.last_lng) {
+                    await stop.load('address')
+                    if (stop.address) {
+                        const distance = getDistance(
+                            driverState.last_lat,
+                            driverState.last_lng,
+                            stop.address.lat,
+                            stop.address.lng
+                        )
 
-            await this.syncOrderStatus(stop.orderId, trx)
-            await trx.commit()
+                        // if (distance > logisticsConfig.validation.stopArrivalProximityMeters) {
+                        //     throw new Error(`Vous êtes trop loin de l'arrêt (${Math.round(distance)}m). La limite est de ${logisticsConfig.validation.stopArrivalProximityMeters}m.`)
+                        // }
+                    }
+                }
+
+                stop.status = 'ARRIVED'
+                stop.arrivalTime = DateTime.now()
+
+                // HISTORY
+                // stop.statusHistory = [
+                //     ...(stop.statusHistory || []),
+                //     { status: 'ARRIVED', timestamp: DateTime.now().toISO()!, note: 'Driver arrived at location' }
+                // ]
+
+                await stop.useTransaction(effectiveTrx).save();
+
+                // SOCKET (DEFERRED)
+                (effectiveTrx as any).after('commit', () => {
+                    emitter.emit(StopStatusUpdated, new StopStatusUpdated({
+                        stopId: stop.id,
+                        status: stop.status,
+                        orderId: stop.orderId
+                    }))
+                })
+
+                // PROGRESS TRACKING: Update metadata execution lists
+                const order = stop.order
+                const meta = order.metadata || {}
+                if (meta.route_execution) {
+                    const remaining = meta.route_execution.remaining || []
+                    const visited = meta.route_execution.visited || []
+
+                    // Move from remaining to visited
+                    const index = remaining.indexOf(stopId)
+                    if (index !== -1) {
+                        remaining.splice(index, 1)
+                    }
+                    if (!visited.includes(stopId)) {
+                        visited.push(stopId)
+                    }
+
+                    meta.route_execution.remaining = remaining
+                    meta.route_execution.visited = visited
+                    order.metadata = meta
+                    await order.useTransaction(effectiveTrx).save()
+                }
+
+                await this.syncOrderStatus(stop.orderId, effectiveTrx);
+
+                const leg = await OrderLeg.query({ client: effectiveTrx })
+                    .where('orderId', stop.orderId)
+                    .first()
+
+                if (leg) {
+                    const RouteService = (await import('#services/route_service')).default
+                    await RouteService.flushTraceToLeg(stop.orderId, leg.id, effectiveTrx)
+
+                    leg.status = 'COMPLETED'
+                    await leg.useTransaction(effectiveTrx).save()
+                }
+            }
+
+            if (!trx) await effectiveTrx.commit()
 
             return stop
         } catch (error) {
-            await trx.rollback()
+            if (!trx) await effectiveTrx.rollback()
             throw error
         }
     }
@@ -133,28 +212,26 @@ export default class MissionService {
      * proofs: Record<key, value> (e.g. { verify_otp: "123456" })
      * files: Array of MultipartFile (from request.allFiles() flattened)
      */
-    async completeAction(driverId: string, actionId: string, proofs: Record<string, string> = {}, files: MultipartFile[] = []) {
-        const trx = await db.transaction()
+    async completeAction(driverId: string, actionId: string, proofs: Record<string, string> = {}, files: MultipartFile[] = [], trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
         try {
-            const action = await Action.query({ client: trx })
+            const action = await Action.query({ client: effectiveTrx })
                 .where('id', actionId)
                 .preload('proofs')
                 .forUpdate()
                 .firstOrFail()
 
-            //TODO : la logique d'assignation des actions aux conducteurs.
-            // if (action.order.driverId !== driverId) {
-            //     throw new Error('Action not assigned to you')
-            // }
-
             if (action.status === 'COMPLETED') {
+                if (!trx) await effectiveTrx.commit()
                 return action
             }
 
             // 1. Sequence Enforcement
-            const stop = await Stop.find(action.stopId, { client: trx })
-            if (!stop || stop.status !== 'ARRIVED') {
-                throw new Error('You must signal arrival at the stop before completing actions')
+            const stop = await Stop.find(action.stopId, { client: effectiveTrx })
+            if (!stop || (stop.status !== 'ARRIVED' && stop.status !== 'PARTIAL')) {
+                if (stop?.status === 'PENDING') {
+                    throw new Error('You must signal arrival at the stop before completing actions')
+                }
             }
 
             // 2. Validate Proofs
@@ -162,7 +239,6 @@ export default class MissionService {
                 const submittedValue = proofs[proof.key]
 
                 if (proof.type === 'CODE') {
-                    // Compare mode: verify submitted code matches expected
                     if (proof.metadata?.compare) {
                         if (!submittedValue || submittedValue !== proof.expectedValue) {
                             throw new Error(`Invalid or missing code for proof: ${proof.key}`)
@@ -171,7 +247,6 @@ export default class MissionService {
                     proof.submittedValue = submittedValue
                     proof.isVerified = true
                 } else if (proof.type === 'PHOTO') {
-                    // Check if we have files for this proof key
                     const relevantFiles = files.filter(f => f.fieldName === proof.key)
 
                     if (relevantFiles.length > 0) {
@@ -181,8 +256,7 @@ export default class MissionService {
                             config: { maxFiles: 1, allowedExt: ['jpg', 'png', 'jpeg', 'pdf'] }
                         }, driverId)
 
-                        // Get the file ID that was just uploaded
-                        const uploadedFile = await File.query({ client: trx })
+                        const uploadedFile = await File.query({ client: effectiveTrx })
                             .where('tableName', 'ActionProof')
                             .where('tableId', proof.id)
                             .where('tableColumn', proof.key)
@@ -195,7 +269,6 @@ export default class MissionService {
                         }
                     }
 
-                    // Fallback to submittedValue (for legacy/tests/mock) if no actual file processed
                     if (!proof.isVerified) {
                         if (!submittedValue) {
                             throw new Error(`Missing required file/proof for: ${proof.key}`)
@@ -204,37 +277,341 @@ export default class MissionService {
                         proof.isVerified = true
                     }
                 }
-                await proof.useTransaction(trx).save()
+                await proof.useTransaction(effectiveTrx).save()
             }
 
-            // 3. Final Check: All required proofs verified?
             const allVerified = action.proofs.every(p => p.isVerified)
             if (!allVerified) {
                 throw new Error('Some required proofs are missing or invalid')
             }
 
-            // 4. Complete Action
             action.status = 'COMPLETED'
-            await action.useTransaction(trx).save()
 
-            // 5. Sync hierarchy (Stop -> Step -> Order)
-            await this.syncStopProgress(action.stopId, trx)
-            await this.syncOrderStatus(action.orderId, trx)
+            // HISTORY
+            // action.statusHistory = [
+            //     ...(action.statusHistory || []),
+            //     { status: 'COMPLETED', timestamp: DateTime.now().toISO()!, note: 'Action completed successfully' }
+            // ]
 
-            // 6. Fetch updated order for event
-            const updatedOrder = await Order.findOrFail(action.orderId, { client: trx })
+            await action.useTransaction(effectiveTrx).save()
 
-            await trx.commit()
+            await this.syncStopProgress(action.stopId, effectiveTrx)
+            await this.syncOrderStatus(action.orderId, effectiveTrx)
 
-            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
-                orderId: action.orderId,
-                status: updatedOrder.status,
-                clientId: updatedOrder.clientId
-            }))
+            // SOCKET
+            const updatedOrder = await Order.findOrFail(action.orderId, { client: effectiveTrx });
+
+            // Register after('commit') BEFORE committing
+            (effectiveTrx as any).after('commit', () => {
+                emitter.emit(ActionStatusUpdated, new ActionStatusUpdated({
+                    actionId: action.id,
+                    status: action.status,
+                    orderId: action.orderId
+                }));
+
+                emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                    orderId: action.orderId,
+                    status: updatedOrder.status,
+                    clientId: updatedOrder.clientId
+                }));
+            });
+
+            if (!trx) await effectiveTrx.commit()
 
             return action
         } catch (error) {
-            await trx.rollback()
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Freeze an action (e.g. absent, refused, later).
+     */
+    async freezeAction(_driverId: string, actionId: string, reason?: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const action = await Action.query({ client: effectiveTrx })
+                .where('id', actionId)
+                .forUpdate()
+                .firstOrFail()
+
+            if (['COMPLETED', 'FROZEN'].includes(action.status)) {
+                if (!trx) await effectiveTrx.commit()
+                return action
+            }
+
+            const stop = await Stop.find(action.stopId, { client: effectiveTrx })
+            if (!stop || (stop.status !== 'ARRIVED' && stop.status !== 'PARTIAL')) {
+                if (stop?.status === 'PENDING') {
+                    throw new Error('You must signal arrival at the stop before freezing actions')
+                }
+            }
+
+            action.status = 'FROZEN'
+            if (reason) {
+                action.metadata = { ...action.metadata, freezeReason: reason }
+            }
+
+            // HISTORY
+            // action.statusHistory = [
+            //     ...(action.statusHistory || []),
+            //     { status: 'FROZEN', timestamp: DateTime.now().toISO()!, note: reason || 'Action frozen' }
+            // ]
+
+            await action.useTransaction(effectiveTrx).save()
+
+            await this.syncStopProgress(action.stopId, effectiveTrx)
+            await this.syncOrderStatus(action.orderId, effectiveTrx)
+
+            // SOCKET
+            const updatedOrder = await Order.findOrFail(action.orderId, { client: effectiveTrx });
+            // Register after('commit') BEFORE committing
+            (effectiveTrx as any).after('commit', () => {
+                emitter.emit(ActionStatusUpdated, new ActionStatusUpdated({
+                    actionId: action.id,
+                    status: action.status,
+                    orderId: action.orderId
+                }));
+
+                emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                    orderId: action.orderId,
+                    status: updatedOrder.status,
+                    clientId: updatedOrder.clientId
+                }));
+            });
+
+            if (!trx) await effectiveTrx.commit()
+
+            return action
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Freeze all pending actions in a stop.
+     */
+    async freezeStop(driverId: string, stopId: string, reason?: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const stop = await Stop.query({ client: effectiveTrx })
+                .where('id', stopId)
+                .preload('actions')
+                .preload('order' as any)
+                .forUpdate()
+                .firstOrFail()
+
+            if (stop.order.driverId !== driverId) {
+                throw new Error('Stop not assigned to you')
+            }
+
+            for (const action of stop.actions) {
+                if (action.status === 'PENDING' || action.status === 'ARRIVED') {
+                    action.status = 'FROZEN'
+                    if (reason) {
+                        action.metadata = { ...action.metadata, freezeReason: reason }
+                    }
+
+                    // HISTORY
+                    // action.statusHistory = [
+                    //     ...(action.statusHistory || []),
+                    //     { status: 'FROZEN', timestamp: DateTime.now().toISO()!, note: reason || 'Stop level freeze' }
+                    // ]
+                    await action.useTransaction(effectiveTrx).save();
+
+                    // SOCKET (DEFERRED)
+                    const currentActionId = action.id
+                    const currentActionStatus = action.status
+                    const currentActionOrderId = action.orderId;
+                    (effectiveTrx as any).after('commit', () => {
+                        emitter.emit(ActionStatusUpdated, new ActionStatusUpdated({
+                            actionId: currentActionId,
+                            status: currentActionStatus,
+                            orderId: currentActionOrderId
+                        }))
+                    });
+                }
+            }
+
+            await this.syncStopProgress(stop.id, effectiveTrx)
+            await this.syncOrderStatus(stop.orderId, effectiveTrx)
+
+            if (!trx) await effectiveTrx.commit()
+            return stop
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Unfreeze/Reactivate an action.
+     */
+    async unfreezeAction(_driverId: string, actionId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const action = await Action.query({ client: effectiveTrx })
+                .where('id', actionId)
+                .forUpdate()
+                .firstOrFail()
+
+            if (action.status !== 'FROZEN') {
+                if (!trx) await effectiveTrx.commit()
+                return action
+            }
+
+            action.status = 'PENDING'
+            if (action.metadata?.freezeReason) {
+                const meta = { ...action.metadata }
+                delete meta.freezeReason
+                action.metadata = meta
+            }
+
+            // HISTORY
+            // action.statusHistory = [
+            //     ...(action.statusHistory || []),
+            //     { status: 'PENDING', timestamp: DateTime.now().toISO()!, note: 'Action reactivated' }
+            // ]
+
+            await action.useTransaction(effectiveTrx).save();
+
+            await this.syncStopProgress(action.stopId, effectiveTrx);
+            await this.syncOrderStatus(action.orderId, effectiveTrx);
+
+            // SOCKET
+            (effectiveTrx as any).after('commit', () => {
+                emitter.emit(ActionStatusUpdated, new ActionStatusUpdated({
+                    actionId: action.id,
+                    status: action.status,
+                    orderId: action.orderId
+                }))
+            });
+
+            if (!trx) await effectiveTrx.commit()
+            return action
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Unfreeze/Reactivate all actions in a stop.
+     */
+    async unfreezeStop(driverId: string, stopId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const stop = await Stop.query({ client: effectiveTrx })
+                .where('id', stopId)
+                .preload('actions')
+                .preload('order' as any)
+                .forUpdate()
+                .firstOrFail()
+
+            if (stop.order.driverId !== driverId) {
+                throw new Error('Stop not assigned to you')
+            }
+
+            for (const action of stop.actions) {
+                if (action.status === 'FROZEN') {
+                    action.status = 'PENDING'
+                    if (action.metadata?.freezeReason) {
+                        const meta = { ...action.metadata }
+                        delete meta.freezeReason
+                        action.metadata = meta
+                    }
+                    await action.useTransaction(effectiveTrx).save();
+
+                    // SOCKET
+                    const currentActionId = action.id
+                    const currentActionStatus = action.status
+                    const currentActionOrderId = action.orderId;
+                    (effectiveTrx as any).after('commit', () => {
+                        emitter.emit(ActionStatusUpdated, new ActionStatusUpdated({
+                            actionId: currentActionId,
+                            status: currentActionStatus,
+                            orderId: currentActionOrderId
+                        }))
+                    });
+                }
+            }
+
+            await this.syncStopProgress(stop.id, effectiveTrx)
+            await this.syncOrderStatus(stop.orderId, effectiveTrx)
+
+            if (!trx) await effectiveTrx.commit()
+            return stop
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Manually mark a stop as finished (e.g. driver leaving location).
+     * Only works if all actions are terminal.
+     */
+    async completeStop(driverId: string, stopId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const stop = await Stop.query({ client: effectiveTrx })
+                .where('id', stopId)
+                .preload('actions')
+                .preload('order' as any)
+                .forUpdate()
+                .firstOrFail()
+
+            if (stop.order.driverId !== driverId) {
+                throw new Error('Stop not assigned to you')
+            }
+
+            const allTerminal = stop.actions.every(a => ['COMPLETED', 'FROZEN', 'CANCELLED', 'FAILED'].includes(a.status))
+            if (!allTerminal) {
+                throw new Error('All actions must be completed or frozen before finishing the stop')
+            }
+
+            await this.syncStopProgress(stop.id, effectiveTrx)
+            await this.syncOrderStatus(stop.orderId, effectiveTrx)
+
+            if (!trx) await effectiveTrx.commit()
+            return stop
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Mark the entire mission as finished once all actions are terminal.
+     */
+    async completeOrder(driverId: string, orderId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .preload('stops', (q) => q.preload('actions'))
+                .forUpdate()
+                .firstOrFail()
+
+            if (order.driverId !== driverId) {
+                throw new Error('Order not assigned to you')
+            }
+
+            const allActions = order.stops.flatMap(s => s.actions)
+            const allTerminal = allActions.every(a => ['COMPLETED', 'FROZEN', 'CANCELLED', 'FAILED'].includes(a.status))
+
+            if (!allTerminal) {
+                throw new Error('All actions in the order must be completed or frozen before finishing')
+            }
+
+            await this.syncOrderStatus(order.id, effectiveTrx, { force: true })
+
+            if (!trx) await effectiveTrx.commit()
+            return await Order.findOrFail(orderId)
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
             throw error
         }
     }
@@ -242,26 +619,64 @@ export default class MissionService {
     /**
      * Helper to sync stop status based on its actions.
      */
-    private async syncStopProgress(stopId: string, trx: any) {
+    private async syncStopProgress(stopId: string, trx: TransactionClientContract) {
         const stop = await Stop.find(stopId, { client: trx })
         if (!stop) return
 
         const actions = await Action.query({ client: trx }).where('stopId', stopId)
-        const allCompleted = actions.every(a => a.status === 'COMPLETED')
 
-        if (allCompleted && actions.length > 0) {
-            stop.status = 'COMPLETED'
-            stop.completionTime = DateTime.now()
-            await stop.useTransaction(trx).save()
+        const allTerminal = actions.every(a => ['COMPLETED', 'FROZEN', 'CANCELLED', 'FAILED'].includes(a.status))
+        const anyFrozenOrFailed = actions.some(a => ['FROZEN', 'FAILED', 'CANCELLED'].includes(a.status))
 
-            // Also check Step
+        if (allTerminal && actions.length > 0) {
+            let newStatus: 'COMPLETED' | 'PARTIAL' | 'FAILED' = 'COMPLETED'
+            if (anyFrozenOrFailed) {
+                newStatus = 'PARTIAL'
+            }
+
+            if (stop.status !== newStatus) {
+                stop.status = newStatus
+                stop.completionTime = DateTime.now()
+
+                // HISTORY
+                // stop.statusHistory = [
+                //     ...(stop.statusHistory || []),
+                //     { status: newStatus, timestamp: DateTime.now().toISO()!, note: 'Stop auto-sync via Actions' }
+                // ]
+
+                await stop.useTransaction(trx).save();
+
+                // SOCKET
+                (trx as any).after('commit', () => {
+                    emitter.emit(StopStatusUpdated, new StopStatusUpdated({
+                        stopId: stop.id,
+                        status: stop.status,
+                        orderId: stop.orderId
+                    }));
+                });
+            }
+
             const step = await Step.find(stop.stepId, { client: trx })
             if (step) {
                 const stopsInStep = await Stop.query({ client: trx }).where('stepId', step.id)
-                const allStopsCompleted = stopsInStep.every(s => s.status === 'COMPLETED')
-                if (allStopsCompleted) {
+                const allStopsTerminal = stopsInStep.every(s => ['COMPLETED', 'PARTIAL', 'FAILED'].includes(s.status))
+
+                if (allStopsTerminal) {
                     step.status = 'COMPLETED'
                     await step.useTransaction(trx).save()
+
+                    // --- HYBRID TRACE: FREEZE ACTUAL PATH ---
+                    await this.freezeActualPath(stop.id, trx)
+
+                    // --- RECALCULATE REMAINING ROUTE ---
+                    const freshOrder = await Order.find(stop.orderId, { client: trx })
+                    if (freshOrder) {
+                        try {
+                            await this.orderDraftService.finalizeOrderAccounting(freshOrder, trx)
+                        } catch (err) {
+                            logger.error({ err, orderId: freshOrder.id }, 'Recalculation failed after stop completion')
+                        }
+                    }
                 } else {
                     step.status = 'IN_PROGRESS'
                     await step.useTransaction(trx).save()
@@ -271,62 +686,123 @@ export default class MissionService {
     }
 
     /**
+     * Congèle la trace réelle parcourue pour un segment de stop qui vient de se terminer.
+     */
+    private async freezeActualPath(stopId: string, trx: TransactionClientContract) {
+        try {
+            const stop = await Stop.query({ client: trx }).where('id', stopId).preload('order').first()
+            if (!stop || !stop.order) return
+
+            // 1. Récupérer la trace en buffer Redis
+            const rawTrace = await RedisService.getOrderTrace(stop.orderId)
+            if (!rawTrace || rawTrace.length === 0) return
+
+            // 2. Compresser la trace
+            const compressed = GeoCompressor.compressTrace(rawTrace)
+
+            // 3. Récupérer le OrderLeg
+            let leg = await OrderLeg.query({ client: trx }).where('orderId', stop.orderId).first()
+            if (!leg) {
+                leg = await OrderLeg.create({ orderId: stop.orderId, status: 'IN_TRANSIT' }, { client: trx })
+            }
+
+            // 4. Ajouter à actualPath existant
+            const currentPath = leg.actualPath?.coordinates || []
+            const newPoints = compressed.map(p => [p[0], p[1]])
+
+            leg.actualPath = {
+                type: 'LineString',
+                coordinates: [...currentPath, ...newPoints]
+            }
+
+            await leg.useTransaction(trx).save()
+
+            // 5. Nettoyer le buffer Redis pour le segment suivant
+            await RedisService.clearOrderTraceAfterFlush(stop.orderId)
+
+            logger.info({ stopId, points: compressed.length }, 'Actual path frozen for stop')
+        } catch (error) {
+            logger.error({ error, stopId }, 'Failed to freeze actual path')
+        }
+    }
+
+    /**
      * Main logic to derive global Order status from atomic progress.
      */
-    async syncOrderStatus(orderId: string, trx?: any) {
-        const client = trx || db
-        const order = await Order.find(orderId, { client })
-        if (!order) return
+    async syncOrderStatus(orderId: string, trx?: TransactionClientContract, options: { force?: boolean } = {}) {
+        const effectiveTrx = trx || await db.transaction()
 
-        const stops = await Stop.query({ client }).where('orderId', orderId).orderBy('sequence', 'asc')
-        const actions = await Action.query({ client }).where('orderId', orderId)
-
-        const anyArrived = stops.find(s => s.status === 'ARRIVED')
-        const allActionsCompleted = actions.every(a => a.status === 'COMPLETED')
-        const anyActionCompleted = actions.some(a => a.status === 'COMPLETED')
-
-        // Derive status
-        let newStatus = order.status
-
-        if (allActionsCompleted && actions.length > 0) {
-            newStatus = 'DELIVERED'
-        } else if (anyArrived) {
-            // Priority 1: If arrived at a stop, check if it has delivery or pickup
-            const currentStop = stops.find(s => s.status === 'ARRIVED')
-            if (currentStop) {
-                const hasDelivery = await Action.query({ client }).where('stopId', currentStop.id).where('type', 'DELIVERY').first()
-                newStatus = hasDelivery ? 'AT_DELIVERY' : 'AT_PICKUP'
+        try {
+            const order = await Order.find(orderId, { client: effectiveTrx })
+            if (!order) {
+                if (!trx) await effectiveTrx.commit()
+                return
             }
-        } else if (anyActionCompleted) {
-            // Priority 2: Not arrived anywhere but something happened
-            const pickups = actions.filter(a => a.type === 'PICKUP')
-            const allPickupsDone = pickups.every(p => p.status === 'COMPLETED')
 
-            if (allPickupsDone && pickups.length > 0) {
-                newStatus = 'COLLECTED'
+            const stops = await Stop.query({ client: effectiveTrx }).where('orderId', orderId)
+            const plannedOrder = order.metadata?.route_execution?.planned as string[] | undefined
+            if (plannedOrder && plannedOrder.length > 0) {
+                stops.sort((a, b) => plannedOrder.indexOf(a.id) - plannedOrder.indexOf(b.id))
+            } else {
+                stops.sort((a, b) => (a.executionOrder ?? a.displayOrder) - (b.executionOrder ?? b.displayOrder))
             }
-        }
+            const actions = await Action.query({ client: effectiveTrx }).where('orderId', orderId)
 
-        if (newStatus !== order.status) {
-            order.status = newStatus as any
-            order.statusHistory = [
-                ...(order.statusHistory || []),
-                { status: newStatus, timestamp: DateTime.now().toISO()!, note: 'Auto-sync via Atomic Workflow' }
-            ]
-            await order.useTransaction(client).save()
+            let newStatus = order.status
 
-            // Update Mission if terminal
-            if (['DELIVERED', 'FAILED', 'CANCELLED'].includes(newStatus)) {
-                const mission = await Mission.query({ client }).where('orderId', orderId).first()
-                if (mission) {
-                    mission.status = newStatus === 'DELIVERED' ? 'COMPLETED' : 'FAILED'
-                    mission.completedAt = DateTime.now()
-                    await mission.useTransaction(client).save()
-                }
-                if (order.driverId) {
-                    await RedisService.removeOrderFromDriver(order.driverId, orderId)
+            const deliveryActions = actions.filter(a => a.type === 'DELIVERY')
+            const allActionsTerminal = actions.every(a => ['COMPLETED', 'FROZEN', 'CANCELLED', 'FAILED'].includes(a.status))
+            const anyActionFrozen = actions.some(a => a.status === 'FROZEN')
+
+            // Auto-sync should only close the order if ALL actions are terminal AND none are FROZEN.
+            // If something is FROZEN, it stays ACCEPTED so the driver can manage (unfreeze/skip) 
+            // before manually finishing the mission.
+            if (allActionsTerminal && (options.force || !anyActionFrozen) && actions.length > 0) {
+                const anyDeliveryCompleted = deliveryActions.some(a => a.status === 'COMPLETED')
+
+                if (deliveryActions.length > 0) {
+                    if (anyDeliveryCompleted) {
+                        newStatus = 'DELIVERED'
+                    } else {
+                        newStatus = 'FAILED'
+                    }
+                } else {
+                    // Service/Pickup only orders
+                    newStatus = 'DELIVERED'
                 }
             }
+
+            if (newStatus !== order.status) {
+                order.status = newStatus as any
+
+                // HISTORY
+                order.statusHistory = [
+                    ...(order.statusHistory || []),
+                    { status: newStatus, timestamp: DateTime.now().toISO()!, note: 'Auto-sync via Action-Centric Workflow' }
+                ]
+
+                await order.useTransaction(effectiveTrx).save();
+
+                if (['DELIVERED', 'FAILED', 'CANCELLED'].includes(newStatus)) {
+                    if (order.driverId) {
+                        await RedisService.removeOrderFromDriver(order.driverId, orderId)
+                    }
+                }
+
+                // SOCKET
+                (effectiveTrx as any).after('commit', () => {
+                    emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                        orderId: order.id,
+                        status: order.status,
+                        clientId: order.clientId
+                    }))
+                });
+            }
+
+            if (!trx) await effectiveTrx.commit()
+        } catch (e) {
+            if (!trx) await effectiveTrx.rollback()
+            throw e
         }
     }
 
@@ -334,13 +810,35 @@ export default class MissionService {
      * List missions for a driver (active or offered).
      */
     async listMissions(driverId: string) {
-        return await Order.query()
-            .where('driverId', driverId)
-            .orWhere('offeredDriverId', driverId)
-            // Legacy preloads for compatibility
-            .preload('client')
+        const DriverSetting = (await import('#models/driver_setting')).default
+        const ds = await DriverSetting.findBy('userId', driverId)
+
+        const query = Order.query()
+            .where((q) => {
+                q.where('driverId', driverId)
+                q.orWhere('offeredDriverId', driverId)
+                q.orWhere((targetQ) => {
+                    targetQ.where('assignmentMode', 'TARGET')
+                    targetQ.where('refId', driverId)
+                    targetQ.where('status', 'PENDING')
+                })
+
+                q.orWhere((pendingQ) => {
+                    pendingQ.where('status', 'PENDING')
+                    pendingQ.where((subQ) => {
+                        subQ.where('assignmentMode', 'GLOBAL')
+                        if (ds?.currentCompanyId) {
+                            subQ.orWhereHas('client', (clientQ) => {
+                                clientQ.where('companyId', ds.currentCompanyId!)
+                            })
+                        }
+                    })
+                })
+            })
+
+        const orders = await query
+            .preload('client', (q) => q.preload('company'))
             .preload('transitItems')
-            // New structure preloads
             .preload('steps', (stepsQuery) => {
                 stepsQuery.preload('stops', (stopsQuery) => {
                     stopsQuery.preload('actions')
@@ -348,19 +846,41 @@ export default class MissionService {
                 })
             })
             .orderBy('createdAt', 'desc')
+
+        for (const order of orders) {
+            const execution = order.metadata?.route_execution
+            const plannedOrder = execution?.planned as string[] | undefined
+
+            if (plannedOrder && plannedOrder.length > 0) {
+                order.steps.sort((a, b) => {
+                    const stopA = a.stops?.[0]
+                    const stopB = b.stops?.[0]
+                    if (!stopA || !stopB) return 0
+                    return (stopA.executionOrder ?? stopA.displayOrder) - (stopB.executionOrder ?? stopB.displayOrder)
+                })
+
+                for (const step of order.steps) {
+                    if (step.stops) {
+                        step.stops.sort((a, b) => (a.executionOrder ?? a.displayOrder) - (b.executionOrder ?? b.displayOrder))
+                    }
+                }
+            }
+        }
+
+        return orders
     }
 
     /**
      * Verify a pickup/delivery code on a leg.
      */
-    async verifyCode(orderId: string, code: string) {
+    async verifyCode(orderId: string, code: string, trx?: TransactionClientContract) {
         if (!isValidCodeFormat(code)) {
             throw new Error('Invalid code format. Must be 6 digits.')
         }
 
-        const trx = await db.transaction()
+        const effectiveTrx = trx || await db.transaction()
         try {
-            const leg = await OrderLeg.query({ client: trx })
+            const leg = await OrderLeg.query({ client: effectiveTrx })
                 .where('orderId', orderId)
                 .where('verificationCode', code)
                 .forUpdate()
@@ -371,12 +891,12 @@ export default class MissionService {
             }
 
             leg.status = 'COMPLETED'
-            await leg.useTransaction(trx).save()
-            await trx.commit()
+            await leg.useTransaction(effectiveTrx).save()
+            if (!trx) await effectiveTrx.commit()
 
             return leg
         } catch (error) {
-            await trx.rollback()
+            if (!trx) await effectiveTrx.rollback()
             throw error
         }
     }
@@ -384,10 +904,10 @@ export default class MissionService {
     /**
      * Driver refuses a mission.
      */
-    async refuseMission(driverId: string, orderId: string) {
-        const trx = await db.transaction()
+    async refuseMission(driverId: string, orderId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
         try {
-            const order = await Order.query({ client: trx })
+            const order = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
                 .forUpdate()
                 .first()
@@ -396,22 +916,22 @@ export default class MissionService {
                 await this.dispatchService.registerRejection(orderId, driverId)
                 order.offeredDriverId = null
                 order.offerExpiresAt = null
-                await order.useTransaction(trx).save()
+                await order.useTransaction(effectiveTrx).save()
 
                 const state = await RedisService.getDriverState(driverId)
                 if (state && state.status === 'OFFERING') {
                     await RedisService.updateDriverState(driverId, { status: 'ONLINE' })
                 }
-                await trx.commit()
+                if (!trx) await effectiveTrx.commit()
 
                 this.dispatchService.dispatch(order).catch(err => {
                     logger.error({ err, orderId }, 'Dispatch failed after refusal')
                 })
             } else {
-                await trx.commit()
+                if (!trx) await effectiveTrx.commit()
             }
         } catch (error) {
-            await trx.rollback()
+            if (!trx) await effectiveTrx.rollback()
             throw error
         }
         return true
@@ -420,15 +940,37 @@ export default class MissionService {
     /**
      * Legacy/Support status update.
      */
-    async updateStatus(orderId: string, driverId: string, status: string, _options: { latitude?: number, longitude?: number, reason?: string }) {
-        // Enforce using atomic methods for core workflow, but allow terminal states manually
-        if (['CANCELLED', 'FAILED'].includes(status)) {
-            const order = await Order.query().where('id', orderId).andWhere('driverId', driverId).firstOrFail()
-            order.status = status as any
-            await order.save()
-            await RedisService.removeOrderFromDriver(driverId, orderId)
-            return order
+    async updateStatus(orderId: string, driverId: string, status: string, _options: { latitude?: number, longitude?: number, reason?: string }, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            if (['CANCELLED', 'FAILED'].includes(status)) {
+                const order = await Order.query({ client: effectiveTrx }).where('id', orderId).andWhere('driverId', driverId).firstOrFail()
+                order.status = status as any
+
+                // HISTORY
+                order.statusHistory = [
+                    ...(order.statusHistory || []),
+                    { status: order.status, timestamp: DateTime.now().toISO()!, note: _options.reason || 'Manual override' }
+                ]
+
+                await order.useTransaction(effectiveTrx).save()
+                await RedisService.removeOrderFromDriver(driverId, orderId)
+
+                if (!trx) await effectiveTrx.commit()
+
+                // SOCKET
+                emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                    orderId: order.id,
+                    status: order.status,
+                    clientId: order.clientId
+                }))
+
+                return order
+            }
+            throw new Error('Please use arrivedAtStop/completeAction for normal workflow progression')
+        } catch (e) {
+            if (!trx) await effectiveTrx.rollback()
+            throw e
         }
-        throw new Error('Please use arrivedAtStop/completeAction for normal workflow progression')
     }
 }

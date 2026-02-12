@@ -13,6 +13,7 @@ export interface CondensedDriverState {
     status: 'ONLINE' | 'OFFLINE' | 'BUSY' | 'PAUSE' | 'OFFERING'
     last_lat?: number
     last_lng?: number
+    heading?: number
     active_company_id?: string
     active_zone_id?: string
     active_vehicle_id?: string
@@ -34,11 +35,11 @@ export interface CondensedDriverState {
  * 
  * Ces champs permettront de filtrer les livreurs éligibles au chaînage
  * en fonction de la capacité réelle et de la compatibilité des produits.
- * À ce moment, maxConcurrentMissions pourra devenir configurable par les ETP/IDEP.
+ * À ce moment, maxConcurrentOrders pourra devenir configurable par les ETP/IDEP.
  */
 
 // Constante globale (modifiable uniquement par Admin pour l'instant)
-export const MAX_CONCURRENT_MISSIONS = 2
+export const MAX_CONCURRENT_ORDERS = 2
 
 export class RedisService {
     private readonly PREFIX = 'sublymus:driver:'
@@ -91,12 +92,59 @@ export class RedisService {
     /**
      * Met à jour uniquement la position (très fréquent)
      */
-    async updateDriverLocation(driverId: string, lat: number, lng: number): Promise<void> {
-        await this.updateDriverState(driverId, { last_lat: lat, last_lng: lng })
+    async updateDriverLocation(driverId: string, lat: number, lng: number, heading?: number): Promise<void> {
+        await this.updateDriverState(driverId, { last_lat: lat, last_lng: lng, heading })
 
         // On peut aussi stocker dans un GeoSet Redis pour recherche par proximité
         const geoKey = 'sublymus:drivers:locations'
         await redis.geoadd(geoKey, lng, lat, driverId)
+    }
+
+    /**
+     * Pousse un point de trace pour une commande spécifique
+     */
+    async pushOrderTracePoint(orderId: string, lng: number, lat: number, ts: string): Promise<void> {
+        const key = `order:trace:buffer:${orderId}`
+        const point = JSON.stringify([lng, lat, ts])
+        await redis.lpush(key, point)
+        // TTL de 24h pour le buffer au cas où une commande n'est jamais terminée
+        await redis.expire(key, 86400)
+    }
+
+    /**
+     * Récupère la trace buffetisée d'une commande
+     */
+    async getOrderTrace(orderId: string): Promise<[number, number, string][]> {
+        const key = `order:trace:buffer:${orderId}`
+        const rawPoints = await redis.lrange(key, 0, -1)
+        // Vient dans l'ordre inverse (LPUSH), donc on reverse
+        return rawPoints.map(p => JSON.parse(p)).reverse()
+    }
+
+    /**
+     * Lit le buffer de trace d'une commande sans le vider (Peek)
+     */
+    async peekOrderTrace(orderId: string): Promise<string[]> {
+        const key = `order:trace:buffer:${orderId}`
+        const points = await redis.lrange(key, 0, -1)
+        return points.reverse()
+    }
+
+    /**
+     * Vide explicitement le buffer de trace (à appeler après le commit DB)
+     */
+    async clearOrderTraceAfterFlush(orderId: string): Promise<void> {
+        const key = `order:trace:buffer:${orderId}`
+        await redis.del(key)
+    }
+
+    /**
+     * Legacy method compatible (mais moins sûre)
+     */
+    async clearOrderTrace(orderId: string): Promise<string[]> {
+        const points = await this.peekOrderTrace(orderId)
+        await this.clearOrderTraceAfterFlush(orderId)
+        return points
     }
 
     /**
@@ -174,11 +222,11 @@ export class RedisService {
     }
 
     /**
-     * Vérifie si un driver peut accepter une nouvelle mission chaînée.
+     * Vérifie si un driver peut accepter une nouvelle commande chaînée.
      */
-    canAcceptChainedMission(state: CondensedDriverState): boolean {
+    canAcceptChainedOrder(state: CondensedDriverState): boolean {
         if (!state.allow_chaining) return false
-        return (state.current_orders?.length || 0) < MAX_CONCURRENT_MISSIONS
+        return (state.current_orders?.length || 0) < MAX_CONCURRENT_ORDERS
     }
 
     /**

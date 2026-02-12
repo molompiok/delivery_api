@@ -36,6 +36,7 @@ export interface VroomShipment {
 
 export interface VroomVehicle {
     id: number
+    profile?: string
     description?: string
     start?: [number, number]
     end?: [number, number]

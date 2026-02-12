@@ -1,6 +1,5 @@
 import db from '@adonisjs/lucid/services/db'
 import Action from '#models/action'
-import ActionProof from '#models/action_proof'
 import Stop from '#models/stop'
 import Address from '#models/address'
 import Order from '#models/order'
@@ -11,6 +10,8 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addStopSchema, updateStopSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
 import { inject } from '@adonisjs/core'
+import emitter from '@adonisjs/core/services/emitter'
+import OrderStructureChanged from '#events/order_structure_changed'
 import ActionService from './action_service.js'
 
 @inject()
@@ -30,10 +31,17 @@ export default class StopService {
             }
             const order = await Order.query({ client: effectiveTrx }).where('id', step.orderId).where('clientId', clientId).first()
             if (!order) throw new Error('Unauthorized or Order not found')
-            // Geocode address if needed
-            let coordinates: number[] | undefined | null = validatedData.address?.lat && validatedData.address?.lng
-                ? [validatedData.address.lng, validatedData.address.lat]
-                : undefined
+            // Priority 1: Top-level coordinates [lat, lng]
+            // Priority 2: Address lat/lng
+            // Priority 3: Geocode from street
+            let coordinates: number[] | undefined | null = undefined
+
+            if (validatedData.coordinates && validatedData.coordinates.length === 2) {
+                // Store as [lng, lat] internally for consistency with logic below
+                coordinates = [validatedData.coordinates[1], validatedData.coordinates[0]]
+            } else if (validatedData.address?.lat && validatedData.address?.lng) {
+                coordinates = [validatedData.address.lng, validatedData.address.lat]
+            }
 
             if (!coordinates && validatedData.address?.street) {
                 const geocoded = await GeoService.geocode(validatedData.address.street)
@@ -44,6 +52,24 @@ export default class StopService {
                 throw new Error(`Geocoding failed for ${validatedData.address.street}`)
             }
 
+            // Reverse Geocode if requested
+            let addressInfo = {
+                street: validatedData.address?.street || '',
+                city: validatedData.address?.city || null,
+                country: validatedData.address?.country || null
+            }
+
+            if (validatedData.reverse_geocode && coordinates) {
+                const geoResult = await GeoService.reverseGeocode(coordinates[1], coordinates[0])
+                if (geoResult) {
+                    addressInfo = {
+                        street: geoResult.street,
+                        city: geoResult.city || addressInfo.city,
+                        country: geoResult.country || addressInfo.country
+                    }
+                }
+            }
+
             // Create/Get Address
             const address = await Address.create({
                 ownerType: 'Order',
@@ -51,10 +77,10 @@ export default class StopService {
                 label: 'Stop',
                 lat: coordinates ? coordinates[1] : 0,
                 lng: coordinates ? coordinates[0] : 0,
-                formattedAddress: validatedData.address?.street || '',
-                street: validatedData.address?.street || '',
-                city: validatedData.address?.city || null,
-                country: validatedData.address?.country || null,
+                formattedAddress: addressInfo.street,
+                street: addressInfo.street,
+                city: addressInfo.city,
+                country: addressInfo.country,
                 call: validatedData.address?.call || null,
                 room: validatedData.address?.room || null,
                 stage: validatedData.address?.stage || null,
@@ -62,14 +88,14 @@ export default class StopService {
                 isDefault: false,
             }, { client: effectiveTrx })
 
-            // Get last sequence
+            // Get last display_order
             const lastStop = await Stop.query()
                 .useTransaction(effectiveTrx)
                 .where('stepId', stepId)
-                .orderBy('sequence', 'desc')
+                .orderBy('display_order', 'desc')
                 .first()
 
-            const sequence = validatedData.sequence ?? (lastStop ? lastStop.sequence + 1 : 0)
+            const displayOrder = validatedData.display_order ?? (lastStop ? lastStop.displayOrder + 1 : 0)
 
             const isDraft = order.status === 'DRAFT'
 
@@ -79,18 +105,31 @@ export default class StopService {
                 orderId: order.id,
                 stepId: targetStepId,
                 addressId: address.id,
-                sequence,
+                displayOrder,
+                executionOrder: null, // Set by VROOM later
                 status: 'PENDING',
                 isPendingChange: !isDraft,
                 client: validatedData.client || null,
                 metadata: validatedData.metadata || {}
             }, { client: effectiveTrx })
 
-            // Recursive Action Creation
+            // Action Creation
             if (validatedData.actions && validatedData.actions.length > 0) {
                 for (const actionData of validatedData.actions) {
                     await this.actionService.addAction(stop.id, clientId, actionData, effectiveTrx)
                 }
+            }
+
+            // Add default "point de passage" action if requested
+            if (validatedData.add_default_service) {
+                await this.actionService.addAction(stop.id, clientId, {
+                    type: 'service',
+                    service_time: 600, // 10 minutes
+                    metadata: {
+                        productName: 'Point de passage',
+                        is_invisible_in_detail: true // Hint for UI
+                    }
+                }, effectiveTrx)
             }
 
             if (!isDraft) {
@@ -99,6 +138,12 @@ export default class StopService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
 
             return {
                 entity: stop,
@@ -160,7 +205,8 @@ export default class StopService {
                         orderId: stop.orderId,
                         stepId: stop.stepId,
                         addressId: newAddress.id,
-                        sequence: stop.sequence,
+                        displayOrder: stop.displayOrder,
+                        executionOrder: stop.executionOrder,
                         status: stop.status,
                         client: stop.client,
                         metadata: stop.metadata,
@@ -203,7 +249,7 @@ export default class StopService {
                 }
             }
 
-            if (validatedData.sequence !== undefined) targetStop.sequence = validatedData.sequence
+            if (validatedData.display_order !== undefined) targetStop.displayOrder = validatedData.display_order
 
             // Merge metadata for client and address_extra
             targetStop.metadata = {
@@ -226,22 +272,11 @@ export default class StopService {
 
             await targetStop.useTransaction(effectiveTrx).save()
 
-            // Recursive Action Sync (Simplified: Clear and re-add if DRAFT, or use shadow logic if needed)
-            // For now, let's implement basic re-add for DRAFT consistency
-            if (validatedData.actions && isDraft) {
-                await Action.query({ client: effectiveTrx }).where('stopId', targetStop.id).delete()
-                for (const actionData of validatedData.actions) {
-                    await this.actionService.addAction(targetStop.id, clientId, actionData, effectiveTrx)
-                }
-            } else if (validatedData.actions) {
-                // If not DRAFT, complex shadow sync would be needed. 
-                // However, the user wants services to handle it.
-                // We'll re-add to the shadow stop.
-                await Action.query({ client: effectiveTrx }).where('stopId', targetStop.id).delete()
-                for (const actionData of validatedData.actions) {
-                    await this.actionService.addAction(targetStop.id, clientId, actionData, effectiveTrx)
-                }
-            }
+            await targetStop.useTransaction(effectiveTrx).save()
+
+            // Recursive Action Sync REMOVED to align with Shallow Cloning philosophy
+            // Child elements (Actions) remain linked to the original stop ID
+            // or the originalId of the shadow stop if newly created.
 
             // If not draft, mark order as having pending changes
             if (!isDraft) {
@@ -250,6 +285,12 @@ export default class StopService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
 
             return {
                 entity: targetStop,
@@ -288,6 +329,12 @@ export default class StopService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: stop.orderId,
+                clientId
+            }))
 
             return { success: true }
         } catch (error) {

@@ -6,6 +6,7 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { transitItemSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
 import { inject } from '@adonisjs/core'
+import wsService from '#services/ws_service'
 
 @inject()
 export default class TransitItemService {
@@ -45,6 +46,8 @@ export default class TransitItemService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
+
+            wsService.notifyOrderUpdate(order.id, order.clientId)
 
             return {
                 entity: ti,
@@ -127,6 +130,8 @@ export default class TransitItemService {
 
             if (!trx) await (effectiveTrx as any).commit()
 
+            wsService.notifyOrderUpdate(order.id, order.clientId)
+
             return {
                 entity: targetTi,
                 validationErrors: []
@@ -144,20 +149,41 @@ export default class TransitItemService {
         const transitItemsMap = new Map<string, TransitItem>()
 
         for (const itemData of transitItems) {
-            const ti = await TransitItem.create({
-                id: itemData.id, // Use pre-generated ID if available
-                orderId: orderId,
-                productId: itemData.product_id,
-                name: itemData.name,
-                description: itemData.description,
-                packagingType: itemData.packaging_type || 'box',
-                weight: itemData.weight ?? null,
-                dimensions: itemData.dimensions,
-                unitaryPrice: itemData.unitary_price,
-                metadata: itemData.metadata || {}
-            }, { client: trx })
+            let ti: TransitItem | null = null
 
-            transitItemsMap.set(itemData.id, ti)
+            if (itemData.id) {
+                // Try to find existing
+                ti = await TransitItem.query({ client: trx }).where('id', itemData.id).first()
+            }
+
+            if (ti) {
+                // Determine client ID from order if possible, or assume it's passed if we had it.
+                // For simplicity in createBulk, we do a direct update.
+                ti.productId = itemData.product_id
+                ti.name = itemData.name
+                ti.description = itemData.description
+                ti.packagingType = itemData.packaging_type || 'box'
+                ti.weight = itemData.weight ?? null
+                ti.dimensions = itemData.dimensions
+                ti.unitaryPrice = itemData.unitary_price
+                ti.metadata = itemData.metadata || {}
+                await ti.useTransaction(trx).save()
+            } else {
+                ti = await TransitItem.create({
+                    id: itemData.id, // Use pre-generated ID if available
+                    orderId: orderId,
+                    productId: itemData.product_id,
+                    name: itemData.name,
+                    description: itemData.description,
+                    packagingType: itemData.packaging_type || 'box',
+                    weight: itemData.weight ?? null,
+                    dimensions: itemData.dimensions,
+                    unitaryPrice: itemData.unitary_price,
+                    metadata: itemData.metadata || {}
+                }, { client: trx })
+            }
+
+            transitItemsMap.set(itemData.id || ti.id, ti)
         }
 
         return transitItemsMap

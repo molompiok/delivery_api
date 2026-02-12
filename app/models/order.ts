@@ -2,7 +2,6 @@ import { DateTime } from 'luxon'
 import { BaseModel, beforeCreate, column, belongsTo, hasOne } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
-import Mission from '#models/mission'
 import Vehicle from '#models/vehicle'
 import OrderLeg from '#models/order_leg'
 import Step from '#models/step'
@@ -53,7 +52,7 @@ export default class Order extends BaseModel {
     declare assignmentAttemptCount: number
 
     @column()
-    declare status: 'DRAFT' | 'PENDING' | 'ACCEPTED' | 'AT_PICKUP' | 'COLLECTED' | 'AT_DELIVERY' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE'
+    declare status: 'DRAFT' | 'PENDING' | 'ACCEPTED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE'
 
     @column()
     declare isComplex: boolean
@@ -114,11 +113,12 @@ export default class Order extends BaseModel {
     @belongsTo(() => Vehicle)
     declare vehicle: BelongsTo<typeof Vehicle>
 
-    @hasOne(() => Mission)
-    declare mission: HasOne<typeof Mission>
 
-    @hasMany(() => OrderLeg)
-    declare legs: HasMany<typeof OrderLeg>
+    @column()
+    declare legId: string | null
+
+    @hasOne(() => OrderLeg)
+    declare leg: HasOne<typeof OrderLeg>
 
     @hasMany(() => Step)
     declare steps: HasMany<typeof Step>

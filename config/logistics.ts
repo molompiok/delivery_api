@@ -36,6 +36,9 @@ export const logisticsConfig = {
 
         // Longueur des codes OTP générés
         otpLength: 6,
+
+        // Rayon de proximité pour signaler l'arrivée (mètres)
+        stopArrivalProximityMeters: 500,
     }
 }
 

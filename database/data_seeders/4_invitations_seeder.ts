@@ -30,6 +30,13 @@ export default class InvitationsSeeder extends BaseSeeder {
                 relation.status = 'ACCEPTED'
                 relation.acceptedAt = (await import('luxon')).DateTime.now()
                 await relation.save()
+
+                // Crucial: Update the driver's current company setting so they see missions
+                const DriverSetting = (await import('#models/driver_setting')).default
+                await DriverSetting.updateOrCreate(
+                    { userId: kofi.id },
+                    { currentCompanyId: relation.companyId }
+                )
             }
             console.log('  ✅ Invited & Accepted: Kofi Mensah (FastDelivery)')
         }

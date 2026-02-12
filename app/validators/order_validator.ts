@@ -136,9 +136,12 @@ export const addStopSchema = vine.object({
             duration: vine.number().optional(),
         }).optional(),
     }).optional(),
-    sequence: vine.number().optional(),
+    display_order: vine.number().optional(),
+    coordinates: vine.array(vine.number()).optional(),
     actions: vine.array(addActionSchema).optional(),
     metadata: vine.any().optional(),
+    reverse_geocode: vine.boolean().optional(),
+    add_default_service: vine.boolean().optional(),
 })
 
 export const updateStopSchema = vine.object({
@@ -165,7 +168,8 @@ export const updateStopSchema = vine.object({
             duration: vine.number().optional(),
         }).optional(),
     }).optional(),
-    sequence: vine.number().optional(),
+    display_order: vine.number().optional(),
+    coordinates: vine.array(vine.number()).optional(),
     actions: vine.array(addActionSchema).optional(),
     metadata: vine.any().optional(),
 })

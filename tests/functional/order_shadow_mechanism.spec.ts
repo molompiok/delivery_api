@@ -119,7 +119,6 @@ test.group('Order Shadow Mechanism', (group) => {
 
         const fetch1 = await client.get(`/v1/orders/${orderId}`).loginAs(clientUser)
         const actionId = fetch1.body().steps[0].stops[0].actions[0].id
-        const itemId = fetch1.body().transit_items[0].id
 
         // 2. Delete the only action linked to it
         await client.delete(`/v1/actions/${actionId}`).loginAs(clientUser)

@@ -1,0 +1,15 @@
+app/controllers/missions_controller.ts(66,35): error TS2339: Property 'sequence' does not exist on type 'OrderLeg'.
+app/services/logistics_service.ts(12,54): error TS6133: 'context' is declared but its value is never read.
+app/services/mission_service.ts(284,24): error TS6133: 'driverId' is declared but its value is never read.
+app/services/order/stop_service.ts(3,1): error TS6133: 'ActionProof' is declared but its value is never read.
+commands/InspectOrder.ts(39,25): error TS2339: Property 'warn' does not exist on type 'Logger'.
+commands/Test_services_shadow.ts(137,99): error TS2559: Type 'TransactionClientContract' has no properties in common with type '{ trx?: TransactionClientContract | undefined; withRoute?: boolean | undefined; }'.
+commands/ValidateVroomCache.ts(47,19): error TS6133: 'stop1Id' is declared but its value is never read.
+commands/ValidateVroomCache.ts(71,91): error TS2559: Type 'TransactionClientContract' has no properties in common with type '{ trx?: TransactionClientContract | undefined; withRoute?: boolean | undefined; }'.
+commands/ValidateVroomCache.ts(81,19): error TS6133: 'res2' is declared but its value is never read.
+commands/ValidateVroomCache.ts(81,91): error TS2559: Type 'TransactionClientContract' has no properties in common with type '{ trx?: TransactionClientContract | undefined; withRoute?: boolean | undefined; }'.
+commands/ValidateVroomCache.ts(97,91): error TS2559: Type 'TransactionClientContract' has no properties in common with type '{ trx?: TransactionClientContract | undefined; withRoute?: boolean | undefined; }'.
+start/routes/logistics.ts(5,7): error TS6133: 'MissionsController' is declared but its value is never read.
+tests/functional/file_creation_flow.spec.ts(161,81): error TS6133: 'assert' is declared but its value is never read.
+tests/functional/file_creation_flow.spec.ts(186,69): error TS6133: 'assert' is declared but its value is never read.
+tests/functional/order_shadow_mechanism.spec.ts(122,15): error TS6133: 'itemId' is declared but its value is never read.

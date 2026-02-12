@@ -21,12 +21,6 @@ export default class OrderLeg extends BaseModel {
     declare orderId: string
 
     /**
-     * Ordre d'exécution de ce segment dans l'itinéraire global
-     */
-    @column()
-    declare sequence: number
-
-    /**
      * Point de départ du segment (Adresse)
      */
     @column()

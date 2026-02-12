@@ -1,0 +1,7 @@
+app/services/logistics_service.ts(12,54): error TS6133: 'context' is declared but its value is never read.
+app/services/order/stop_service.ts(3,1): error TS6133: 'ActionProof' is declared but its value is never read.
+commands/ValidateVroomCache.ts(44,19): error TS6133: 'stop1Res' is declared but its value is never read.
+commands/ValidateVroomCache.ts(80,19): error TS6133: '_res2' is declared but its value is never read.
+tests/functional/file_creation_flow.spec.ts(161,81): error TS6133: 'assert' is declared but its value is never read.
+tests/functional/file_creation_flow.spec.ts(186,69): error TS6133: 'assert' is declared but its value is never read.
+tests/functional/order_shadow_mechanism.spec.ts(122,15): error TS6133: 'itemId' is declared but its value is never read.

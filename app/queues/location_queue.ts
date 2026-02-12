@@ -16,12 +16,19 @@ const redisConnection = {
 export const locationQueue = new Queue('location-flush', {
     connection: redisConnection,
     defaultJobOptions: {
-        attempts: 1, // Pas besoin de retry infini pour l'historique
+        attempts: 1,
         removeOnComplete: true,
         removeOnFail: {
-            age: 3600 * 24, // Garder 24h
+            age: 3600 * 24,
         },
     },
+})
+
+// Ajouter le job répétable (toutes les 5 minutes)
+locationQueue.add('periodic-flush', {}, {
+    repeat: {
+        every: 300000 // 5 minutes
+    }
 })
 
 /**

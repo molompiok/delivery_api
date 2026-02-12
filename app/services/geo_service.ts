@@ -69,6 +69,7 @@ interface ValhallaTrip {
 
 class GeoService {
     private valhallaUrl = env.get('VALHALLA_URL') || 'http://localhost:8002'
+    private nominatimUrl = env.get('NOMINATIM_URL') || 'http://localhost:8003'
 
     /**
      * Search for places (autocomplete/suggestions) via Nominatim.
@@ -77,7 +78,7 @@ class GeoService {
         try {
             // Use Nominatim for search
             const countryCode = apiConfig.search_place.countryCode || 'ci'
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&countrycodes=${countryCode}`
+            const url = `${this.nominatimUrl}/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&countrycodes=${countryCode}`
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'SublymusDelivery/1.0',
@@ -152,7 +153,8 @@ class GeoService {
      */
     async geocode(address: string): Promise<[number, number] | null> {
         try {
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`
+            const countryCode = apiConfig.search_place.countryCode || 'ci'
+            const url = `${this.nominatimUrl}/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=${countryCode}`
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': 'SublymusDelivery/1.0', // Required by OSM terms
@@ -171,6 +173,37 @@ class GeoService {
             return null
         } catch (error) {
             logger.error({ err: error, address }, 'Geocoding failed')
+            return null
+        }
+    }
+
+    /**
+     * Reverse geocodes [lat, lng] coordinates to address details via Nominatim (OSM).
+     */
+    async reverseGeocode(lat: number, lng: number): Promise<{ street: string, city: string, country: string } | null> {
+        try {
+            const url = `${this.nominatimUrl}/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'SublymusDelivery/1.0', // Required by OSM terms
+                    'Accept-Language': 'fr-CI,fr;q=0.9',
+                },
+            })
+
+            if (!response.ok) return null
+
+            const data = await response.json() as any
+            if (data && data.address) {
+                const a = data.address
+                const city = a.city || a.town || a.village || a.county || ''
+                const street = a.road || a.pedestrian || a.suburb || a.neighbourhood || a.city_district || city
+                const country = a.country || ''
+                return { street, city, country }
+            }
+
+            return null
+        } catch (error) {
+            logger.error({ err: error, lat, lng }, 'Reverse geocoding failed')
             return null
         }
     }
@@ -391,6 +424,42 @@ class GeoService {
                 calculation_engine: CalculationEngine.GOOGLE, // Fallback engine, maybe name it 'FALLBACK' or 'DIRECT'
                 waypoints_summary_for_order: waypointsSummaryForOrder,
             }
+        }
+    }
+
+    /**
+     * Get a distance/time matrix between multiple sources and targets via Valhalla.
+     */
+    async getDistanceMatrix(locations: Array<{ lat: number, lon: number }>): Promise<{ distances: number[][], times: number[][] } | null> {
+        try {
+            const valhallaLocations = locations.map(loc => ({ lat: loc.lat, lon: loc.lon }))
+            const response = await fetch(`${this.valhallaUrl}/sources_to_targets`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    sources: valhallaLocations,
+                    targets: valhallaLocations,
+                    costing: 'auto'
+                }),
+                headers: { 'Content-Type': 'application/json' }
+            })
+
+            if (!response.ok) {
+                const errorData = await response.text()
+                logger.error({ status: response.status, data: errorData }, 'Valhalla SourcesToTargets API error')
+                return null
+            }
+
+            const data = await response.json() as any
+            const matrix = data.sources_to_targets
+
+            const distances = matrix.map((row: any[]) => row.map((cell: any) => Math.round(cell.distance * 1000))) // km to meters
+            const times = matrix.map((row: any[]) => row.map((cell: any) => cell.time))
+
+            return { distances, times }
+
+        } catch (error) {
+            logger.error({ err: error }, 'Error calling Valhalla for distance matrix')
+            return null
         }
     }
 }

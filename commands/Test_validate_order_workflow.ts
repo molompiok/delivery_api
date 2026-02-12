@@ -99,7 +99,7 @@ export default class ValidateOrderWorkflow extends BaseCommand {
         const stop1 = await stopService.addStop(step.entity.id, clientId, {
             address_text: '123 Rue de la Paix, Abidjan',
             coordinates: [-4.0083, 5.3245],
-            sequence: 0
+            display_order: 0
         })
         this.logger.info(`   Pickup stop added: ${stop1.entity.id}`)
         await waitHere(200)
@@ -119,7 +119,7 @@ export default class ValidateOrderWorkflow extends BaseCommand {
         const stop2 = await stopService.addStop(step.entity.id, clientId, {
             address_text: '456 Boulevard Latrille, Abidjan',
             coordinates: [-3.9852, 5.3481],
-            sequence: 1
+            display_order: 1
         })
         this.logger.info(`   Delivery stop added: ${stop2.entity.id}`)
         await waitHere(200)
@@ -158,7 +158,7 @@ export default class ValidateOrderWorkflow extends BaseCommand {
                         {
                             address_text: 'Pizza Hut Plateau',
                             coordinates: [-4.0173, 5.3195],
-                            sequence: 0,
+                            display_order: 0,
                             actions: [
                                 { type: 'pickup', transit_item_id: 'temp-item-1', quantity: 1 }
                             ]
@@ -166,7 +166,7 @@ export default class ValidateOrderWorkflow extends BaseCommand {
                         {
                             address_text: 'Cocody Riviera 3',
                             coordinates: [-3.9482, 5.3411],
-                            sequence: 1,
+                            display_order: 1,
                             actions: [
                                 { type: 'delivery', transit_item_id: 'temp-item-1', quantity: 1 }
                             ]
@@ -202,13 +202,13 @@ export default class ValidateOrderWorkflow extends BaseCommand {
 
         // 3. Step 1: Pickup Item A
         const st1 = await stepService.addStep(order.id, clientId, { sequence: 0 })
-        const stopA1 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'Point A1', coordinates: [-4.0, 5.3], sequence: 0 })
+        const stopA1 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'Point A1', coordinates: [-4.0, 5.3], display_order: 0 })
         await actionService.addAction(stopA1.entity.id, clientId, { type: 'pickup', transit_item_id: item1.entity.id, quantity: 1 })
         await waitHere(200)
 
         // 4. Step 2: Pickup Item B AND Deliver Item A
         const st2 = await stepService.addStep(order.id, clientId, { sequence: 1 })
-        const stopB1 = await stopService.addStop(st2.entity.id, clientId, { address_text: 'Point B1', coordinates: [-4.1, 5.4], sequence: 0 })
+        const stopB1 = await stopService.addStop(st2.entity.id, clientId, { address_text: 'Point B1', coordinates: [-4.1, 5.4], display_order: 0 })
 
         // Delivery A
         await actionService.addAction(stopB1.entity.id, clientId, { type: 'delivery', transit_item_id: item1.entity.id, quantity: 1 })
@@ -218,7 +218,7 @@ export default class ValidateOrderWorkflow extends BaseCommand {
 
         // 5. Step 3: Deliver Item B
         const st3 = await stepService.addStep(order.id, clientId, { sequence: 2 })
-        const stopB2 = await stopService.addStop(st3.entity.id, clientId, { address_text: 'Point B2', coordinates: [-4.2, 5.5], sequence: 0 })
+        const stopB2 = await stopService.addStop(st3.entity.id, clientId, { address_text: 'Point B2', coordinates: [-4.2, 5.5], display_order: 0 })
         await actionService.addAction(stopB2.entity.id, clientId, { type: 'delivery', transit_item_id: item2.entity.id, quantity: 1 })
         await waitHere(200)
 
@@ -240,9 +240,9 @@ export default class ValidateOrderWorkflow extends BaseCommand {
         const order = await orderDraftService.initiateOrder(clientId, { ref_id: `MODIF-${Date.now()}` })
         const item = await transitItemService.addTransitItem(order.id, clientId, { name: 'Item X', weight: 1 })
         const st1 = await stepService.addStep(order.id, clientId, { sequence: 0 })
-        const stop1 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'Original Pickup', coordinates: [-4.0, 5.3], sequence: 0 })
+        const stop1 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'Original Pickup', coordinates: [-4.0, 5.3], display_order: 0 })
         await actionService.addAction(stop1.entity.id, clientId, { type: 'pickup', transit_item_id: item.entity.id, quantity: 1 })
-        const stop2 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'Original Delivery', coordinates: [-4.1, 5.4], sequence: 1 })
+        const stop2 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'Original Delivery', coordinates: [-4.1, 5.4], display_order: 1 })
         await actionService.addAction(stop2.entity.id, clientId, { type: 'delivery', transit_item_id: item.entity.id, quantity: 1 })
 
         const submitted = await orderDraftService.submitOrder(order.id, clientId)
@@ -257,7 +257,7 @@ export default class ValidateOrderWorkflow extends BaseCommand {
         this.logger.info('3. Marking Delivery Stop for deletion and adding alternative...')
         await stopService.removeStop(stop2.entity.id, clientId)
 
-        const stop3 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'New Delivery Address', coordinates: [-4.2, 5.5], sequence: 2 })
+        const stop3 = await stopService.addStop(st1.entity.id, clientId, { address_text: 'New Delivery Address', coordinates: [-4.2, 5.5], display_order: 2 })
         await actionService.addAction(stop3.entity.id, clientId, { type: 'delivery', transit_item_id: item.entity.id, quantity: 1 })
 
         // 4. Verify Client View

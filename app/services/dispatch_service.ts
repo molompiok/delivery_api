@@ -132,7 +132,7 @@ export default class DispatchService {
      */
     private async handleGlobalDispatch(order: Order, trx?: TransactionClientContract) {
         // 1. Charger le premier stop (point de dpart/collecte)
-        await order.load('stops', (q) => q.orderBy('sequence', 'asc').limit(1).preload('address'))
+        await order.load('stops', (q) => q.orderBy('display_order', 'asc').limit(1).preload('address'))
         const firstStop = order.stops[0]
         const pickup = firstStop?.address
 
@@ -171,7 +171,7 @@ export default class DispatchService {
             if (rejections.includes(state.id)) continue
 
             // Vérifier l'éligibilité au chaînage
-            if (!RedisService.canAcceptChainedMission(state)) continue
+            if (!RedisService.canAcceptChainedOrder(state)) continue
 
             // Vérifier la proximité de la destination avec le pickup
             if (state.next_destination) {

@@ -65,14 +65,46 @@ class WsService {
     }
 
     /**
-     * Notify a driver that their route has been updated.
+     * Notify all parties (Driver & Manager/Dashboard) that an order route has been updated.
      */
-    public notifyDriverRouteUpdate(driverId: string, orderId: string) {
-        this.emitToRoom(`driver:${driverId}`, 'route_updated', {
+    public notifyOrderRouteUpdate(orderId: string, driverId?: string | null, clientId?: string | null) {
+        const payload = {
             orderId,
-            message: 'Your route has been updated. Please refresh your view.',
+            message: 'Route updated. Refresh map.',
             timestamp: new Date().toISOString()
-        })
+        }
+
+        // 1. Notify the order-specific room (Managers join this room: "order:{id}")
+        this.emitToRoom(`order:${orderId}`, 'route_updated', payload)
+
+        // 2. Notify the global fleet room for this client (Dashboard joins this)
+        if (clientId) {
+            this.emitToRoom(`fleet:${clientId}`, 'route_updated', payload)
+        }
+
+        // 3. Notify the global logistics room (Generic fallback)
+        this.emitToRoom('logistics', 'route_updated', payload)
+
+        // 4. Notify the driver-specific room
+        if (driverId) {
+            this.emitToRoom(`driver:${driverId}`, 'route_updated', payload)
+        }
+    }
+
+    /**
+     * Notify that the order structure (steps, stops, actions, items) has changed.
+     */
+    public notifyOrderUpdate(orderId: string, clientId?: string | null) {
+        const payload = {
+            orderId,
+            message: 'Order structure updated.',
+            timestamp: new Date().toISOString()
+        }
+
+        this.emitToRoom(`order:${orderId}`, 'order_updated', payload)
+        if (clientId) {
+            this.emitToRoom(`fleet:${clientId}`, 'order_updated', payload)
+        }
     }
 }
 

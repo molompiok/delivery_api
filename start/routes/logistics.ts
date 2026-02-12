@@ -2,14 +2,17 @@ import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
 const OrdersController = () => import('#controllers/orders_controller')
-const MissionsController = () => import('#controllers/missions_controller')
 const IdepVehicleController = () => import('#controllers/idep_vehicle_controller')
 const StepsController = () => import('#controllers/steps_controller')
 const StopsController = () => import('#controllers/stops_controller')
 const ActionsController = () => import('#controllers/actions_controller')
 const TransitItemsController = () => import('#controllers/transit_items_controller')
+const GeoController = () => import('#controllers/geo_controller')
 
 router.group(() => {
+    // Geo / Places
+    router.get('/geo/reverse', [GeoController, 'reverseGeocode'])
+
     // Orders
     router.get('/orders', [OrdersController, 'index'])
     router.post('/orders', [OrdersController, 'store'])
@@ -22,8 +25,11 @@ router.group(() => {
     router.post('/orders/complex', [OrdersController, 'store'])
     router.post('/orders/estimate', [OrdersController, 'estimate'])
     router.get('/orders/:id', [OrdersController, 'show'])
+    router.get('/orders/:id/route', [OrdersController, 'route'])
     router.post('/orders/:id/cancel', [OrdersController, 'cancel'])
     router.patch('/orders/:id', [OrdersController, 'update'])
+    router.post('/orders/:id/driver/next-stop', [OrdersController, 'setNextStop'])
+    router.post('/orders/:id/recalculate', [OrdersController, 'recalculate'])
 
     // Granular Order Management
     router.post('/orders/:orderId/steps', [StepsController, 'store'])
@@ -40,11 +46,6 @@ router.group(() => {
 
     router.patch('/items/:id', [TransitItemsController, 'update'])
 
-    // Missions
-    router.get('/missions/me', [MissionsController, 'list'])
-    router.post('/missions/:id/accept', [MissionsController, 'accept'])
-    router.post('/missions/:id/refuse', [MissionsController, 'refuse'])
-    router.patch('/missions/:id/status', [MissionsController, 'updateStatus'])
 
     // IDEP Vehicles
     router.get('/idep/vehicles', [IdepVehicleController, 'index'])
