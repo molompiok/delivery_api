@@ -1,6 +1,6 @@
 import { BaseCommand } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
-import OrderService from '#services/order_service'
+import OrderService from '#services/order/index'
 import ActionService from '#services/order/action_service'
 import StopService from '#services/order/stop_service'
 import StepService from '#services/order/step_service'

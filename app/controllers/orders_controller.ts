@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
-import OrderService from '#services/order_service'
+import OrderService from '#services/order/index'
 
 @inject()
 export default class OrdersController {
@@ -156,13 +156,15 @@ export default class OrdersController {
     async route({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const { include, force } = request.qs() // e.g., ?include=live,pending,trace&force=true
+            const { include, force, simplify, no_geo } = request.qs() // e.g., ?include=live,pending,trace&force=true&simplify=true
 
             const options = {
                 live: !include || include.includes('live'),
                 pending: include && include.includes('pending'),
                 trace: !include || include.includes('trace'),
-                force: force === 'true' || force === '1'
+                force: force === 'true' || force === '1',
+                simplify: simplify === 'true' || simplify === '1',
+                no_geo: no_geo === 'true' || no_geo === '1',
             }
 
             // If explicit "live_only" requested via custom params or just standard include

@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
-import OrderService from '#services/order_service'
+import OrderService from '#services/order/index'
 
 @inject()
 export default class TransitItemsController {

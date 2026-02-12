@@ -1,6 +1,6 @@
 import { BaseCommand } from '@adonisjs/core/ace'
 import { inject } from '@adonisjs/core'
-import OrderService from '#services/order_service'
+import OrderService from '#services/order/index'
 import MissionService from '#services/mission_service'
 import Order from '#models/order'
 import Stop from '#models/stop'
