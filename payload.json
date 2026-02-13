@@ -1,0 +1,292 @@
+{
+    "stops": [
+        {
+            "id": "depot_start",
+            "index": 0,
+            "actions": [],
+            "is_frozen": true
+        },
+        {
+            "id": "stp_89usqk2kqozmv69ew3",
+            "index": 1,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        },
+        {
+            "id": "stp_cbl1v9pltymv2jm8ek",
+            "index": 2,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        },
+        {
+            "id": "stp_grsj1zgxbhpyt5rghk",
+            "index": 3,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        },
+        {
+            "id": "stp_i1vcbli1vdwdfa4isk",
+            "index": 4,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        },
+        {
+            "id": "stp_iw3ccbj74ofnh0s9f7",
+            "index": 5,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        },
+        {
+            "id": "stp_pfwslyfrusp9jrf6cy",
+            "index": 6,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        },
+        {
+            "id": "stp_q8nmvgcvd5o9fqqr75",
+            "index": 7,
+            "actions": [
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                },
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                },
+                {
+                    "type": "service",
+                    "quantity": 0,
+                    "weight": 0,
+                    "volume": 0,
+                    "service_time": 600
+                }
+            ],
+            "is_frozen": false
+        }
+    ],
+    "vehicle": {
+        "max_weight": 10000,
+        "max_volume": 50,
+        "start_index": 0,
+        "end_index": -1
+    },
+    "distance_matrix": [
+        [
+            0,
+            3996,
+            23273,
+            11747,
+            66334,
+            11036,
+            1798,
+            2737
+        ],
+        [
+            4674,
+            0,
+            26334,
+            16048,
+            69395,
+            15337,
+            4857,
+            5014
+        ],
+        [
+            22623,
+            25650,
+            0,
+            14476,
+            51053,
+            15246,
+            22596,
+            22243
+        ],
+        [
+            11787,
+            12965,
+            13447,
+            0,
+            56508,
+            1637,
+            12838,
+            10734
+        ],
+        [
+            65660,
+            68686,
+            45648,
+            57512,
+            0,
+            58282,
+            65633,
+            65280
+        ],
+        [
+            11190,
+            12366,
+            14027,
+            2053,
+            57088,
+            0,
+            12239,
+            10135
+        ],
+        [
+            1889,
+            5412,
+            22915,
+            12629,
+            65976,
+            11918,
+            0,
+            3554
+        ],
+        [
+            2872,
+            3463,
+            22858,
+            10700,
+            65919,
+            9989,
+            3656,
+            0
+        ]
+    ],
+    "time_matrix": [
+        [
+            0,
+            420,
+            1495,
+            787,
+            3667,
+            730,
+            211,
+            306
+        ],
+        [
+            451,
+            0,
+            1607,
+            977,
+            3779,
+            919,
+            330,
+            352
+        ],
+        [
+            1446,
+            1587,
+            0,
+            936,
+            3228,
+            995,
+            1385,
+            1373
+        ],
+        [
+            765,
+            837,
+            941,
+            0,
+            3114,
+            166,
+            772,
+            665
+        ],
+        [
+            3620,
+            3761,
+            2406,
+            3110,
+            0,
+            3169,
+            3558,
+            3546
+        ],
+        [
+            694,
+            766,
+            983,
+            197,
+            3156,
+            0,
+            701,
+            594
+        ],
+        [
+            213,
+            476,
+            1403,
+            773,
+            3576,
+            716,
+            0,
+            306
+        ],
+        [
+            269,
+            278,
+            1418,
+            675,
+            3590,
+            618,
+            284,
+            0
+        ]
+    ]
+}

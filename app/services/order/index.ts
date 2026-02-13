@@ -15,6 +15,7 @@ import GeoService from '../geo_service.js'
 import PricingService from '../pricing_service.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import PayloadMapper from './payload_mapper.js'
+import OrderStructureChanged from '#events/order_structure_changed'
 
 @inject()
 export default class OrderService {
@@ -85,59 +86,76 @@ export default class OrderService {
     /**
      * Reverts all pending shadow changes for an order.
      */
-    async revertPendingChanges(orderId: string, clientId: string) {
-        const trx = await db.transaction()
+    async revertPendingChanges(orderId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
         try {
-            const order = await Order.query({ client: trx })
+            const order = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
                 .where('clientId', clientId)
                 .firstOrFail()
 
-            await this.orderDraftService.revertPendingChanges(order.id, trx)
+            await this.orderDraftService.revertPendingChanges(order.id, effectiveTrx)
 
-            await trx.commit()
+            if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return order
         } catch (error) {
-            await trx.rollback()
+            if (!options.trx) await effectiveTrx.rollback()
             throw error
         }
     }
 
-    async addStep(orderId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async addStep(orderId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const res = await this.stepService.addStep(orderId, clientId, data, effectiveTrx)
             await redis.del(`order:pending_route:${orderId}`)
             const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
 
-            if (options.recalculate) {
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
 
             const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
             res.validationErrors = LogisticsService.validateDraftConsistency(virtualState).errors
 
             if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
+
             throw error
         }
     }
 
-    async updateStep(stepId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async updateStep(stepId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const res = await this.stepService.updateStep(stepId, clientId, data, effectiveTrx)
             const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
             await redis.del(`order:pending_route:${step.order_id}`)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -145,19 +163,25 @@ export default class OrderService {
         }
     }
 
-    async removeStep(stepId: string, clientId: string, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async removeStep(stepId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
             const orderId = step.order_id
             await redis.del(`order:pending_route:${orderId}`)
             const res = await this.stepService.removeStep(stepId, clientId, effectiveTrx)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -165,18 +189,24 @@ export default class OrderService {
         }
     }
 
-    async addStop(stepId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async addStop(stepId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const res = await this.stopService.addStop(stepId, clientId, data, effectiveTrx)
             const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
             await redis.del(`order:pending_route:${step.order_id}`)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -184,18 +214,24 @@ export default class OrderService {
         }
     }
 
-    async updateStop(stopId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async updateStop(stopId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const res = await this.stopService.updateStop(stopId, clientId, data, effectiveTrx)
             const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
             await redis.del(`order:pending_route:${stop.order_id}`)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -203,19 +239,25 @@ export default class OrderService {
         }
     }
 
-    async removeStop(stopId: string, clientId: string, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async removeStop(stopId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
             const orderId = stop.order_id
             await redis.del(`order:pending_route:${orderId}`)
             const res = await this.stopService.removeStop(stopId, clientId, effectiveTrx)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -223,18 +265,25 @@ export default class OrderService {
         }
     }
 
-    async addAction(stopId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async addAction(stopId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const res = await this.actionService.addAction(stopId, clientId, data, effectiveTrx)
             const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
             await redis.del(`order:pending_route:${stop.order_id}`)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+            
+                // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: stop.orderId,
+                clientId
+            }))
+
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -242,18 +291,25 @@ export default class OrderService {
         }
     }
 
-    async updateAction(actionId: string, clientId: string, data: any, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async updateAction(actionId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const res = await this.actionService.updateAction(actionId, clientId, data, effectiveTrx)
             const action = await db.from('actions').useTransaction(effectiveTrx).where('id', actionId).first()
             await redis.del(`order:pending_route:${action.order_id}`)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(action.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(action.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+            
+                // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: action.orderId,
+                clientId
+            }))
+
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -261,19 +317,27 @@ export default class OrderService {
         }
     }
 
-    async removeAction(actionId: string, clientId: string, options: { recalculate?: boolean, trx?: TransactionClientContract } = {}) {
+    async removeAction(actionId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
         const effectiveTrx = options.trx || await db.transaction()
         try {
             const action = await db.from('actions').useTransaction(effectiveTrx).where('id', actionId).first()
             const orderId = action.order_id
             await redis.del(`order:pending_route:${orderId}`)
             const res = await this.actionService.removeAction(actionId, clientId, effectiveTrx)
-            if (options.recalculate) {
-                const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-                await this.orderDraftService.finalizeOrderAccounting(order, effectiveTrx)
-                await order.useTransaction(effectiveTrx).save()
-            }
+
+            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
+            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+            await order.useTransaction(effectiveTrx).save()
+
             if (!options.trx) await effectiveTrx.commit()
+
+
+            // Emit structure change event
+            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId
+            }))
+
             return res
         } catch (error) {
             if (!options.trx) await effectiveTrx.rollback()
@@ -441,7 +505,7 @@ export default class OrderService {
                 .preload('transitItems')
                 .firstOrFail()
 
-            await this.orderDraftService.finalizeOrderAccounting(reloadedOrder, trx)
+            await this.orderDraftService.calculateOrderStats(reloadedOrder, trx)
 
             await trx.commit()
         } catch (error) {
@@ -466,7 +530,7 @@ export default class OrderService {
 
             const forcedStartLocation: [number, number] | undefined = gps ? [gps.lng, gps.lat] : undefined
 
-            await this.orderDraftService.finalizeOrderAccounting(order, trx, { forcedStartLocation })
+            await this.orderDraftService.calculateOrderStats(order, trx, { forcedStartLocation })
             await order.useTransaction(trx).save()
 
             await trx.commit()

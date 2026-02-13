@@ -1,5 +1,4 @@
 import db from '@adonisjs/lucid/services/db'
-import Action from '#models/action'
 import Stop from '#models/stop'
 import Address from '#models/address'
 import Order from '#models/order'
@@ -10,8 +9,6 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addStopSchema, updateStopSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
 import { inject } from '@adonisjs/core'
-import emitter from '@adonisjs/core/services/emitter'
-import OrderStructureChanged from '#events/order_structure_changed'
 import ActionService from './action_service.js'
 
 @inject()
@@ -138,12 +135,6 @@ export default class StopService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
 
             return {
                 entity: stop,
@@ -286,12 +277,6 @@ export default class StopService {
 
             if (!trx) await (effectiveTrx as any).commit()
 
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-
             return {
                 entity: targetStop,
                 validationErrors: []
@@ -329,12 +314,6 @@ export default class StopService {
             }
 
             if (!trx) await (effectiveTrx as any).commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: stop.orderId,
-                clientId
-            }))
 
             return { success: true }
         } catch (error) {

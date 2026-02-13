@@ -40,7 +40,7 @@ export default class VerifyOrTools extends BaseCommand {
         this.logger.info('SAVE mode enabled. Will update database.')
         const trx = await db.transaction()
         try {
-          await orderDraftService.finalizeOrderAccounting(order, trx)
+          await orderDraftService.calculateOrderStats(order, trx)
           await trx.commit()
           this.logger.success('Database updated successfully!')
         } catch (e) {

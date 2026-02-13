@@ -672,7 +672,7 @@ export default class MissionService {
                     const freshOrder = await Order.find(stop.orderId, { client: trx })
                     if (freshOrder) {
                         try {
-                            await this.orderDraftService.finalizeOrderAccounting(freshOrder, trx)
+                            await this.orderDraftService.calculateOrderStats(freshOrder, trx)
                         } catch (err) {
                             logger.error({ err, orderId: freshOrder.id }, 'Recalculation failed after stop completion')
                         }

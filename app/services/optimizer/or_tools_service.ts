@@ -35,6 +35,13 @@ export interface OrToolsOptimizationResult {
     message?: string
 }
 
+export class OptimizationError extends Error {
+    constructor(public message: string, public details?: any) {
+        super(message)
+        this.name = 'OptimizationError'
+    }
+}
+
 export default class OrToolsService {
     private orToolsUrl = env.get('OR_TOOLS_URL', 'http://localhost:5055')
 
@@ -51,7 +58,8 @@ export default class OrToolsService {
             // 1. Get Distance/Time Matrix from Valhalla
             const matrix = await GeoService.getDistanceMatrix(coordinates)
             if (!matrix) {
-                return { status: 'error', message: 'Could not fetch distance matrix from Valhalla', stopOrder: [], totalDistance: 0, totalTime: 0, droppedStops: [] }
+                logger.error({ coordinates }, 'Could not fetch distance matrix')
+                throw new OptimizationError('Could not fetch distance matrix from Valhalla')
             }
 
             // 2. Prepare payload for OR-Tools microservice
@@ -72,7 +80,7 @@ export default class OrToolsService {
             if (!response.ok) {
                 const errorData = await response.text()
                 logger.error({ status: response.status, data: errorData }, 'OR-Tools API error')
-                return { status: 'error', message: `OR-Tools API error: ${response.status}`, stopOrder: [], totalDistance: 0, totalTime: 0, droppedStops: [] }
+                throw new OptimizationError(`OR-Tools API error: ${response.status}`, errorData)
             }
 
             const data = await response.json() as any
@@ -87,8 +95,9 @@ export default class OrToolsService {
             }
 
         } catch (error) {
+            if (error instanceof OptimizationError) throw error
             logger.error({ err: error }, 'Error calling OR-Tools service')
-            return null
+            throw new OptimizationError('Error calling OR-Tools service', error)
         }
     }
 }

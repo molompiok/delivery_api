@@ -22,6 +22,8 @@ import OrToolsService, { OrToolsStop, OrToolsAction } from '../optimizer/or_tool
 import redis from '@adonisjs/redis/services/main'
 import wsService from '#services/ws_service'
 
+
+const COCODY = [-3.989, 5.348] as [number, number]
 /**
  * ARCHITECTURE NOTE: Smart Recalculation & Deviation Handling
  * ---------------------------------------------------------
@@ -283,14 +285,14 @@ export default class OrderDraftService {
 
         if (options.withRoute) {
             const visitedIds = new Set<string>()
-            const startLocation = await this.getDriverStartLocation(order.driverId)
+            const startLocation = await this.getDriverStartLocation(order.driverId) || COCODY
 
-            const [lR, pR] = await Promise.all([
-                this.optimizeViaOrTools(order, { startLocation, visitedIds }).then(res => this.mapOrToolsToVroomFormat(res, order, startLocation)),
-                this.optimizeViaOrTools(order, { startLocation, visitedIds }).then(res => this.mapOrToolsToVroomFormat(res, order, startLocation))
-            ])
-            liveRoute = lR
-            pendingRoute = pR
+            // In DRAFT or when viewing modifications, we always want the "virtual" optimized state
+            const optimizedResult = await this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
+            const formattedRoute = await this.mapOrToolsToVroomFormat(optimizedResult, order, startLocation)
+
+            liveRoute = formattedRoute
+            pendingRoute = formattedRoute // In this context (getOrderDetails), they represent the same "next potential state"
         }
 
         if (options.json !== false) {
@@ -342,7 +344,7 @@ export default class OrderDraftService {
         if (options.live) {
             if (order.status !== 'DRAFT') {
                 // Determine Live Projection from current GPS if available
-                const startLocation = await this.getDriverStartLocation(order.driverId)
+                const startLocation = await this.getDriverStartLocation(order.driverId) || COCODY
                 const visitedIds = new Set(order.metadata?.route_execution?.visited || []) as Set<string>
 
                 const liveDbPromise = this.buildLiveRouteFromDB(order, trx)
@@ -362,7 +364,7 @@ export default class OrderDraftService {
             } else {
                 // Determine Live Route via Calculation (Fallback for Draft)
                 const visitedIds = new Set<string>() // empty for draft
-                const startLocation = await this.getDriverStartLocation(order.driverId)
+                const startLocation = await this.getDriverStartLocation(order.driverId) || [-3.967, 5.350] as [number, number]
 
                 // Helper to format as VROOM-like response for frontend compatibility
                 const calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
@@ -390,7 +392,7 @@ export default class OrderDraftService {
             } else {
                 // Calculate and Cache
                 const visitedIds = new Set<string>()
-                const startLocation = await this.getDriverStartLocation(order.driverId)
+                const startLocation = await this.getDriverStartLocation(order.driverId) || [-3.967, 5.350] as [number, number]
 
                 const calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
                     .then(async (res) => {
@@ -450,7 +452,11 @@ export default class OrderDraftService {
             shadows.forEach(s => {
                 if (s.originalId) {
                     const existing = uniqueShadows.get(s.originalId)
-                    if (!existing || (s.updatedAt || s.createdAt) > (existing.updatedAt || existing.createdAt) || s.id > existing.id) {
+                    // Robust timestamp comparison using numeric value
+                    const sTime = s.updatedAt?.toMillis() || s.createdAt?.toMillis() || 0
+                    const existingTime = existing?.updatedAt?.toMillis() || existing?.createdAt?.toMillis() || 0
+
+                    if (!existing || sTime > existingTime || (sTime === existingTime && s.id > existing.id)) {
                         uniqueShadows.set(s.originalId, s)
                     }
                 } else {
@@ -491,7 +497,7 @@ export default class OrderDraftService {
             }
             stepStops = filterDeleted(stepStops)
             // Fix: Consistency between DB preloads and virtual state
-            stepStops.sort((a, b) => (a.executionOrder || 0) - (b.executionOrder || 0)) // tpout stop doit obligatoirement avoir un executionOrder
+            stepStops.sort((a, b) => (a.executionOrder || 0) - (b.executionOrder || 0)) // tout stop doit obligatoirement avoir un executionOrder
 
             return {
                 id: step.id,
@@ -571,7 +577,7 @@ export default class OrderDraftService {
         const order = await this.getOrderDetails(orderId, clientId, { trx })
         const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
 
-        const startLocation = await this.getDriverStartLocation(order.driverId) || [-3.989, 5.348] as [number, number]
+        const startLocation = await this.getDriverStartLocation(order.driverId) || COCODY as [number, number]
 
         const allStopsForRouting: any[] = [
             {
@@ -596,7 +602,7 @@ export default class OrderDraftService {
         const routeDetails = await GeoService.calculateOptimizedRoute(allStopsForRouting)
         if (!routeDetails) throw new Error('Route calculation failed')
 
-        const pricingPackages: SimplePackageInfo[] = order.transitItems.map(ti => ({
+        const pricingPackages: SimplePackageInfo[] = order.transitItems.map((ti: TransitItem) => ({
             dimensions: {
                 weight: ti.weight ?? 0,
                 ...ti.dimensions
@@ -672,7 +678,7 @@ export default class OrderDraftService {
             // Re-fetch to have merged state
             await order.load('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
 
-            await this.finalizeOrderAccounting(order, effectiveTrx)
+            await this.calculateOrderStats(order, effectiveTrx)
 
             order.status = 'PENDING'
             order.statusHistory = [
@@ -848,7 +854,7 @@ export default class OrderDraftService {
                 .preload('leg')
                 .firstOrFail()
 
-            await this.finalizeOrderAccounting(freshOrder, effectiveTrx)
+            await this.calculateOrderStats(freshOrder, effectiveTrx)
             await freshOrder.useTransaction(effectiveTrx).save()
 
             if (!trx) await effectiveTrx.commit()
@@ -973,9 +979,9 @@ export default class OrderDraftService {
     /**
      * Recalculates route, timing and pricing.
      */
-    async finalizeOrderAccounting(order: Order, effectiveTrx: TransactionClientContract, options: { forcedStartLocation?: [number, number] } = {}) {
-        // 0. Retrieve Driver position for re-optimization (Use provided GPS if forced)
-        const startLocation = options.forcedStartLocation || await this.getDriverStartLocation(order.driverId)
+    async calculateOrderStats(order: Order, effectiveTrx: TransactionClientContract, options: { forcedStartLocation?: [number, number] } = {}) {
+        // 0. Retrieve Driver position or fallback to Cocody (Lat: 5.350, Lng: -3.967) for re-optimization
+        const startLocation = options.forcedStartLocation || await this.getDriverStartLocation(order.driverId) || [-3.967, 5.350]
 
         const execution = order.metadata?.route_execution || { visited: [], remaining: [] }
         const visitedIds = new Set(execution.visited || [])
@@ -987,53 +993,76 @@ export default class OrderDraftService {
         if (liveState.steps) {
             liveState.steps = liveState.steps.map((step: any) => ({
                 ...step,
-                stops: step.stops.filter((s: any) => !visitedIds.has(s.id))
+                stops: step.stops.filter((s: any) => !visitedIds.has(s.id))// TODO:  c'est pas le visited qu'on devrait regarder mais le status si le status d'un stop revien a pedding apres eter failed, gelé ou autre on doit pouvoir y repasser pour le "completed"
             })).filter((step: any) => step.stops.length > 0)
         }
 
         const routeResult = await this.optimizeViaOrTools(order, { startLocation, visitedIds: visitedIds as Set<string> })
 
-        if (routeResult && routeResult.status === 'success') {
-            const newRemaining = routeResult.stopOrder.map((s: any) => s.stop_id)
-            const meta = order.metadata || {}
-            meta.route_execution = {
-                visited: execution.visited || [],
-                remaining: newRemaining,
-                // Concatenation of Past + Optimized Future
-                planned: [...(execution.visited || []), ...newRemaining]
-            }
-            order.metadata = meta
-            await order.useTransaction(effectiveTrx).save()
+        if (!routeResult) {
+            // Should not happen with strict error handling, but safety check
+            throw new Error('Optimization returned null unexpectedly')
+        }
 
-            // Update executionOrder on each stop based on OR-Tools result
-            const allStops = order.steps.flatMap(s => s.stops || [])
-            for (const optimizedStop of routeResult.stopOrder) {
-                const stop = allStops.find(s => s.id === optimizedStop.stop_id)
-                if (stop) {
-                    stop.executionOrder = optimizedStop.execution_order
-                    await stop.useTransaction(effectiveTrx).save()
-                }
+        const newRemaining = routeResult.stopOrder.map((s: any) => s.stop_id)
+        const meta = order.metadata || {}
+        meta.route_execution = {
+            visited: execution.visited || [],
+            remaining: newRemaining,
+            // Concatenation of Past + Optimized Future
+            planned: [...(execution.visited || []), ...newRemaining]
+        }
+        order.metadata = meta
+        await order.useTransaction(effectiveTrx).save()
+
+        // 2. Update executionOrder on each stop based on OR-Tools result
+        const allStops = order.steps.flatMap((s: any) => s.stops || [])
+
+        // Reset executionOrder for all stops before applying new results
+        for (const stop of allStops) {
+            stop.executionOrder = null
+        }
+
+        for (const optimizedStop of routeResult.stopOrder) {
+            const stop = allStops.find(s => s.id === optimizedStop.stop_id)
+            if (stop) {
+                stop.executionOrder = optimizedStop.execution_order
+                await stop.useTransaction(effectiveTrx).save()
             }
         }
 
-        // 2. Get high-fidelity legs via Valhalla, sorted by executionOrder
-        // Fix 3: Ensure internal stops are sorted BEFORE sorting steps globaly
+        // 3. Validate all stops have an executionOrder
+        for (const stop of allStops) {
+            // Skip stops marked for deletion as they are not sent to optimization
+            if (stop.isDeleteRequired) continue
+
+            // Stops not visited should have an executionOrder now
+            if (!visitedIds.has(stop.id) && stop.executionOrder === null) {
+                throw new Error(`Critical: Stop [ID: ${stop.id}] has no executionOrder after optimization`)
+            }
+        }
+
+        // 3. Sort steps and stops based EXCLUSIVELY on executionOrder (visited stops keep their order from history)
+        // For visited stops, we could use their visited index, but for the rest, executionOrder is king.
+
+        // Sorting stops within steps
         order.steps.forEach(s => {
             if (s.stops) {
-                s.stops.sort((a, b) => (a.executionOrder ?? a.displayOrder) - (b.executionOrder ?? b.displayOrder))
+                s.stops.sort((a, b) => (a.executionOrder ?? 0) - (b.executionOrder ?? 0))
             }
         })
 
+        // Sorting steps by their first stop's executionOrder
         order.steps = order.steps.sort((a, b) => {
             const stopA = a.stops?.[0]
             const stopB = b.stops?.[0]
             if (!stopA || !stopB) return 0
-            return (stopA.executionOrder ?? stopA.displayOrder) - (stopB.executionOrder ?? stopB.displayOrder)
+            return (stopA.executionOrder ?? 0) - (stopB.executionOrder ?? 0)
         })
 
         const allStopsForRouting: any[] = [
             {
-                coordinates: startLocation || [-3.989, 5.348],
+                coordinates: startLocation || COCODY,
                 type: 'break' as const
             }
         ]
@@ -1178,7 +1207,7 @@ export default class OrderDraftService {
                 .preload('transitItems')
                 .firstOrFail()
 
-            await this.finalizeOrderAccounting(freshOrder, effectiveTrx)
+            await this.calculateOrderStats(freshOrder, effectiveTrx)
             await freshOrder.useTransaction(effectiveTrx).save()
 
             if (!trx) await effectiveTrx.commit()
@@ -1221,6 +1250,9 @@ export default class OrderDraftService {
             targetStops = order.steps.flatMap(s => s.stops || [])
         }
 
+        // Filter out stops marked for deletion
+        targetStops = targetStops.filter(s => !s.isDeleteRequired)
+
         // Ensure stable input order for OR-Tools regardless of preloads/context
         targetStops.sort((a, b) => a.id.localeCompare(b.id))
 
@@ -1230,7 +1262,7 @@ export default class OrderDraftService {
         let index = 0
         if (options.startLocation) {
             coords.push({ lat: options.startLocation[1], lon: options.startLocation[0] })
-            index++ // Location 0 is the startPosition
+            index++ // Location 0 is the startLocation
         }
 
         for (const stop of allRemainingStops) {
@@ -1257,16 +1289,24 @@ export default class OrderDraftService {
             })
         }
 
-        if (stops.length === 0) return null
+        if (stops.length === 0) {
+            // Edge case: No stops to optimize. Return valid empty result.
+            return {
+                status: 'success',
+                stopOrder: [],
+                totalDistance: 0,
+                totalTime: 0,
+                droppedStops: [],
+                message: 'No stops to optimize'
+            }
+        }
 
         // 2. Prepare Vehicle
-        // If driver chose a next stop, we can tell OR-Tools that the start_index is that stop, 
-        // OR we just let OR-Tools decide and we manually move it to front.
-        // High-level: if driver chose a stop, it IS the next stop.
         const vehicle = {
             max_weight: order.vehicle?.specs?.maxWeight || 10000,
             max_volume: order.vehicle?.specs?.cargoVolume || 50,
-            start_index: options.startLocation ? 0 : 0 // Still 0, but now location 0 is the startLocation if present
+            start_index: 0, // Always 0 as we put startLocation at coords[0]
+            end_index: null // null indicates Open Route (handled by solver.py)
         }
 
         // 3. Optimize
@@ -1294,7 +1334,7 @@ export default class OrderDraftService {
         const allStopsInOrder = order.steps.flatMap(s => s.stops || [])
 
         // Fallback to "Cocody, Abidjan" if no user position but needed for path tracing
-        const effectiveStartLocation = startLocation || [-3.989, 5.348] as [number, number]
+        const effectiveStartLocation = startLocation || COCODY as [number, number]
 
         // 1. Prepare points for geometry calculation in optimized order
         const stopsPoints = result.stopOrder.map((s: any) => {

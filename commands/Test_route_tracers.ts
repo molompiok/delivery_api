@@ -20,6 +20,7 @@ export default class TestRouteTracers extends BaseCommand {
         const Stop = (await import('#models/stop')).default
         const OrderService = (await import('#services/order/index')).default
         const OrderDraftService = (await import('#services/order/order_draft_service')).default
+        const RedisService = (await import('#services/redis_service')).default
 
         const orderService = await this.app.container.make(OrderService)
         const orderDraftService = await this.app.container.make(OrderDraftService)
@@ -34,6 +35,9 @@ export default class TestRouteTracers extends BaseCommand {
             // 2. Initiate Order
             this.logger.info('--- Step 1: Initiate Order ---')
             const order = await orderService.initiateOrder(clientUser.id, {}, trx)
+
+            // Start Location: Will fallback to Cocody if no driver assigned
+
             const stepId = order.steps[0].id
 
             // 3. Add Transit Items
@@ -78,7 +82,7 @@ export default class TestRouteTracers extends BaseCommand {
             await orderService.addStop(stepId, clientUser.id, {
                 address: { street: 'Anyama', lat: 5.494, lng: -4.051 },
                 actions: [{ type: 'DELIVERY', transit_item_id: itemWatches.id, quantity: 3 }]
-            }, { trx, recalculate: true })
+            }, { trx })
 
             // 5. Check Route before Submit
             this.logger.info('--- Step 4: Route before Submit ---')
@@ -139,7 +143,7 @@ export default class TestRouteTracers extends BaseCommand {
             await orderService.addStop(stepId, clientUser.id, {
                 address: { street: 'Anyama (Service 4)', lat: 5.494, lng: -4.051 },
                 actions: [{ type: 'SERVICE', quantity: 0 }]
-            }, { trx, recalculate: true })
+            }, { trx })
 
             // 10. Check Final Optimized Route
             this.logger.info('--- Step 9: Final Route with Services ---')
