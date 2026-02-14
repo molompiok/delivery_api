@@ -295,7 +295,7 @@ export class ShiftService {
             const Order = (await import('#models/order')).default
             const activeOrder = await Order.query()
                 .where('driverId', userId)
-                .whereIn('status', ['ACCEPTED', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+                .whereIn('status', ['ACCEPTED'])
                 .first()
 
             return !!activeOrder

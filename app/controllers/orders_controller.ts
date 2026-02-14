@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import OrderService from '#services/order/index'
+import logger from '@adonisjs/core/services/logger'
 
 @inject()
 export default class OrdersController {
@@ -127,9 +128,16 @@ export default class OrdersController {
     /**
      * List client orders.
      */
-    async index({ response, auth }: HttpContext) {
+    async index({ request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const { view } = request.qs()
+
+            if (view === 'summary') {
+                const orders = await this.orderService.listOrdersSummary(user.id)
+                return response.ok(orders)
+            }
+
             const orders = await this.orderService.listOrders(user.id)
             return response.ok(orders.map(o => o.serialize()))
         } catch (error: any) {
@@ -140,12 +148,20 @@ export default class OrdersController {
     /**
      * Show order details.
      */
-    async show({ params, response, auth }: HttpContext) {
+    async show({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.getOrderDetails(params.id, user.id)
+            const { include } = request.qs()
+            const includeArray = include ? include.split(',') : []
+
+            logger.info({ orderId: params.id, userId: user.id, include: includeArray }, '[ORDERS_CONTROLLER] Show order')
+
+            const order = await this.orderService.getOrderDetails(params.id, user.id, {
+                include: includeArray
+            })
             return response.ok(order)
         } catch (error: any) {
+            logger.error({ orderId: params.id, err: error.message }, '[ORDERS_CONTROLLER] Order not found')
             return response.notFound({ message: error.message })
         }
     }

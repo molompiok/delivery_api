@@ -690,7 +690,7 @@ export default class MissionService {
      */
     private async freezeActualPath(stopId: string, trx: TransactionClientContract) {
         try {
-            const stop = await Stop.query({ client: trx }).where('id', stopId).preload('order').first()
+            const stop = await Stop.query({ client: trx }).where('id', stopId).preload('order' as any).first()
             if (!stop || !stop.order) return
 
             // 1. Récupérer la trace en buffer Redis
@@ -840,7 +840,9 @@ export default class MissionService {
             .preload('client', (q) => q.preload('company'))
             .preload('transitItems')
             .preload('steps', (stepsQuery) => {
+                stepsQuery.orderBy('sequence', 'asc')
                 stepsQuery.preload('stops', (stopsQuery) => {
+                    stopsQuery.orderBy('execution_order', 'asc')
                     stopsQuery.preload('actions')
                     stopsQuery.preload('address')
                 })

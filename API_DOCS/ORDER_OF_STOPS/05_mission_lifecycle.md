@@ -7,7 +7,7 @@ Validation des transitions de statut et de l'état du driver.
 ## Aspects Techniques
 - Acceptation/Refus par le driver (`MissionService`).
 - Verrouillage Redis (`OFFERING` -> `BUSY`).
-- Transitions : `ACCEPTED` -> `AT_PICKUP` -> `COLLECTED` -> ...
+- Transitions : `ACCEPTED` -> `DELIVERED`/`FAILED`
 - Gestion des annulations et échecs.
 
 ## Validation

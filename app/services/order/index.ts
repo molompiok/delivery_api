@@ -34,7 +34,154 @@ export default class OrderService {
         return Order.query()
             .where('clientId', clientId)
             .where('isDeleted', false)
+            .preload('driver')
+            .preload('vehicle')
             .orderBy('createdAt', 'desc')
+    }
+
+    /**
+     * Lists orders for a client with optimized summary format.
+     */
+    async listOrdersSummary(clientId: string) {
+        const orders = await Order.query()
+            .where('clientId', clientId)
+            .where('isDeleted', false)
+            .preload('driver', (q) => q.preload('driverSetting', (sq) => sq.preload('activeVehicle')))
+            .preload('vehicle')
+            .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
+            .orderBy('createdAt', 'desc')
+
+        return orders.map(order => this.formatOrderSummary(order))
+    }
+
+    /**
+     * Formats an order into the optimized "nickel" summary JSON.
+     */
+    private formatOrderSummary(order: Order) {
+        const metadata = order.metadata || {}
+        const routeExec = metadata.route_execution || {}
+        const visited = routeExec.visited || []
+        const remaining = routeExec.remaining || []
+        const planned = routeExec.planned || []
+
+        const allStops = order.steps.flatMap(s => s.stops || [])
+
+        // --- Itinerary Logic ---
+        let displayFrom = ''
+        let displayTo = ''
+        let lastStopObj = null
+        let nextStopObj = null
+
+        const getStopActions = (stop: any) => {
+            const actions = stop?.actions || []
+            return {
+                pickup: actions.filter((a: any) => String(a.type).toUpperCase() === 'PICKUP').length,
+                drop: actions.filter((a: any) => String(a.type).toUpperCase() === 'DELIVERY').length,
+                service: actions.filter((a: any) => String(a.type).toUpperCase() === 'SERVICE').length
+            }
+        }
+
+        // Identify key stops for the summary
+        const effectivePlanned = planned.length > 0
+            ? planned
+            : allStops.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map(s => s.id)
+
+        const firstStopId = effectivePlanned[0]
+        const finalStopId = effectivePlanned[effectivePlanned.length - 1]
+
+        const lastStopId = visited.length > 0 ? visited[visited.length - 1] : firstStopId
+        const nextStopId = remaining.length > 0 ? remaining[0] : finalStopId
+
+        const lastStop = allStops.find(s => s.id === lastStopId)
+        const nextStop = allStops.find(s => s.id === nextStopId)
+
+        if (lastStop) {
+            lastStopObj = {
+                id: lastStop.id,
+                address: lastStop.address?.formattedAddress || lastStop.address?.street || 'Départ non défini',
+                actions: getStopActions(lastStop)
+            }
+            displayFrom = lastStopObj.address
+        }
+
+        if (nextStop) {
+            nextStopObj = {
+                id: nextStop.id,
+                address: nextStop.address?.formattedAddress || nextStop.address?.street || 'Destination non définie',
+                actions: getStopActions(nextStop)
+            }
+            displayTo = nextStopObj.address
+        }
+
+        // --- Next Stop Actions ---
+        let nextStopActions = null
+        if (remaining.length > 0) {
+            const nextStopId = remaining[0]
+            const nextStop = allStops.find(s => s.id === nextStopId)
+            if (nextStop && nextStop.actions && nextStop.actions.length > 0) {
+                const firstAction = nextStop.actions[0]
+                nextStopActions = {
+                    type: firstAction.type,
+                    mainItem: firstAction.transitItem?.name || 'Item',
+                    totalCount: nextStop.actions.length
+                }
+            }
+        }
+
+        const totalStops = planned.length || allStops.length
+        const visitedCount = visited.length
+        const progressPercent = totalStops > 0 ? Math.round((visitedCount / totalStops) * 100) : 0
+
+        const totalActions = allStops.reduce((acc, stop) => acc + (stop.actions?.length || 0), 0)
+
+        return {
+            id: order.id,
+            status: order.status,
+            assignment: {
+                mode: order.assignmentMode,
+                priority: order.priority
+            },
+            attribution: order.driverId ? {
+                driver: {
+                    id: order.driver?.id,
+                    name: order.driver?.fullName,
+                    phone: order.driver?.phone,
+                    avatar: null // To be handled later if needed
+                },
+                vehicle: (order.driver?.driverSetting?.vehiclePlate
+                    ? {
+                        id: order.driver.driverSetting.id,
+                        type: order.driver.driverSetting.vehicleType || 'UNKNOWN',
+                        plate: order.driver.driverSetting.vehiclePlate
+                    }
+                    : null
+                )
+            } : null,
+            itinerary: {
+                totalStops,
+                visitedCount,
+                progressPercent,
+                totalActions,
+                display: {
+                    label: remaining.length === 0 && planned.length > 0 ? "Itinéraire Complet" : "En cours",
+                    from: displayFrom,
+                    to: displayTo
+                },
+                stops: {
+                    last: lastStopObj,
+                    next: nextStopObj
+                }
+            },
+            nextStopActions,
+            pricing: {
+                amount: order.pricingData?.clientFee || 0,
+                currency: order.pricingData?.currency || 'XOF'
+            },
+            timestamps: {
+                createdAt: order.createdAt,
+                updatedAt: order.updatedAt
+            }
+        }
     }
 
     /**
@@ -277,8 +424,8 @@ export default class OrderService {
             await order.useTransaction(effectiveTrx).save()
 
             if (!options.trx) await effectiveTrx.commit()
-            
-                // Emit structure change event
+
+            // Emit structure change event
             await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
                 orderId: stop.orderId,
                 clientId
@@ -303,8 +450,8 @@ export default class OrderService {
             await order.useTransaction(effectiveTrx).save()
 
             if (!options.trx) await effectiveTrx.commit()
-            
-                // Emit structure change event
+
+            // Emit structure change event
             await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
                 orderId: action.orderId,
                 clientId

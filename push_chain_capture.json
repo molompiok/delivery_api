@@ -1,0 +1,154 @@
+[
+  {
+    "label": "APPLY_SHADOW_START (Actual DB query)",
+    "timestamp": "2026-02-14T20:54:43.874Z",
+    "hasPendingChanges": true,
+    "stopCount": 9,
+    "stops": [
+      {
+        "id": "stp_slvmyxk2qpn8hb2xw8",
+        "originalId": "stp_oned0w7mlsp27f1kg1",
+        "isPendingChange": true,
+        "addressId": "adr_e1mszqtm7tmekkgjs0",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_oned0w7mlsp27f1kg1",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_ic6b88bkekrf32jkdy",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_h5y7g0443f93b2wh7i",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_tcqlns9eenjc94gy3y",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_g8m71ozdmzgljvx2x1",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_cr8ie7wbiuf2fyssh0",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_wpco45pacwri78eep9",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_n9a3lv8hccncf0btjp",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_6g7o1h9hnrpxa3vxai",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_nm0fxtfskdwuyh840t",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_plqpk7vdpq5ualqxf6",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_rlhqhn6ntjxr0oe1tg",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_5txes4t435ejjfyc3r",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_4fse25qc0jpbklmo4z",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_rdyx9tx5auyoy68qn3",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_nf9rrqr00xr73siw48",
+        "hasAddressRelation": false
+      }
+    ]
+  },
+  {
+    "event": "stop_property_updated",
+    "stopId": "stp_oned0w7mlsp27f1kg1",
+    "newAddressId": "adr_e1mszqtm7tmekkgjs0",
+    "hasAddressObject": false
+  },
+  {
+    "label": "BEFORE_CALCULATE_STATS",
+    "timestamp": "2026-02-14T20:54:43.896Z",
+    "hasPendingChanges": true,
+    "stopCount": 9,
+    "stops": [
+      {
+        "id": "stp_5txes4t435ejjfyc3r",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_4fse25qc0jpbklmo4z",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_oned0w7mlsp27f1kg1",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_ic6b88bkekrf32jkdy",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_slvmyxk2qpn8hb2xw8",
+        "originalId": "stp_oned0w7mlsp27f1kg1",
+        "isPendingChange": true,
+        "addressId": "adr_e1mszqtm7tmekkgjs0",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_rdyx9tx5auyoy68qn3",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_nf9rrqr00xr73siw48",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_h5y7g0443f93b2wh7i",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_tcqlns9eenjc94gy3y",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_g8m71ozdmzgljvx2x1",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_cr8ie7wbiuf2fyssh0",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_wpco45pacwri78eep9",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_n9a3lv8hccncf0btjp",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_6g7o1h9hnrpxa3vxai",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_nm0fxtfskdwuyh840t",
+        "hasAddressRelation": false
+      },
+      {
+        "id": "stp_plqpk7vdpq5ualqxf6",
+        "originalId": null,
+        "isPendingChange": false,
+        "addressId": "adr_rlhqhn6ntjxr0oe1tg",
+        "hasAddressRelation": false
+      }
+    ]
+  },
+  {
+    "event": "error",
+    "message": "Critical: Cannot optimize route. The following stops have no valid coordinates/address: stp_6g7o1h9hnrpxa3vxai, stp_g8m71ozdmzgljvx2x1, stp_h5y7g0443f93b2wh7i, stp_plqpk7vdpq5ualqxf6, stp_slvmyxk2qpn8hb2xw8, stp_wpco45pacwri78eep9. Please fix them before attempting to optimize."
+  }
+]

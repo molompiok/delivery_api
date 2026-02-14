@@ -53,14 +53,38 @@ export default class OrToolsService {
         vehicle: OrToolsVehicle,
         coordinates: Array<{ lat: number, lon: number }>
     ): Promise<OrToolsOptimizationResult | null> {
-        // ... (rest of method remains same)
+        logger.info({
+            stopCount: stops.length,
+            coordCount: coordinates.length,
+            vehicle: { max_weight: vehicle.max_weight, max_volume: vehicle.max_volume }
+        }, '[OR_TOOLS] Starting optimization request')
+
         try {
+            // 0. Preliminary validations to prevent Segfaults in microservice
+            if (stops.length === 0) {
+                logger.warn('[OR_TOOLS] Optimization aborted: No stops provided')
+                return { status: 'success', stopOrder: [], totalDistance: 0, totalTime: 0, droppedStops: [] }
+            }
+
+            if (coordinates.length !== stops.length + 1) {
+                logger.error({
+                    coords: coordinates.length,
+                    stops: stops.length
+                }, '[OR_TOOLS] Coordinate mismatch: must be stops + 1 (start location)')
+                throw new OptimizationError('Coordinate mismatch for OR-Tools')
+            }
+
             // 1. Get Distance/Time Matrix from Valhalla
+            logger.debug('[OR_TOOLS] Fetching distance matrix from Valhalla...')
             const matrix = await GeoService.getDistanceMatrix(coordinates)
             if (!matrix) {
                 logger.error({ coordinates }, 'Could not fetch distance matrix')
                 throw new OptimizationError('Could not fetch distance matrix from Valhalla')
             }
+            logger.debug({
+                matrixSize: matrix.distances.length,
+                matrixRows: matrix.distances[0]?.length
+            }, '[OR_TOOLS] Matrix received')
 
             // 2. Prepare payload for OR-Tools microservice
             const payload = {
@@ -71,19 +95,51 @@ export default class OrToolsService {
             }
 
             // 3. Call OR-Tools Microservice
+            logger.info({ payload }, '[OR_TOOLS] Sending payload to microservice')
+            logger.info({ url: `${this.orToolsUrl}/optimize` }, '[OR_TOOLS] Calling microservice...')
+            const startTime = Date.now()
+
             const response = await fetch(`${this.orToolsUrl}/optimize`, {
                 method: 'POST',
                 body: JSON.stringify(payload),
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                // Add a timeout to prevent hanging the whole server if the service is stuck
+                signal: AbortSignal.timeout(30000) // 30s timeout
             })
+
+            const duration = Date.now() - startTime
 
             if (!response.ok) {
                 const errorData = await response.text()
-                logger.error({ status: response.status, data: errorData }, 'OR-Tools API error')
+                logger.error({
+                    status: response.status,
+                    duration,
+                    data: errorData
+                }, '[OR_TOOLS] Microservice returned error')
                 throw new OptimizationError(`OR-Tools API error: ${response.status}`, errorData)
             }
 
             const data = await response.json() as any
+
+            if (data.status === 'error' || data.status === 'no_solution') {
+                logger.error({ data, duration }, '[OR_TOOLS] Optimization failed or no solution')
+                // We return a failure result but don't necessarily throw if we want to fallback gracefully
+                return {
+                    status: data.status,
+                    stopOrder: [],
+                    totalDistance: 0,
+                    totalTime: 0,
+                    droppedStops: data.dropped_stops || [],
+                    message: data.message
+                }
+            }
+
+            logger.info({
+                status: data.status,
+                duration,
+                stopOrderCount: data.stop_order?.length,
+                droppedCount: data.dropped_stops?.length
+            }, '[OR_TOOLS] Optimization successful')
 
             return {
                 status: data.status,
@@ -94,7 +150,11 @@ export default class OrToolsService {
                 message: data.message
             }
 
-        } catch (error) {
+        } catch (error: any) {
+            if (error.name === 'TimeoutError') {
+                logger.error('[OR_TOOLS] Request timed out after 30s')
+                throw new OptimizationError('OR-Tools request timed out')
+            }
             if (error instanceof OptimizationError) throw error
             logger.error({ err: error }, 'Error calling OR-Tools service')
             throw new OptimizationError('Error calling OR-Tools service', error)

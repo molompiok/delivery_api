@@ -431,6 +431,7 @@ class GeoService {
      * Get a distance/time matrix between multiple sources and targets via Valhalla.
      */
     async getDistanceMatrix(locations: Array<{ lat: number, lon: number }>): Promise<{ distances: number[][], times: number[][] } | null> {
+        logger.debug({ count: locations.length }, '[GEO_SERVICE] Generating distance matrix')
         try {
             const valhallaLocations = locations.map(loc => ({ lat: loc.lat, lon: loc.lon }))
             const response = await fetch(`${this.valhallaUrl}/sources_to_targets`, {
@@ -440,7 +441,8 @@ class GeoService {
                     targets: valhallaLocations,
                     costing: 'auto'
                 }),
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(15000) // 15s timeout for matrix
             })
 
             if (!response.ok) {
@@ -452,13 +454,30 @@ class GeoService {
             const data = await response.json() as any
             const matrix = data.sources_to_targets
 
-            const distances = matrix.map((row: any[]) => row.map((cell: any) => Math.round(cell.distance * 1000))) // km to meters
-            const times = matrix.map((row: any[]) => row.map((cell: any) => cell.time))
+            if (!matrix || !Array.isArray(matrix)) {
+                logger.error({ data }, '[GEO_SERVICE] Invalid matrix format from Valhalla')
+                return null
+            }
+
+            const distances = matrix.map((row: any[]) => row.map((cell: any) => {
+                if (!cell) return 0
+                return Math.round(cell.distance * 1000)
+            })) // km to meters
+
+            const times = matrix.map((row: any[]) => row.map((cell: any) => {
+                if (!cell) return 0
+                return Math.round(cell.time)
+            }))
+
+            logger.info({
+                rows: distances.length,
+                cols: distances[0]?.length
+            }, '[GEO_SERVICE] Matrix successfully generated')
 
             return { distances, times }
 
-        } catch (error) {
-            logger.error({ err: error }, 'Error calling Valhalla for distance matrix')
+        } catch (error: any) {
+            logger.error({ err: error.message }, 'Error calling Valhalla for distance matrix')
             return null
         }
     }

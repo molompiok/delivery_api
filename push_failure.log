@@ -1,0 +1,12 @@
+[LOG] [ [34minfo[39m ] Simulating push for order ord_e84lr3yu51anhsdyi6...
+[ERROR] [ [31merror[39m ] Push failed: Critical: Cannot optimize route. The following stops have no valid coordinates/address: stp_6g7o1h9hnrpxa3vxai, stp_g8m71ozdmzgljvx2x1, stp_h5y7g0443f93b2wh7i, stp_plqpk7vdpq5ualqxf6, stp_wpco45pacwri78eep9. Please fix them before attempting to optimize.
+[REPRO_ERROR] Critical: Cannot optimize route. The following stops have no valid coordinates/address: stp_6g7o1h9hnrpxa3vxai, stp_g8m71ozdmzgljvx2x1, stp_h5y7g0443f93b2wh7i, stp_plqpk7vdpq5ualqxf6, stp_wpco45pacwri78eep9. Please fix them before attempting to optimize.
+Error: Critical: Cannot optimize route. The following stops have no valid coordinates/address: stp_6g7o1h9hnrpxa3vxai, stp_g8m71ozdmzgljvx2x1, stp_h5y7g0443f93b2wh7i, stp_plqpk7vdpq5ualqxf6, stp_wpco45pacwri78eep9. Please fix them before attempting to optimize.
+    at OrderDraftService.optimizeViaOrTools (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/app/services/order/order_draft_service.ts:1203:19)
+    at OrderDraftService.calculateOrderStats (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/app/services/order/order_draft_service.ts:963:40)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async OrderDraftService.pushUpdates (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/app/services/order/order_draft_service.ts:1153:13)
+    at async ReproPushLogs.run (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/commands/ReproPushLogs.ts:37:17)
+    at async ReproPushLogs.exec (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/node_modules/.pnpm/@adonisjs+core@6.19.3_@adonisjs+assembler@7.8.2_typescript@5.8.3__@vinejs+vine@3.0.1_edge.js@6.4.0/node_modules/@adonisjs/core/build/modules/ace/commands.js:51:28)
+    at async #execMain (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/node_modules/.pnpm/@adonisjs+ace@13.4.0/node_modules/@adonisjs/ace/build/index.js:1623:7)
+    at async AceProcess.handle (file:///home/opus/Projects/Sublymus/Delivery/delivery-api/node_modules/.pnpm/@adonisjs+core@6.19.3_@adonisjs+assembler@7.8.2_typescript@5.8.3__@vinejs+vine@3.0.1_edge.js@6.4.0/node_modules/@adonisjs/core/build/src/ignitor/ace.js:66:9)

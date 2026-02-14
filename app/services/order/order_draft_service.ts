@@ -191,7 +191,8 @@ export default class OrderDraftService {
     /**
      * Fetches detailed order with all relations preloaded.
      */
-    async getOrderDetails(orderId: string, clientId?: string, options: { trx?: TransactionClientContract, withRoute?: boolean, json?: boolean } = { withRoute: false, json: true }) {
+    async getOrderDetails(orderId: string, clientId?: string, options: { trx?: TransactionClientContract, withRoute?: boolean, json?: boolean, include?: string[] } = { withRoute: false, json: true }) {
+        logger.debug({ orderId, clientId, options }, '[ORDER_DRAFT] Fetching order details')
         const query = Order.query({ client: options.trx })
             .preload('vehicle')
             .preload('steps', (q) => q.orderBy('sequence', 'asc')
@@ -201,7 +202,11 @@ export default class OrderDraftService {
                 )
             )
             .preload('transitItems')
-            .preload('leg')
+
+        if (options.withRoute || options.include?.includes('leg')) {
+            logger.debug({ orderId }, '[ORDER_DRAFT] Including heavy leg relationship')
+            query.preload('leg')
+        }
 
         if (orderId === 'latest') {
             if (!clientId) throw new Error('clientId is required for latest order retrieval')
@@ -1023,11 +1028,27 @@ export default class OrderDraftService {
             stop.executionOrder = null
         }
 
+        let maxExecutionOrder = -1
+
+        // Apply optimized order
         for (const optimizedStop of routeResult.stopOrder) {
             const stop = allStops.find(s => s.id === optimizedStop.stop_id)
             if (stop) {
                 stop.executionOrder = optimizedStop.execution_order
+                maxExecutionOrder = Math.max(maxExecutionOrder, optimizedStop.execution_order)
                 await stop.useTransaction(effectiveTrx).save()
+            }
+        }
+
+        // Handle dropped stops (append to end)
+        if (routeResult.droppedStops && routeResult.droppedStops.length > 0) {
+            for (const droppedStopId of routeResult.droppedStops) {
+                const stop = allStops.find(s => s.id === droppedStopId)
+                if (stop) {
+                    maxExecutionOrder++
+                    stop.executionOrder = maxExecutionOrder
+                    await stop.useTransaction(effectiveTrx).save()
+                }
             }
         }
 
