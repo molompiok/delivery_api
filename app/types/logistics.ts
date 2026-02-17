@@ -53,12 +53,36 @@ export interface LogisticsValidationError {
 
 export interface LogisticsValidationResult {
     success: boolean
-    errors: LogisticsValidationError[]
-    warnings: LogisticsValidationError[]
+    validationErrors: LogisticsValidationError[]
+    warnings?: LogisticsValidationError[]
 }
 
 export interface LogisticsOperationResult<T> {
     entity: T
-    validationErrors: LogisticsValidationError[]
-    warnings?: LogisticsValidationError[]
+}
+
+export interface OrderMetadata {
+    route_execution?: {
+        visited: string[]
+        remaining: string[]
+        planned: string[]
+    }
+    driver_position?: {
+        lat: number
+        lng: number
+        address?: string
+        timestamp: string
+        heading?: number
+        speed?: number
+    }
+    initial_driver_position?: {
+        lat: number
+        lng: number
+        address?: string
+        timestamp: string
+    }
+    driver_choices?: {
+        next_stop_id?: string
+    }
+    [key: string]: any
 }

@@ -722,7 +722,7 @@ export default class OrderDraftService {
             // Re-fetch order with all shadows
             const order = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
-                .preload('steps', (q) => q.preload('stops', (sq) => sq.preload('actions')))
+                .preload('steps', (q) => q.preload('stops', (sq) => sq.preload('actions').preload('address')))
                 .preload('transitItems')
                 .first()
 
@@ -998,27 +998,40 @@ export default class OrderDraftService {
         if (liveState.steps) {
             liveState.steps = liveState.steps.map((step: any) => ({
                 ...step,
-                stops: step.stops.filter((s: any) => !visitedIds.has(s.id))// TODO:  c'est pas le visited qu'on devrait regarder mais le status si le status d'un stop revien a pedding apres eter failed, gelé ou autre on doit pouvoir y repasser pour le "completed"
+                stops: step.stops.filter((s: any) => !visitedIds.has(s.id))
             })).filter((step: any) => step.stops.length > 0)
         }
 
         const routeResult = await this.optimizeViaOrTools(order, { startLocation, visitedIds: visitedIds as Set<string> })
 
-        if (!routeResult) {
-            // Should not happen with strict error handling, but safety check
-            throw new Error('Optimization returned null unexpectedly')
+        // If optimization returns null (e.g. no stops to optimize), we still need to ensure metadata is consistent
+        // This handles cases where order is just created with stops but route hasn't been calculated yet
+        const meta = order.metadata || {}
+
+        let newRemaining: string[] = []
+        let planned: string[] = []
+
+        if (routeResult && routeResult.status === 'success') {
+            newRemaining = routeResult.stopOrder.map((s: any) => s.stop_id)
+            // Concatenation of Past + Optimized Future
+            planned = [...(execution?.visited || []), ...newRemaining]
+        } else {
+            // Fallback: If optimization didn't run or failed, use current stops order as default plan
+            // This ensures new orders have a valid initial state
+            const allStops = order.steps.flatMap(s => s.stops || [])
+            newRemaining = allStops.filter(s => !visitedIds.has(s.id)).map(s => s.id)
+            planned = allStops.map(s => s.id)
         }
 
-        const newRemaining = routeResult.stopOrder.map((s: any) => s.stop_id)
-        const meta = order.metadata || {}
         meta.route_execution = {
-            visited: execution.visited || [],
+            visited: execution?.visited || [],
             remaining: newRemaining,
-            // Concatenation of Past + Optimized Future
-            planned: [...(execution.visited || []), ...newRemaining]
+            planned: planned
         }
         order.metadata = meta
         await order.useTransaction(effectiveTrx).save()
+
+        if (!routeResult || routeResult.status !== 'success') return
 
         // 2. Update executionOrder on each stop based on OR-Tools result
         const allStops = order.steps.flatMap((s: any) => s.stops || [])
@@ -1222,6 +1235,7 @@ export default class OrderDraftService {
                 .where('id', orderId)
                 .preload('steps', (q) => q.orderBy('sequence', 'asc')
                     .preload('stops', (sq) => sq.orderBy('execution_order', 'asc').orderBy('display_order', 'asc')
+                        .preload('address') // Ensure address is loaded for optimization
                         .preload('actions', (aq) => aq.preload('transitItem'))
                     )
                 )

@@ -138,7 +138,7 @@ export default class TestServicesShadow extends BaseCommand {
             await this.waitHere(200)
 
             const vStop = virtualOrder.steps[0].stops[0]
-            const vItem = virtualOrder.transitItems.find(t => t.id === shadowItemId)
+            const vItem = virtualOrder.transitItems.find((t:any) => t.id === shadowItemId)
 
             if (vStop.id !== shadowStopId) throw new Error('Virtual State: Stop ID mismatch')
             if (!vItem || vItem.weight !== 2000) throw new Error('Virtual State: Item weight mismatch')

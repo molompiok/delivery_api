@@ -25,6 +25,8 @@ export default class MissionsController {
                 stop: stop.serialize()
             })
         } catch (error: any) {
+            console.error('[MissionsController] arrivedAtStop Error:', error.message);
+            console.error(error);
             return response.badRequest({ message: error.message })
         }
     }
@@ -204,7 +206,7 @@ export default class MissionsController {
     /**
      * List missions for the authenticated driver
      */
-    async list({ auth, response }: HttpContext) {
+    async list({ auth, request, response }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
 
@@ -214,7 +216,20 @@ export default class MissionsController {
             console.log(`\n[API] 📥 Mission Request from: ${user.fullName} (${user.phone})`)
             console.log(`      🏢 Working for/Company: ${ds?.currentCompany?.name || 'Indépendant'}`)
 
-            const missions = await this.missionService.listMissions(user.id)
+            const filter = request.input('filter')
+            const page = request.input('page')
+            const limit = request.input('limit')
+
+            const result = await this.missionService.listMissions(user.id, filter, page, limit)
+            let missions: any[]
+            let meta: any = null
+
+            if (page && limit) {
+                missions = (result as any).data
+                meta = (result as any).meta
+            } else {
+                missions = result as any[]
+            }
 
             // Log Missions Summary
             console.log(`[API] 📤 Sending ${missions.length} Missions:`)
@@ -224,7 +239,14 @@ export default class MissionsController {
             })
             console.log(`\n`)
 
-            return response.ok(missions)
+            if (page && limit) {
+                return response.ok({
+                    data: missions.map(m => m.serialize()),
+                    meta: meta
+                })
+            }
+
+            return response.ok(missions.map(m => m.serialize()))
         } catch (error: any) {
             return response.internalServerError({ message: error.message })
         }

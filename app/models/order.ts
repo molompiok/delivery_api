@@ -10,7 +10,7 @@ import Action from '#models/action'
 import TransitItem from '#models/transit_item'
 import type { BelongsTo, HasOne, HasMany } from '@adonisjs/lucid/types/relations'
 import { hasMany } from '@adonisjs/lucid/orm'
-import type { PricingDetails } from '../types/logistics.js'
+import type { PricingDetails, OrderMetadata } from '../types/logistics.js'
 
 export default class Order extends BaseModel {
     @column({ isPrimary: true })
@@ -96,10 +96,10 @@ export default class Order extends BaseModel {
     declare statusHistory: Array<{ status: string; timestamp: string; note?: string }>
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
+        prepare: (v: OrderMetadata) => v ? JSON.stringify(v) : JSON.stringify({}),
         consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
     })
-    declare metadata: any
+    declare metadata: OrderMetadata
 
     @column.dateTime()
     declare etaPickup: DateTime | null

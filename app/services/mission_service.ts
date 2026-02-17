@@ -1,3 +1,4 @@
+import { updateMetadataField } from '#utils/json_utils'
 import db from '@adonisjs/lucid/services/db'
 import emitter from '@adonisjs/core/services/emitter'
 import Order from '#models/order'
@@ -73,6 +74,17 @@ export default class MissionService {
                 ...(order.statusHistory || []),
                 { status: 'ACCEPTED', timestamp: DateTime.now().toISO()!, note: 'Accepted by driver' }
             ]
+
+            // CAPTURE INITIAL DRIVER POSITION
+            const driverState = await RedisService.getDriverState(driverId)
+            if (driverState?.last_lat && driverState?.last_lng) {
+                await updateMetadataField(order, 'metadata', {
+                    lat: driverState.last_lat,
+                    lng: driverState.last_lng,
+                    timestamp: DateTime.now().toISO()!,
+                    address: ''
+                }, 'initial_driver_position')
+            }
 
             await order.useTransaction(effectiveTrx).save()
 
@@ -165,8 +177,8 @@ export default class MissionService {
                 const order = stop.order
                 const meta = order.metadata || {}
                 if (meta.route_execution) {
-                    const remaining = meta.route_execution.remaining || []
-                    const visited = meta.route_execution.visited || []
+                    const remaining = [...(meta.route_execution.remaining || [])]
+                    const visited = [...(meta.route_execution.visited || [])]
 
                     // Move from remaining to visited
                     const index = remaining.indexOf(stopId)
@@ -177,9 +189,13 @@ export default class MissionService {
                         visited.push(stopId)
                     }
 
-                    meta.route_execution.remaining = remaining
-                    meta.route_execution.visited = visited
-                    order.metadata = meta
+                    // atomic update of the route_execution object
+                    await updateMetadataField(order, 'metadata', {
+                        ...meta.route_execution,
+                        remaining,
+                        visited
+                    }, 'route_execution')
+
                     await order.useTransaction(effectiveTrx).save()
                 }
 
@@ -808,46 +824,84 @@ export default class MissionService {
 
     /**
      * List missions for a driver (active or offered).
+     * Filter: 'active' | 'pending' | 'history'
      */
-    async listMissions(driverId: string) {
+    /**
+     * List missions for a driver (active or offered).
+     * Filter: 'active' | 'pending' | 'history'
+     * Pagination: page, limit
+     */
+    async listMissions(driverId: string, filter?: string, page?: number, limit?: number) {
         const DriverSetting = (await import('#models/driver_setting')).default
         const ds = await DriverSetting.findBy('userId', driverId)
 
         const query = Order.query()
             .where((q) => {
-                q.where('driverId', driverId)
-                q.orWhere('offeredDriverId', driverId)
-                q.orWhere((targetQ) => {
-                    targetQ.where('assignmentMode', 'TARGET')
-                    targetQ.where('refId', driverId)
-                    targetQ.where('status', 'PENDING')
-                })
-
-                q.orWhere((pendingQ) => {
-                    pendingQ.where('status', 'PENDING')
-                    pendingQ.where((subQ) => {
-                        subQ.where('assignmentMode', 'GLOBAL')
-                        if (ds?.currentCompanyId) {
-                            subQ.orWhereHas('client', (clientQ) => {
-                                clientQ.where('companyId', ds.currentCompanyId!)
+                // FILTER: PENDING (Offers)
+                if (!filter || filter === 'pending') {
+                    q.orWhere((pendingQ) => {
+                        pendingQ.where('status', 'PENDING')
+                        pendingQ.where((subQ) => {
+                            // Direct assignment (TARGET)
+                            subQ.orWhere((targetQ) => {
+                                targetQ.where('assignmentMode', 'TARGET')
+                                targetQ.where('refId', driverId)
                             })
-                        }
+                            // Global assignment (GLOBAL + Company Check)
+                            subQ.orWhere((globalQ) => {
+                                globalQ.where('assignmentMode', 'GLOBAL')
+                                if (ds?.currentCompanyId) {
+                                    globalQ.whereHas('client', (clientQ) => {
+                                        clientQ.where('companyId', ds.currentCompanyId!)
+                                    })
+                                }
+                            })
+                        })
+                        // Ensure NOT already assigned to someone else (though status=PENDING usually implies this)
+                        pendingQ.whereNull('driverId')
                     })
-                })
-            })
+                }
 
-        const orders = await query
+                // FILTER: ACTIVE (My current missions)
+                if (!filter || filter === 'active') {
+                    q.orWhere((activeQ) => {
+                        activeQ.where('driverId', driverId)
+                        activeQ.whereIn('status', ['ACCEPTED', 'IN_PROGRESS', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+                    })
+                }
+
+                // FILTER: HISTORY (My past missions)
+                if (!filter || filter === 'history') {
+                    q.orWhere((historyQ) => {
+                        historyQ.where('driverId', driverId)
+                        historyQ.whereIn('status', ['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED'])
+                    })
+                }
+            })
             .preload('client', (q) => q.preload('company'))
             .preload('transitItems')
             .preload('steps', (stepsQuery) => {
                 stepsQuery.orderBy('sequence', 'asc')
                 stepsQuery.preload('stops', (stopsQuery) => {
+                    stopsQuery.where('isPendingChange', false) // Filter out shadow (edited) stops
                     stopsQuery.orderBy('execution_order', 'asc')
                     stopsQuery.preload('actions')
                     stopsQuery.preload('address')
                 })
             })
             .orderBy('createdAt', 'desc')
+
+        // Executing query
+        let orders: Order[]
+        let meta: any = null
+
+        if (page && limit) {
+            const paginated = await query.paginate(page, limit)
+            orders = paginated.all()
+            meta = paginated.getMeta()
+        } else {
+            orders = await query.exec()
+        }
 
         for (const order of orders) {
             const execution = order.metadata?.route_execution
@@ -868,6 +922,16 @@ export default class MissionService {
                 }
             }
         }
+
+        // if (page && limit) {
+        //     // Return structure compatible with Lucid pagination
+        //     // But service usually returns data. The controller constructs the response.
+        //     // We can return an object wrapping data and meta if pagination is requested.
+        //     // OR we change the return type.
+        //     // Let's attach meta to the array if possible or return an object.
+        //     // Returning object { data: orders, meta: meta } is cleaner.
+        //     return { data: orders, meta }
+        // }
 
         return orders
     }
