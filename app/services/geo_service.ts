@@ -469,10 +469,10 @@ class GeoService {
                 return Math.round(cell.time)
             }))
 
-            logger.info({
-                rows: distances.length,
-                cols: distances[0]?.length
-            }, '[GEO_SERVICE] Matrix successfully generated')
+            // logger.info({
+            //     rows: distances.length,
+            //     cols: distances[0]?.length
+            // }, '[GEO_SERVICE] Matrix successfully generated')
 
             return { distances, times }
 

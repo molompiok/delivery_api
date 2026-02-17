@@ -204,6 +204,19 @@ export default class MissionsController {
     }
 
     /**
+     * Get single mission details
+     */
+    async show({ params, auth, response }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const mission = await this.missionService.getMission(user.id, params.id)
+            return response.ok(mission.serialize())
+        } catch (error: any) {
+            return response.notFound({ message: 'Mission not found or not authorized' })
+        }
+    }
+
+    /**
      * List missions for the authenticated driver
      */
     async list({ auth, request, response }: HttpContext) {
@@ -211,14 +224,14 @@ export default class MissionsController {
             const user = auth.getUserOrFail()
 
             // Log Requester Info
-            const DriverSetting = (await import('#models/driver_setting')).default
-            const ds = await DriverSetting.query().where('userId', user.id).preload('currentCompany').first()
+            // const DriverSetting = (await import('#models/driver_setting')).default
+            // const ds = await DriverSetting.query().where('userId', user.id).preload('currentCompany').first()
             console.log(`\n[API] 📥 Mission Request from: ${user.fullName} (${user.phone})`)
-            console.log(`      🏢 Working for/Company: ${ds?.currentCompany?.name || 'Indépendant'}`)
+            // console.log(`      🏢 Working for/Company: ${ds?.currentCompany?.name || 'Indépendant'}`)
 
             const filter = request.input('filter')
-            const page = request.input('page')
-            const limit = request.input('limit')
+            const page = request.input('page') ? Number(request.input('page')) : 1
+            const limit = request.input('limit') ? Number(request.input('limit')) : 20
 
             const result = await this.missionService.listMissions(user.id, filter, page, limit)
             let missions: any[]
@@ -232,12 +245,12 @@ export default class MissionsController {
             }
 
             // Log Missions Summary
-            console.log(`[API] 📤 Sending ${missions.length} Missions:`)
-            missions.forEach((m: any, i) => {
-                //@ts-ignore
-                console.log(`      #${i + 1}: ${m.id} | Status: ${m.status} | Client: ${m.client?.fullName} | Company: ${m.client?.company?.name || 'IDEP'}`)
-            })
-            console.log(`\n`)
+            // console.log(`[API] 📤 Sending ${missions.length} Missions:`)
+            // missions.forEach((m: any, i) => {
+            //     //@ts-ignore
+            //     console.log(`      #${i + 1}: ${m.id} | Status: ${m.status} | Client: ${m.client?.fullName} | Company: ${m.client?.company?.name || 'IDEP'}`)
+            // })
+            // console.log(`\n`)
 
             if (page && limit) {
                 return response.ok({

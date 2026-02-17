@@ -48,7 +48,7 @@ router.group(() => {
     router.post('/company/drivers/:driverId/force-mode', [CompanyController, 'forceWorkMode'])
 
     // Tracking
-    router.post('/driver/location', [DriverController, 'updateLocation'])
+    router.post('/drivers/location', [DriverController, 'updateLocation'])
 })
     .prefix('/v1')
     .use(middleware.auth())

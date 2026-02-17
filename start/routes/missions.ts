@@ -7,6 +7,7 @@ router
     .group(() => {
         // Mission management (driver endpoints)
         router.get('/missions', [MissionsController, 'list'])
+        router.get('/missions/:id', [MissionsController, 'show'])
         router.post('/missions/:id/accept', [MissionsController, 'accept'])
         router.post('/missions/:id/refuse', [MissionsController, 'refuse'])
         router.post('/missions/:id/status', [MissionsController, 'updateStatus'])

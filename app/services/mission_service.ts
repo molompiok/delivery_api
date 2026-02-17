@@ -831,6 +831,47 @@ export default class MissionService {
      * Filter: 'active' | 'pending' | 'history'
      * Pagination: page, limit
      */
+    /**
+     * Get a single mission by ID with full details
+     */
+    async getMission(driverId: string, missionId: string) {
+        const order = await Order.query()
+            .where('id', missionId)
+            // Ensure the driver has access to this mission (assigned or offered)
+            .where((q) => {
+                q.where('driverId', driverId)
+                q.orWhere((pendingQ) => {
+                    pendingQ.where('status', 'PENDING')
+                    pendingQ.where((subQ) => {
+                        // Direct assignment (TARGET)
+                        subQ.orWhere((targetQ) => {
+                            targetQ.where('assignmentMode', 'TARGET')
+                            targetQ.where('refId', driverId)
+                        })
+                        // We skip GLOBAL check for getMission to simplify, assuming if they have the ID they might be authorized
+                        // But for strict security we could re-implement the company check if needed.
+                        // For now, let's allow if they are the driver OR if it's pending/target for them.
+                    })
+                })
+            })
+            .preload('client', (q) => q.preload('company'))
+            .preload('transitItems')
+            .preload('steps', (stepsQuery) => {
+                stepsQuery.orderBy('sequence', 'asc')
+                stepsQuery.preload('stops', (stopsQuery) => {
+                    stopsQuery.where('isPendingChange', false)
+                    stopsQuery.orderBy('execution_order', 'asc')
+                    stopsQuery.preload('actions', (actionsQuery) => {
+                        actionsQuery.where('isPendingChange', false)
+                    })
+                    stopsQuery.preload('address')
+                })
+            })
+            .firstOrFail()
+
+        return order
+    }
+
     async listMissions(driverId: string, filter?: string, page?: number, limit?: number) {
         const DriverSetting = (await import('#models/driver_setting')).default
         const ds = await DriverSetting.findBy('userId', driverId)
@@ -885,7 +926,9 @@ export default class MissionService {
                 stepsQuery.preload('stops', (stopsQuery) => {
                     stopsQuery.where('isPendingChange', false) // Filter out shadow (edited) stops
                     stopsQuery.orderBy('execution_order', 'asc')
-                    stopsQuery.preload('actions')
+                    stopsQuery.preload('actions', (actionsQuery) => {
+                        actionsQuery.where('isPendingChange', false)
+                    })
                     stopsQuery.preload('address')
                 })
             })
@@ -923,15 +966,9 @@ export default class MissionService {
             }
         }
 
-        // if (page && limit) {
-        //     // Return structure compatible with Lucid pagination
-        //     // But service usually returns data. The controller constructs the response.
-        //     // We can return an object wrapping data and meta if pagination is requested.
-        //     // OR we change the return type.
-        //     // Let's attach meta to the array if possible or return an object.
-        //     // Returning object { data: orders, meta: meta } is cleaner.
-        //     return { data: orders, meta }
-        // }
+        if (page && limit) {
+            return { data: orders, meta }
+        }
 
         return orders
     }

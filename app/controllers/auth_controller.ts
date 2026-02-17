@@ -89,6 +89,8 @@ export default class AuthController {
     public async verifyPhoneOtp({ request, response }: HttpContext) {
         try {
             const { otp, phone } = await request.validateUsing(verifyPhoneOtpValidator)
+            console.log({ otp, phone });
+
             const result = await this.authService.verifyPhoneOtp(phone, otp)
             return response.ok(result)
         } catch (error: any) {

@@ -60,10 +60,8 @@ export default class OrderSocketListener {
         const payload = event.payload
         if (!payload?.stopId) return
 
-        logger.info({ stopId: payload.stopId, status: payload.status }, 'Real-time (Stop): Notifying stop status update')
-
         // Notify the specific order room
-        WsService.emitToRoom(`orders:${payload.orderId}`, 'stop_status_updated', payload)
+        WsService.emitToRoom(`order:${payload.orderId}`, 'stop_status_updated', payload)
     }
 
     public async onActionStatusUpdated(event: ActionStatusUpdated) {
@@ -73,7 +71,7 @@ export default class OrderSocketListener {
         logger.info({ actionId: payload.actionId, status: payload.status }, 'Real-time (Action): Notifying action status update')
 
         // Notify the specific order room
-        WsService.emitToRoom(`orders:${payload.orderId}`, 'action_status_updated', payload)
+        WsService.emitToRoom(`order:${payload.orderId}`, 'action_status_updated', payload)
     }
 
     /**

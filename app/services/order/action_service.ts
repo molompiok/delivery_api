@@ -242,13 +242,26 @@ export default class ActionService {
             if (!actionOrder) throw new Error('Action not found or unauthorized')
 
             const isDraft = actionOrder.status === 'DRAFT'
+            const isShadow = action.isPendingChange && !!action.originalId
 
-            if (isDraft || action.isPendingChange) {
-                // If it's a draft or a shadow itself, we just delete it
+            if (isDraft) {
+                // For drafts, purge proofs and action
+                await ActionProof.query().useTransaction(effectiveTrx).where('actionId', action.id).delete()
+                await action.useTransaction(effectiveTrx).delete()
+            } else if (isShadow) {
+                // If it's a shadow (edited version), we want to delete it AND mark the original for deletion
+                const original = await Action.findOrFail(action.originalId!, { client: effectiveTrx })
+                original.isDeleteRequired = true
+                await original.useTransaction(effectiveTrx).save()
+
+                await ActionProof.query().useTransaction(effectiveTrx).where('actionId', action.id).delete()
+                await action.useTransaction(effectiveTrx).delete()
+            } else if (action.isPendingChange) {
+                // New pending action (no original), just delete it
                 await ActionProof.query().useTransaction(effectiveTrx).where('actionId', action.id).delete()
                 await action.useTransaction(effectiveTrx).delete()
             } else {
-                // If it's a stable component, we mark it for deletion
+                // Stable action, mark for deletion
                 action.isDeleteRequired = true
                 await action.useTransaction(effectiveTrx).save()
             }

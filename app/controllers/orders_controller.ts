@@ -193,8 +193,10 @@ export default class OrdersController {
                 const RouteService = (await import('#services/route_service')).default
                 const traceData = await RouteService.getActualTrace(params.id)
                 actualTrace = {
-                    type: 'LineString',
-                    coordinates: traceData
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: traceData
+                    }
                 }
             }
 

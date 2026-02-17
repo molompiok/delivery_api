@@ -53,11 +53,11 @@ export default class OrToolsService {
         vehicle: OrToolsVehicle,
         coordinates: Array<{ lat: number, lon: number }>
     ): Promise<OrToolsOptimizationResult | null> {
-        logger.info({
-            stopCount: stops.length,
-            coordCount: coordinates.length,
-            vehicle: { max_weight: vehicle.max_weight, max_volume: vehicle.max_volume }
-        }, '[OR_TOOLS] Starting optimization request')
+        // logger.info({
+        //     stopCount: stops.length,
+        //     coordCount: coordinates.length,
+        //     vehicle: { max_weight: vehicle.max_weight, max_volume: vehicle.max_volume }
+        // }, '[OR_TOOLS] Starting optimization request')
 
         try {
             // 0. Preliminary validations to prevent Segfaults in microservice
@@ -75,16 +75,16 @@ export default class OrToolsService {
             }
 
             // 1. Get Distance/Time Matrix from Valhalla
-            logger.debug('[OR_TOOLS] Fetching distance matrix from Valhalla...')
+            // logger.debug('[OR_TOOLS] Fetching distance matrix from Valhalla...')
             const matrix = await GeoService.getDistanceMatrix(coordinates)
             if (!matrix) {
                 logger.error({ coordinates }, 'Could not fetch distance matrix')
                 throw new OptimizationError('Could not fetch distance matrix from Valhalla')
             }
-            logger.debug({
-                matrixSize: matrix.distances.length,
-                matrixRows: matrix.distances[0]?.length
-            }, '[OR_TOOLS] Matrix received')
+            // logger.debug({
+            //     matrixSize: matrix.distances.length,
+            //     matrixRows: matrix.distances[0]?.length
+            // }, '[OR_TOOLS] Matrix received')
 
             // 2. Prepare payload for OR-Tools microservice
             const payload = {
@@ -95,7 +95,7 @@ export default class OrToolsService {
             }
 
             // 3. Call OR-Tools Microservice
-            logger.info({ payload }, '[OR_TOOLS] Sending payload to microservice')
+            // logger.info({ payload }, '[OR_TOOLS] Sending payload to microservice')
             logger.info({ url: `${this.orToolsUrl}/optimize` }, '[OR_TOOLS] Calling microservice...')
             const startTime = Date.now()
 
@@ -134,12 +134,12 @@ export default class OrToolsService {
                 }
             }
 
-            logger.info({
-                status: data.status,
-                duration,
-                stopOrderCount: data.stop_order?.length,
-                droppedCount: data.dropped_stops?.length
-            }, '[OR_TOOLS] Optimization successful')
+            // logger.info({
+            //     status: data.status,
+            //     duration,
+            //     stopOrderCount: data.stop_order?.length,
+            //     droppedCount: data.dropped_stops?.length
+            // }, '[OR_TOOLS] Optimization successful')
 
             return {
                 status: data.status,

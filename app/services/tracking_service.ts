@@ -14,7 +14,9 @@ import DriverLocationHistory from '#models/driver_location_history'
  */
 export class TrackingService {
     private readonly BUFFER_KEY = 'sublymus:location:buffer'
-    private readonly MAX_BATCH_SIZE = 100 // Augmenté pour plus d'efficacité en bulk
+    private readonly MAX_BATCH_SIZE = 10 // Réduit pour plus de réactivité (historique SQL plus frais)
+    private readonly FLUSH_INTERVAL_MS = 30000 // 30 secondes
+    private lastFlushTime = Date.now()
 
     /**
      * Reçoit une position GPS d'un mobile
@@ -37,9 +39,11 @@ export class TrackingService {
             }
         }
 
-        // 4. Si on atteint le seuil global, on déclenche le flush via BullMQ
-        if (batchSize >= this.MAX_BATCH_SIZE) {
+        // 4. Si on atteint le seuil global ou le délai, on déclenche le flush via BullMQ
+        const timeSinceLastFlush = Date.now() - this.lastFlushTime
+        if (batchSize >= this.MAX_BATCH_SIZE || timeSinceLastFlush >= this.FLUSH_INTERVAL_MS) {
             await this.enqueueFlush()
+            this.lastFlushTime = Date.now()
         }
     }
 

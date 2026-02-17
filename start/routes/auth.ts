@@ -5,8 +5,10 @@ const AuthController = () => import('#controllers/auth_controller')
 
 router.group(() => {
     // Public SMS Login/Register
-    router.post('/phone/otp/send', [AuthController, 'sendPhoneOtp'])
-    router.post('/phone/otp/verify', [AuthController, 'verifyPhoneOtp'])
+    // Commande a appeler pour recuperer le token
+    //curl -s -X POST http://localhost:3333/v1/auth/phone/otp/send -H "Content-Type: application/json" -d '{"phone": "+2250700000101"}' | jq -r '.otp' | xargs -I {} curl -X POST http://localhost:3333/v1/auth/phone/otp/verify -H "Content-Type: application/json" -d '{"phone": "+2250700000101", "otp": "{}"}'
+    router.post('/phone/otp/send', [AuthController, 'sendPhoneOtp']) // login   request
+    router.post('/phone/otp/verify', [AuthController, 'verifyPhoneOtp']) // login   confirm
 
     // Test SMS route
     router.post('/test/sms', async ({ request, response }) => {
