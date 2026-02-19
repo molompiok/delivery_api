@@ -162,7 +162,19 @@ export default class DriverPaymentsController {
             })
 
             console.log(`[DriverPayments] Deposit - Success`, result)
-            return response.ok(result)
+
+            // Enrichissement pour compatibilité frontend (tout-terrain)
+            const enrichedResult = {
+                ...result,
+                data: {
+                    ...result.data,
+                    waveCheckoutUrl: result.data.wave_checkout_url,
+                    paymentUrl: result.data.wave_checkout_url,
+                    payment_url: result.data.wave_checkout_url
+                }
+            }
+
+            return response.ok(enrichedResult)
         } catch (error: any) {
             console.error(`[DriverPayments] Deposit - Error`, error)
             return response.badRequest({ message: error.message })
