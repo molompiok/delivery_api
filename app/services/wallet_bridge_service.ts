@@ -381,13 +381,16 @@ class WalletBridgeService {
         successUrl: string
         errorUrl: string
     }): Promise<any> {
-        return this.request('POST', '/wallets/deposit', {
+        logger.info({ walletId: params.walletId, amount: params.amount }, '[WalletBridge] Initiating deposit')
+        const response = await this.request('POST', '/wallets/deposit', {
             wallet_id: params.walletId,
             amount: params.amount,
             description: params.description,
             success_url: params.successUrl,
             error_url: params.errorUrl,
         })
+        logger.info({ walletId: params.walletId, amount: params.amount, response }, '[WalletBridge] Deposit response')
+        return response
     }
 
     // ─── AUTO-ASSIGN WALLET ───────────────────────────────

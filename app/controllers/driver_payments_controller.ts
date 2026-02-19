@@ -147,8 +147,11 @@ export default class DriverPaymentsController {
 
             const accessibleIds = await this.getAccessibleWalletIds(user)
             if (!accessibleIds.includes(walletId)) {
+                console.warn(`[DriverPayments] Deposit - User ${user.id} tried to access unauthorized wallet ${walletId}`)
                 return response.forbidden({ message: 'You do not have access to this wallet' })
             }
+
+            console.log(`[DriverPayments] Deposit - Request accepted for user ${user.id}`, { walletId, amount, description })
 
             const result = await walletBridgeService.deposit({
                 walletId,
@@ -158,8 +161,10 @@ export default class DriverPaymentsController {
                 errorUrl: errorUrl || 'https://sublymus.com/error'
             })
 
+            console.log(`[DriverPayments] Deposit - Success`, result)
             return response.ok(result)
         } catch (error: any) {
+            console.error(`[DriverPayments] Deposit - Error`, error)
             return response.badRequest({ message: error.message })
         }
     }
