@@ -164,13 +164,18 @@ export default class DriverPaymentsController {
             console.log(`[DriverPayments] Deposit - Success`, result)
 
             // Enrichissement pour compatibilité frontend (tout-terrain)
+            // Le frontend cherche result['checkout_url'] directement à la racine
+            const waveUrl = result.data.wave_checkout_url || result.data.waveCheckoutUrl || result.data.paymentUrl
+
             const enrichedResult = {
                 ...result,
+                checkout_url: waveUrl, // Pour le frontend Flutter
+                checkoutUrl: waveUrl,
                 data: {
                     ...result.data,
-                    waveCheckoutUrl: result.data.wave_checkout_url,
-                    paymentUrl: result.data.wave_checkout_url,
-                    payment_url: result.data.wave_checkout_url
+                    waveCheckoutUrl: waveUrl,
+                    paymentUrl: waveUrl,
+                    payment_url: waveUrl
                 }
             }
 
