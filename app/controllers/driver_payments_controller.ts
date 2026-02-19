@@ -134,7 +134,16 @@ export default class DriverPaymentsController {
     public async deposit({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user as User
-            const { walletId, amount, description, successUrl, errorUrl } = request.body()
+            const body = request.body()
+            const walletId = body.walletId || body.wallet_id
+            const amount = body.amount
+            const description = body.description
+            const successUrl = body.successUrl || body.success_url
+            const errorUrl = body.errorUrl || body.error_url
+
+            if (!walletId) {
+                return response.badRequest({ message: 'walletId (or wallet_id) is required' })
+            }
 
             const accessibleIds = await this.getAccessibleWalletIds(user)
             if (!accessibleIds.includes(walletId)) {
@@ -161,7 +170,11 @@ export default class DriverPaymentsController {
     public async payout({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user as User
-            const { walletId, amount, recipientPhone, recipientName } = request.body()
+            const body = request.body()
+            const walletId = body.walletId || body.wallet_id
+            const amount = body.amount
+            const recipientPhone = body.recipientPhone || body.recipient_phone
+            const recipientName = body.recipientName || body.recipient_name
 
             const accessibleIds = await this.getAccessibleWalletIds(user)
             if (!accessibleIds.includes(walletId)) {
@@ -189,7 +202,11 @@ export default class DriverPaymentsController {
     public async transfer({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user as User
-            const { fromWalletId, toWalletId, amount, label } = request.body()
+            const body = request.body()
+            const fromWalletId = body.fromWalletId || body.from_wallet_id
+            const toWalletId = body.toWalletId || body.to_wallet_id
+            const amount = body.amount
+            const label = body.label
 
             const accessibleIds = await this.getAccessibleWalletIds(user)
             if (!accessibleIds.includes(fromWalletId) || !accessibleIds.includes(toWalletId)) {

@@ -178,7 +178,7 @@ export class RedisService {
     async removeDriverFromGeoIndex(driverId: string): Promise<void> {
         const geoKey = 'sublymus:drivers:locations'
         await redis.zrem(geoKey, driverId)
-        console.log(`[REDIS] Removed driver ${driverId} from geo-index`)
+        // console.log(`[REDIS] Removed driver ${driverId} from geo-index`)
     }
 
     /**
