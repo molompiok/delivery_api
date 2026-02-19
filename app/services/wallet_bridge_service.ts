@@ -132,24 +132,45 @@ class WalletBridgeService {
 
     private async request<T>(method: string, path: string, body?: any): Promise<T> {
         const url = `${this.config.baseUrl}/v1${path}`
+        const maxRetries = 3
+        let lastError: any
 
-        logger.debug({ method, url, body }, '[WalletBridge] Request')
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                logger.debug({ method, url, body, attempt }, '[WalletBridge] Request')
 
-        const response = await fetch(url, {
-            method,
-            headers: this.headers,
-            body: body ? JSON.stringify(body) : undefined,
-        })
+                const response = await fetch(url, {
+                    method,
+                    headers: this.headers,
+                    body: body ? JSON.stringify(body) : undefined,
+                    keepalive: true,
+                })
 
-        const data = await response.json() as any
+                const data = await response.json() as any
 
-        if (!response.ok) {
-            logger.error({ status: response.status, data, url }, '[WalletBridge] API error')
-            throw new Error(data.message || `Wave API error: ${response.status}`)
+                if (!response.ok) {
+                    logger.error({ status: response.status, data, url }, '[WalletBridge] API error')
+                    throw new Error(data.message || `Wave API error: ${response.status}`)
+                }
+
+                logger.debug({ status: response.status, data }, '[WalletBridge] Response')
+                return data
+            } catch (error: any) {
+                lastError = error
+                const msg = error.message.toLowerCase()
+
+                // Retry only on network/timeout errors
+                if (msg.includes('fetch failed') || msg.includes('timeout') || msg.includes('etimedout')) {
+                    logger.warn({ url, attempt, error: error.message }, '[WalletBridge] Network failure, retrying...')
+                    if (attempt < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, 500 * attempt))
+                        continue
+                    }
+                }
+                throw error
+            }
         }
-
-        logger.debug({ status: response.status, data }, '[WalletBridge] Response')
-        return data
+        throw lastError
     }
 
     // ─── WALLETS ───────────────────────────────────────────

@@ -18,12 +18,25 @@ export default class DriverPaymentsController {
             // 1. Wallet personnel
             if (user.walletId) {
                 try {
-                    const personalWallet = await walletBridgeService.getWallet(user.walletId)
-                    wallets.push({
-                        ...personalWallet,
-                        label: 'Mon Portefeuille',
+                    console.log(`[DriverPayments] Fetching personal wallet ${user.walletId} for user ${user.id}`)
+                    const walletData = await walletBridgeService.getWallet(user.walletId) as any
+
+                    const transformed = {
+                        ...walletData,
+                        name: walletData.ownerName || walletData.owner_name || 'Mon Portefeuille',
+                        owner_name: walletData.ownerName || walletData.owner_name || 'Mon Portefeuille',
+                        ownerName: walletData.ownerName || walletData.owner_name || 'Mon Portefeuille',
+                        label: walletData.ownerName || walletData.owner_name || 'Mon Portefeuille',
+                        balance_available: walletData.balance_available ?? walletData.balanceAvailable,
+                        balance_accounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                        balanceAvailable: walletData.balance_available ?? walletData.balanceAvailable,
+                        balanceAccounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                        wallet_type: 'PERSONAL',
+                        walletType: 'PERSONAL',
                         isPersonal: true
-                    })
+                    }
+                    console.log(`[DriverPayments] Personal wallet found: ${transformed.owner_name} (${transformed.balance_available} F)`)
+                    wallets.push(transformed)
                 } catch (e) {
                     console.error('Failed to fetch personal wallet', e)
                 }
@@ -38,13 +51,25 @@ export default class DriverPaymentsController {
             for (const rel of relations) {
                 if (rel.walletId) {
                     try {
-                        const companyWallet = await walletBridgeService.getWallet(rel.walletId)
-                        wallets.push({
-                            ...companyWallet,
+                        console.log(`[DriverPayments] Fetching company wallet ${rel.walletId} for relation ${rel.id}`)
+                        const walletData = await walletBridgeService.getWallet(rel.walletId) as any
+                        const transformed = {
+                            ...walletData,
+                            name: rel.company.name,
+                            owner_name: rel.company.name,
+                            ownerName: rel.company.name,
                             label: rel.company.name,
+                            balance_available: walletData.balance_available ?? walletData.balanceAvailable,
+                            balance_accounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                            balanceAvailable: walletData.balance_available ?? walletData.balanceAvailable,
+                            balanceAccounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                            wallet_type: 'COMPANY',
+                            walletType: 'COMPANY',
                             isPersonal: false,
                             relationId: rel.id
-                        })
+                        }
+                        console.log(`[DriverPayments] Company wallet found: ${transformed.name}`)
+                        wallets.push(transformed)
                     } catch (e) {
                         console.error(`Failed to fetch wallet for relation ${rel.id}`, e)
                     }
@@ -86,6 +111,16 @@ export default class DriverPaymentsController {
                 limit: limit ? parseInt(limit) : 50,
                 page: page ? parseInt(page) : 1
             })
+
+            // Transformation pour assurer la compatibilité avec le frontend (snake_case)
+            if (transactions.data) {
+                transactions.data = transactions.data.map((tx: any) => {
+                    if (tx.wallet) {
+                        tx.wallet.owner_name = tx.wallet.ownerName || tx.wallet.owner_name
+                    }
+                    return tx
+                })
+            }
 
             return response.ok(transactions)
         } catch (error: any) {
@@ -186,9 +221,30 @@ export default class DriverPaymentsController {
             if (walletId) {
                 const accessibleIds = await this.getAccessibleWalletIds(user)
                 if (!accessibleIds.includes(walletId)) {
+                    console.warn(`[DriverPayments] Unauthorized stats request for wallet ${walletId} by user ${user.id}`)
                     return response.forbidden({ message: 'Access denied' })
                 }
-                const stats = await walletBridgeService.getWalletStats(walletId, { startDate, endDate })
+                const stats = await walletBridgeService.getWalletStats(walletId, { startDate, endDate }) as any
+
+                // Transformation du wallet inclu dans les stats
+                if (stats.wallet) {
+                    const isPersonal = user.walletId === walletId
+                    stats.wallet = {
+                        ...stats.wallet,
+                        name: stats.wallet.ownerName || stats.wallet.owner_name || (isPersonal ? 'Mon Portefeuille' : 'Portefeuille Partenaire'),
+                        owner_name: stats.wallet.ownerName || stats.wallet.owner_name || (isPersonal ? 'Mon Portefeuille' : 'Portefeuille Partenaire'),
+                        ownerName: stats.wallet.ownerName || stats.wallet.owner_name || (isPersonal ? 'Mon Portefeuille' : 'Portefeuille Partenaire'),
+                        label: stats.wallet.ownerName || stats.wallet.owner_name || (isPersonal ? 'Mon Portefeuille' : 'Portefeuille Partenaire'),
+                        balance_available: stats.wallet.balance_available ?? stats.wallet.balanceAvailable,
+                        balance_accounting: stats.wallet.balance_accounting ?? stats.wallet.balanceAccounting,
+                        balanceAvailable: stats.wallet.balance_available ?? stats.wallet.balanceAvailable,
+                        balanceAccounting: stats.wallet.balance_accounting ?? stats.wallet.balanceAccounting,
+                        wallet_type: isPersonal ? 'PERSONAL' : 'COMPANY',
+                        walletType: isPersonal ? 'PERSONAL' : 'COMPANY'
+                    }
+                }
+
+                console.log(`[DriverPayments] Stats returned for wallet ${walletId}`)
                 return response.ok(stats)
             } else {
                 // Pour les stats globales, wave-api /stats utilise le ManagerId.
