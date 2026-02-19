@@ -54,6 +54,9 @@ export default class CompanyDriverSetting extends BaseModel {
     @column()
     declare activeVehicleId: string | null  // Véhicule actif en mode ETP pour cette entreprise
 
+    @column()
+    declare walletId: string | null
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 

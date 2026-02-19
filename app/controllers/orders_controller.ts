@@ -183,9 +183,6 @@ export default class OrdersController {
                 no_geo: no_geo === 'true' || no_geo === '1',
             }
 
-            // If explicit "live_only" requested via custom params or just standard include
-            // Let's stick to a clean options object passed to service
-
             const route = await this.orderService.getRoute(params.id, user.id, options)
 
             let actualTrace = null
@@ -200,9 +197,46 @@ export default class OrdersController {
                 }
             }
 
+            let navTrace = null
+            if (include && include.includes('nav_trace')) {
+                const NavigationService = (await import('#services/navigation_service')).default
+                const { lat: latRaw, lng: lngRaw, calculate_nav } = request.qs()
+                const lat = latRaw ? Number(latRaw) : NaN
+                const lng = lngRaw ? Number(lngRaw) : NaN
+
+                // logger.info({ orderId: params.id, lat, lng, calculate_nav }, '[ORDERS_CONTROLLER] Requesting nav_trace')
+
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    const navData = await NavigationService.getNavTrace(
+                        params.id,
+                        lat,
+                        lng,
+                        calculate_nav === 'true'
+                    )
+                    if (navData && navData.geometry) {
+                        navTrace = {
+                            geometry: {
+                                type: 'LineString',
+                                coordinates: navData.geometry.coordinates
+                            },
+                            duration_seconds: navData.duration_seconds,
+                            distance_meters: navData.distance_meters,
+                            target_stop_id: navData.target_stop_id,
+                            calculated_at: navData.calculated_at
+                        }
+                        logger.info({ orderId: params.id, points: navData.geometry.coordinates.length }, '[ORDERS_CONTROLLER] nav_trace generated 🚴')
+                    } else {
+                        logger.warn({ orderId: params.id }, '[ORDERS_CONTROLLER] nav_trace came back empty or null')
+                    }
+                } else {
+                    logger.warn({ orderId: params.id, lat, lng }, '[ORDERS_CONTROLLER] Missing coordinates for nav_trace')
+                }
+            }
+
             return response.ok({
                 ...route,
-                actual_trace: actualTrace
+                actual_trace: actualTrace,
+                nav_trace: navTrace
             })
         } catch (error: any) {
             return response.notFound({ message: error.message })

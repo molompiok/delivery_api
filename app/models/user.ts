@@ -74,6 +74,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column()
   declare fcmToken: string | null
 
+  @column()
+  declare walletId: string | null
+
   @belongsTo(() => Company)
   declare company: BelongsTo<typeof Company>
 

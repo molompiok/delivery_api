@@ -77,7 +77,7 @@ export class RedisService {
             await this.removeDriverFromGeoIndex(driverId)
         }
 
-        console.log(`[REDIS] Updated state for driver ${driverId}`)
+        // console.log(`[REDIS] Updated state for driver ${driverId}`)
     }
 
     /**
@@ -145,6 +145,31 @@ export class RedisService {
         const points = await this.peekOrderTrace(orderId)
         await this.clearOrderTraceAfterFlush(orderId)
         return points
+    }
+
+    /**
+     * Cache le tracé de navigation immédiat (nav_trace)
+     */
+    async setOrderNavTrace(orderId: string, trace: any): Promise<void> {
+        const key = `order:route:nav_trace:${orderId}`
+        await redis.set(key, JSON.stringify(trace), 'EX', 300) // TTL 5 min
+    }
+
+    /**
+     * Récupère le tracé de navigation immédiat
+     */
+    async getOrderNavTrace(orderId: string): Promise<any | null> {
+        const key = `order:route:nav_trace:${orderId}`
+        const cached = await redis.get(key)
+        return cached ? JSON.parse(cached) : null
+    }
+
+    /**
+     * Invalide le tracé de navigation immédiat
+     */
+    async clearOrderNavTrace(orderId: string): Promise<void> {
+        const key = `order:route:nav_trace:${orderId}`
+        await redis.del(key)
     }
 
     /**

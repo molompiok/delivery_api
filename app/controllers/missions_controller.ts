@@ -226,7 +226,7 @@ export default class MissionsController {
             // Log Requester Info
             // const DriverSetting = (await import('#models/driver_setting')).default
             // const ds = await DriverSetting.query().where('userId', user.id).preload('currentCompany').first()
-            console.log(`\n[API] 📥 Mission Request from: ${user.fullName} (${user.phone})`)
+            // console.log(`\n[API] 📥 Mission Request from: ${user.fullName} (${user.phone})`)
             // console.log(`      🏢 Working for/Company: ${ds?.currentCompany?.name || 'Indépendant'}`)
 
             const filter = request.input('filter')

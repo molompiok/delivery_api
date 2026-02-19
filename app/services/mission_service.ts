@@ -19,8 +19,6 @@ import { MultipartFile } from '@adonisjs/core/bodyparser'
 import FileManager from '#services/file_manager'
 import File from '#models/file'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import logisticsConfig from '#config/logistics'
-import { getDistance } from '#utils/geo'
 import OrderDraftService from '#services/order/order_draft_service'
 import { GeoCompressor } from '#utils/geo_compressor'
 
@@ -139,18 +137,7 @@ export default class MissionService {
                 const driverState = await RedisService.getDriverState(driverId)
                 if (driverState?.last_lat && driverState?.last_lng) {
                     await stop.load('address')
-                    if (stop.address) {
-                        const distance = getDistance(
-                            driverState.last_lat,
-                            driverState.last_lng,
-                            stop.address.lat,
-                            stop.address.lng
-                        )
-
-                        // if (distance > logisticsConfig.validation.stopArrivalProximityMeters) {
-                        //     throw new Error(`Vous êtes trop loin de l'arrêt (${Math.round(distance)}m). La limite est de ${logisticsConfig.validation.stopArrivalProximityMeters}m.`)
-                        // }
-                    }
+                    // Logic for distance threshold currently disabled for testing
                 }
 
                 stop.status = 'ARRIVED'
@@ -212,9 +199,16 @@ export default class MissionService {
                     leg.status = 'COMPLETED'
                     await leg.useTransaction(effectiveTrx).save()
                 }
+
+                // Invalidate nav_trace cache on arrival
+                const NavigationService = (await import('#services/navigation_service')).default
+                await NavigationService.invalidateNavTrace(stop.orderId)
             }
 
             if (!trx) await effectiveTrx.commit()
+
+            // Invalidate nav_trace cache
+            await RedisService.clearOrderNavTrace(stop.orderId)
 
             return stop
         } catch (error) {
@@ -313,6 +307,10 @@ export default class MissionService {
 
             await this.syncStopProgress(action.stopId, effectiveTrx)
             await this.syncOrderStatus(action.orderId, effectiveTrx)
+
+            // Invalidate nav_trace cache on action completion
+            const NavigationService = (await import('#services/navigation_service')).default
+            await NavigationService.invalidateNavTrace(action.orderId)
 
             // SOCKET
             const updatedOrder = await Order.findOrFail(action.orderId, { client: effectiveTrx });
@@ -625,6 +623,10 @@ export default class MissionService {
             await this.syncOrderStatus(order.id, effectiveTrx, { force: true })
 
             if (!trx) await effectiveTrx.commit()
+
+            // Invalidate nav_trace cache
+            await RedisService.clearOrderNavTrace(orderId)
+
             return await Order.findOrFail(orderId)
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()

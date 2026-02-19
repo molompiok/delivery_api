@@ -52,6 +52,9 @@ export default class Company extends BaseModel {
     declare vehicles: HasMany<typeof Vehicle>
 
     @column()
+    declare walletId: string | null
+
+    @column()
     declare verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED'
 
     @column.dateTime({ autoCreate: true })

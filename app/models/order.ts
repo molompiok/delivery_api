@@ -61,6 +61,9 @@ export default class Order extends BaseModel {
     declare logicPattern: string | null
 
     @column()
+    declare domain: string | null
+
+    @column()
     declare isDeleted: boolean
 
     @column()
