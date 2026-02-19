@@ -18,6 +18,7 @@ export default class DriverPaymentsController {
             // 1. Wallet personnel
             if (user.walletId) {
                 try {
+                    await user.loadFiles() // Charger les photos
                     console.log(`[DriverPayments] Fetching personal wallet ${user.walletId} for user ${user.id}`)
                     const walletData = await walletBridgeService.getWallet(user.walletId) as any
 
@@ -33,7 +34,10 @@ export default class DriverPaymentsController {
                         balanceAccounting: walletData.balance_accounting ?? walletData.balanceAccounting,
                         wallet_type: 'PERSONAL',
                         walletType: 'PERSONAL',
-                        isPersonal: true
+                        isPersonal: true,
+                        img: user.photos && user.photos.length > 0 ? user.photos[0] : null,
+                        image_url: user.photos && user.photos.length > 0 ? user.photos[0] : null,
+                        photo: user.photos && user.photos.length > 0 ? user.photos[0] : null
                     }
                     console.log(`[DriverPayments] Personal wallet found: ${transformed.owner_name} (${transformed.balance_available} F)`)
                     wallets.push(transformed)
@@ -66,7 +70,10 @@ export default class DriverPaymentsController {
                             wallet_type: 'COMPANY',
                             walletType: 'COMPANY',
                             isPersonal: false,
-                            relationId: rel.id
+                            relationId: rel.id,
+                            img: rel.company.logo ? `fs/${rel.company.logo}` : null,
+                            image_url: rel.company.logo ? `fs/${rel.company.logo}` : null,
+                            photo: rel.company.logo ? `fs/${rel.company.logo}` : null
                         }
                         console.log(`[DriverPayments] Company wallet found: ${transformed.name}`)
                         wallets.push(transformed)
