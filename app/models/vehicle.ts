@@ -8,7 +8,7 @@ import File from './file.js'
 import Order from '#models/order'
 
 export type VehicleOwnerType = 'User' | 'Company'
-export type VehicleType = 'MOTO' | 'CAR_SEDAN' | 'VAN' | 'TRUCK' | 'BICYCLE'
+export type VehicleType = 'MOTO' | 'CAR_SEDAN' | 'VAN' | 'TRUCK' | 'BICYCLE' | 'CONTAINER_12M' | 'TANKER_12M' | 'BUS_DOUBLE'
 export type VehicleEnergy = 'GASOLINE' | 'DIESEL' | 'ELECTRIC' | 'HYBRID'
 export type VehicleStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 

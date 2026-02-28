@@ -8,9 +8,19 @@ import { inject } from '@adonisjs/core'
 export default class ScheduleController {
     constructor(protected scheduleService: ScheduleService) { }
 
+    private mapKeys(data: any) {
+        if (!data || typeof data !== 'object') return data
+        const mapped: any = {}
+        for (const key of Object.keys(data)) {
+            const camelKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase())
+            mapped[camelKey] = data[key]
+        }
+        return mapped
+    }
+
     async index({ request, response, auth }: HttpContext) {
         try {
-            const { ownerType, ownerId } = request.qs()
+            const { ownerType, ownerId } = this.mapKeys(request.qs())
             const user = auth.user!
             if (!ownerType || !ownerId) return response.badRequest({ message: 'ownerType and ownerId are required' })
 
@@ -34,8 +44,15 @@ export default class ScheduleController {
     async store({ request, response, auth }: HttpContext) {
         try {
             const user = auth.user!
-            const data = request.all()
+            const rawData = request.all()
+            const { assignedUserIds, ...data } = this.mapKeys(rawData)
             const schedule = await this.scheduleService.saveSchedule(user, data)
+
+            const finalUserIds = assignedUserIds || data.userIds
+            if (finalUserIds && Array.isArray(finalUserIds)) {
+                await this.scheduleService.assignUsers(user, schedule.id, finalUserIds)
+            }
+
             return response.created(schedule)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -45,12 +62,13 @@ export default class ScheduleController {
     async update({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.user!
-            const data = { ...request.all(), id: params.id }
+            const rawData = request.all()
+            const { assignedUserIds, ...data } = { ...this.mapKeys(rawData), id: params.id }
             const schedule = await this.scheduleService.saveSchedule(user, data)
 
-            const { userIds } = request.only(['userIds'])
-            if (userIds && Array.isArray(userIds)) {
-                await this.scheduleService.assignUsers(user, params.id, userIds)
+            const finalUserIds = assignedUserIds || data.userIds
+            if (finalUserIds && Array.isArray(finalUserIds)) {
+                await this.scheduleService.assignUsers(user, params.id, finalUserIds)
             }
 
             return response.ok(schedule)
@@ -71,7 +89,7 @@ export default class ScheduleController {
 
     async checkAvailability({ request, response, auth }: HttpContext) {
         try {
-            const { ownerType, ownerId, date } = request.qs()
+            const { ownerType, ownerId, date } = this.mapKeys(request.qs())
             const user = auth.user!
             if (!ownerType || !ownerId || !date) return response.badRequest({ message: 'Missing fields' })
 
@@ -93,8 +111,9 @@ export default class ScheduleController {
     async assignUsers({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.user!
-            const { userIds } = request.only(['userIds'])
-            await this.scheduleService.assignUsers(user, params.id, userIds)
+            const { userIds, assignedUserIds } = this.mapKeys(request.only(['userIds', 'user_ids', 'assignedUserIds', 'assigned_user_ids']))
+            const finalUserIds = userIds || assignedUserIds
+            await this.scheduleService.assignUsers(user, params.id, finalUserIds)
             return response.ok({ message: 'Users assigned successfully' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -104,8 +123,9 @@ export default class ScheduleController {
     async unassignUsers({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.user!
-            const { userIds } = request.only(['userIds'])
-            await this.scheduleService.unassignUsers(user, params.id, userIds)
+            const { userIds, assignedUserIds } = this.mapKeys(request.only(['userIds', 'user_ids', 'assignedUserIds', 'assigned_user_ids']))
+            const finalUserIds = userIds || assignedUserIds
+            await this.scheduleService.unassignUsers(user, params.id, finalUserIds)
             return response.ok({ message: 'Users unassigned successfully' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -124,7 +144,7 @@ export default class ScheduleController {
 
     async getCalendarView({ request, response, auth }: HttpContext) {
         try {
-            const { view, date, ownerId, ownerType } = request.qs()
+            const { view, date, ownerId, ownerType } = this.mapKeys(request.qs())
             const user = auth.user!
             const result = await this.scheduleService.getCalendarView(user, { view, date, ownerId, ownerType })
             return response.ok(result)

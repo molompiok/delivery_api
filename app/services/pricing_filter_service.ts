@@ -4,6 +4,7 @@ import vine from '@vinejs/vine'
 import PricingFilter from '#models/pricing_filter'
 import User from '#models/user'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import type { OrderTemplate } from '#constants/order_templates'
 
 /**
  * PricingFilterService
@@ -24,6 +25,7 @@ interface StopPriceInput {
     isUrgent?: boolean
     isNight?: boolean
     prevStopDistanceKm?: number
+    durationSeconds?: number
 }
 
 interface PriceBreakdown {
@@ -55,9 +57,10 @@ const createFilterSchema = vine.object({
     companyId: vine.string().optional(),
     driverId: vine.string().optional(),
     name: vine.string().trim().minLength(2).maxLength(100),
-    domain: vine.string().trim().optional(),
+    template: vine.string().trim().optional(),
     baseFee: vine.number().min(0).optional(),
     perKmRate: vine.number().min(0).optional(),
+    perMinuteRate: vine.number().min(0).optional(),
     minDistance: vine.number().min(0).optional(),
     maxDistance: vine.number().min(0).nullable().optional(),
     perKgRate: vine.number().min(0).optional(),
@@ -72,15 +75,15 @@ const createFilterSchema = vine.object({
     heavyLoadSurchargePercent: vine.number().min(0).max(100).optional(),
     lightLoadDiscountThresholdKg: vine.number().min(0).optional(),
     lightLoadDiscountPercent: vine.number().min(0).max(100).optional(),
-    isDefault: vine.boolean().optional(),
     isActive: vine.boolean().optional(),
 })
 
 const updateFilterSchema = vine.object({
     name: vine.string().trim().minLength(2).maxLength(100).optional(),
-    domain: vine.string().trim().nullable().optional(),
+    template: vine.string().trim().nullable().optional(),
     baseFee: vine.number().min(0).optional(),
     perKmRate: vine.number().min(0).optional(),
+    perMinuteRate: vine.number().min(0).optional(),
     minDistance: vine.number().min(0).optional(),
     maxDistance: vine.number().min(0).nullable().optional(),
     perKgRate: vine.number().min(0).optional(),
@@ -95,7 +98,6 @@ const updateFilterSchema = vine.object({
     heavyLoadSurchargePercent: vine.number().min(0).max(100).optional(),
     lightLoadDiscountThresholdKg: vine.number().min(0).optional(),
     lightLoadDiscountPercent: vine.number().min(0).max(100).optional(),
-    isDefault: vine.boolean().optional(),
     isActive: vine.boolean().optional(),
 })
 
@@ -116,24 +118,28 @@ class PricingFilterService {
 
     // ── Resolve (chaîne driver → company → default) ──
 
-    async resolve(driverId?: string | null, companyId?: string | null, domain?: string | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
+    async resolve(driverId?: string | null, companyId?: string | null, template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
         if (driverId) {
-            const driverFilter = await this.findWithDomainFallback('driver_id', driverId, domain, trx)
+            const driverFilter = await this.findWithTemplateFallback('driver_id', driverId, template, trx)
             if (driverFilter) return driverFilter
         }
 
         if (companyId) {
-            const companyFilter = await this.findWithDomainFallback('company_id', companyId, domain, trx)
+            const companyFilter = await this.findWithTemplateFallback('company_id', companyId, template, trx)
             if (companyFilter) return companyFilter
         }
 
-        if (domain) {
+        // Global fallback (isActive: true)
+        return this.findGlobalFallback(template, trx)
+    }
+
+    private async findGlobalFallback(template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
+        if (template) {
             const exact = await PricingFilter.query({ client: trx })
                 .whereNull('company_id')
                 .whereNull('driver_id')
-                .where('is_default', true)
                 .where('is_active', true)
-                .where('domain', domain)
+                .where('template', template)
                 .first()
             if (exact) return exact
         }
@@ -141,9 +147,8 @@ class PricingFilterService {
         return PricingFilter.query({ client: trx })
             .whereNull('company_id')
             .whereNull('driver_id')
-            .where('is_default', true)
             .where('is_active', true)
-            .whereNull('domain')
+            .whereNull('template')
             .first()
     }
 
@@ -196,15 +201,15 @@ class PricingFilterService {
                 }
             }
 
-            if (validated.isDefault) {
-                await this.unsetOtherDefaults(validated.companyId, validated.driverId, effectiveTrx)
+            if (validated.isActive) {
+                await this.ensureExclusivity(validated.companyId, validated.driverId, validated.template, effectiveTrx)
             }
 
             const filter = await PricingFilter.create({
                 companyId: validated.companyId || null,
                 driverId: validated.driverId || null,
                 name: validated.name,
-                domain: validated.domain || null,
+                template: validated.template || null,
                 baseFee: validated.baseFee ?? 500,
                 perKmRate: validated.perKmRate ?? 100,
                 minDistance: validated.minDistance ?? 1,
@@ -221,7 +226,6 @@ class PricingFilterService {
                 heavyLoadSurchargePercent: validated.heavyLoadSurchargePercent ?? 15,
                 lightLoadDiscountThresholdKg: validated.lightLoadDiscountThresholdKg ?? 1,
                 lightLoadDiscountPercent: validated.lightLoadDiscountPercent ?? 5,
-                isDefault: validated.isDefault ?? false,
                 isActive: validated.isActive ?? true,
             }, { client: effectiveTrx })
 
@@ -250,8 +254,8 @@ class PricingFilterService {
                 throw new Error('Not authorized to update this filter')
             }
 
-            if (validated.isDefault && !filter.isDefault) {
-                await this.unsetOtherDefaults(filter.companyId, filter.driverId, effectiveTrx)
+            if (validated.isActive && !filter.isActive) {
+                await this.ensureExclusivity(filter.companyId, filter.driverId, validated.template || filter.template, effectiveTrx)
             }
 
             filter.merge(validated as any)
@@ -294,8 +298,8 @@ class PricingFilterService {
 
     // ── Calculs ──
 
-    calculateStopPrice(filter: PricingFilter, input: StopPriceInput): PriceBreakdown {
-        const { distanceKm, weightKg, volumeM3 = 0, isFragile = false, isUrgent = false, isNight = false, prevStopDistanceKm } = input
+    calculateStopPrice(filter: PricingFilter, input: StopPriceInput & { durationSeconds?: number }): PriceBreakdown {
+        const { distanceKm, weightKg, volumeM3 = 0, isFragile = false, isUrgent = false, isNight = false, prevStopDistanceKm, durationSeconds = 0 } = input
 
         const effectiveDistance = Math.max(distanceKm, filter.minDistance)
         const cappedDistance = filter.maxDistance ? Math.min(effectiveDistance, filter.maxDistance) : effectiveDistance
@@ -303,11 +307,15 @@ class PricingFilterService {
         const baseFee = filter.baseFee
         const distanceFee = Math.round(cappedDistance * filter.perKmRate)
 
+        // Ajout de la durée
+        const durationMinutes = durationSeconds / 60
+        const durationFee = Math.round(durationMinutes * (filter.perMinuteRate || 0))
+
         const chargeableWeight = Math.max(0, weightKg - filter.freeWeightKg)
         const weightFee = Math.round(chargeableWeight * filter.perKgRate)
         const volumeFee = Math.round(volumeM3 * filter.perM3Rate)
 
-        let subtotal = baseFee + distanceFee + weightFee + volumeFee
+        let subtotal = baseFee + distanceFee + weightFee + volumeFee + durationFee
 
         const fragileSurcharge = isFragile ? Math.round(subtotal * (filter.fragileMultiplier - 1)) : 0
         const urgentSurcharge = isUrgent ? Math.round(subtotal * (filter.urgentMultiplier - 1)) : 0
@@ -328,7 +336,7 @@ class PricingFilterService {
             lightLoadDiscount = Math.round(subtotal * filter.lightLoadDiscountPercent / 100)
         }
 
-        const total = Math.max(0, subtotal + fragileSurcharge + urgentSurcharge + nightSurcharge - proximityDiscount + heavyLoadSurcharge - lightLoadDiscount)
+        const total = Math.max(500, subtotal + fragileSurcharge + urgentSurcharge + nightSurcharge - proximityDiscount + heavyLoadSurcharge - lightLoadDiscount)
 
         return { baseFee, distanceFee, weightFee, volumeFee, fragileSurcharge, urgentSurcharge, nightSurcharge, proximityDiscount, heavyLoadSurcharge, lightLoadDiscount, total }
     }
@@ -404,11 +412,11 @@ class PricingFilterService {
 
     // ── Private ──
 
-    private async findWithDomainFallback(ownerColumn: string, ownerId: string, domain?: string | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
-        if (domain) {
+    private async findWithTemplateFallback(ownerColumn: string, ownerId: string, template?: string | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
+        if (template) {
             const exact = await PricingFilter.query({ client: trx })
                 .where(ownerColumn, ownerId)
-                .where('domain', domain)
+                .where('template', template)
                 .where('is_active', true)
                 .first()
             if (exact) return exact
@@ -416,13 +424,14 @@ class PricingFilterService {
 
         return PricingFilter.query({ client: trx })
             .where(ownerColumn, ownerId)
-            .whereNull('domain')
+            .whereNull('template')
             .where('is_active', true)
             .first()
     }
 
-    private async unsetOtherDefaults(companyId?: string | null, driverId?: string | null, trx?: TransactionClientContract) {
-        const query = PricingFilter.query({ client: trx }).where('is_default', true)
+    private async ensureExclusivity(companyId?: string | null, driverId?: string | null, template?: string | null, trx?: TransactionClientContract) {
+        const query = PricingFilter.query({ client: trx }).where('is_active', true)
+
         if (companyId) {
             query.where('company_id', companyId)
         } else if (driverId) {
@@ -430,9 +439,16 @@ class PricingFilterService {
         } else {
             query.whereNull('company_id').whereNull('driver_id')
         }
+
+        if (template) {
+            query.where('template', template)
+        } else {
+            query.whereNull('template')
+        }
+
         const existing = await query.exec()
         for (const f of existing) {
-            f.isDefault = false
+            f.isActive = false
             if (trx) {
                 await f.useTransaction(trx).save()
             } else {

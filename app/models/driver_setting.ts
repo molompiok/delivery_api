@@ -6,6 +6,7 @@ import Company from '#models/company'
 import Zone from '#models/zone'
 import Vehicle from '#models/vehicle'
 import { WorkMode } from '#constants/work_mode'
+import type { OrderTemplate } from '#constants/order_templates'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 
 export default class DriverSetting extends BaseModel {
@@ -34,6 +35,9 @@ export default class DriverSetting extends BaseModel {
 
     @column({ columnName: 'company_id' })
     declare currentCompanyId: string | null
+
+    @column()
+    declare defaultTemplate: OrderTemplate | null
 
     @column()
     declare verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED'

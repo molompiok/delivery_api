@@ -131,11 +131,16 @@ export default class OrdersController {
     async index({ request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const { view } = request.qs()
+            const { view, page, perPage, search, status } = request.qs()
 
             if (view === 'summary') {
-                const orders = await this.orderService.listOrdersSummary(user.id)
-                return response.ok(orders)
+                const result = await this.orderService.listOrdersSummary(user.id, {
+                    page: page ? Number(page) : undefined,
+                    perPage: perPage ? Number(perPage) : undefined,
+                    search: search || undefined,
+                    status: status || undefined,
+                })
+                return response.ok(result)
             }
 
             const orders = await this.orderService.listOrders(user.id)

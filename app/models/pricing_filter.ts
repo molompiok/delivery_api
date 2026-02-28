@@ -4,6 +4,7 @@ import { generateId } from '../utils/id_generator.js'
 import Company from '#models/company'
 import User from '#models/user'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import type { OrderTemplate } from '#constants/order_templates'
 
 export default class PricingFilter extends BaseModel {
     @column({ isPrimary: true })
@@ -23,8 +24,13 @@ export default class PricingFilter extends BaseModel {
     @column()
     declare name: string
 
+    /**
+     * CLÉ DE SÉLECTION : Définit à quel type d'ordre ces règles de prix s'appliquent.
+     * Contrairement à Company.activityType (Identité), ceci est un filtre opérationnel utilisé par le PricingFilterService.
+     * Si null, cette règle sert de fallback pour toutes les activités de l'entité.
+     */
     @column()
-    declare domain: string | null
+    declare template: OrderTemplate | null
 
     // --- Composantes du prix ---
 
@@ -34,6 +40,9 @@ export default class PricingFilter extends BaseModel {
     // Distance
     @column()
     declare perKmRate: number
+
+    @column()
+    declare perMinuteRate: number
 
     @column()
     declare minDistance: number
@@ -48,7 +57,7 @@ export default class PricingFilter extends BaseModel {
     @column()
     declare freeWeightKg: number
 
-    @column()
+    @column({ columnName: 'per_m3_rate' })
     declare perM3Rate: number
 
     // Surcharges (multiplicateurs)
@@ -80,9 +89,6 @@ export default class PricingFilter extends BaseModel {
 
     @column()
     declare lightLoadDiscountPercent: number
-
-    @column()
-    declare isDefault: boolean
 
     @column()
     declare isActive: boolean

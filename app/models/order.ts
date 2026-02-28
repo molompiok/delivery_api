@@ -11,6 +11,7 @@ import TransitItem from '#models/transit_item'
 import type { BelongsTo, HasOne, HasMany } from '@adonisjs/lucid/types/relations'
 import { hasMany } from '@adonisjs/lucid/orm'
 import type { PricingDetails, OrderMetadata } from '../types/logistics.js'
+import type { OrderTemplate } from '#constants/order_templates'
 
 export default class Order extends BaseModel {
     @column({ isPrimary: true })
@@ -61,7 +62,7 @@ export default class Order extends BaseModel {
     declare logicPattern: string | null
 
     @column()
-    declare domain: string | null
+    declare template: OrderTemplate | null
 
     @column()
     declare isDeleted: boolean
@@ -71,7 +72,7 @@ export default class Order extends BaseModel {
 
     @column({
         prepare: (value: PricingDetails) => value ? JSON.stringify(value) : JSON.stringify({}),
-        consume: (value) => typeof value === 'string' ? JSON.parse(value) : value
+        consume: (value: any) => typeof value === 'string' ? JSON.parse(value) : value
     })
     declare pricingData: PricingDetails
 
@@ -86,21 +87,21 @@ export default class Order extends BaseModel {
 
     @column({
         serializeAs: 'routeGeometry',
-        prepare: (v) => v ? JSON.stringify(v) : null,
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : null,
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare routeGeometry: { type: 'LineString'; coordinates: number[][] } | null
 
     @column({
         serializeAs: 'statusHistory',
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify([]),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify([]),
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare statusHistory: Array<{ status: string; timestamp: string; note?: string }>
 
     @column({
         prepare: (v: OrderMetadata) => v ? JSON.stringify(v) : JSON.stringify({}),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: OrderMetadata
 

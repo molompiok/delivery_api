@@ -71,9 +71,9 @@ export default class DriverPaymentsController {
                             walletType: 'COMPANY',
                             isPersonal: false,
                             relationId: rel.id,
-                            img: rel.company.logo ? `fs/${rel.company.logo}` : null,
-                            image_url: rel.company.logo ? `fs/${rel.company.logo}` : null,
-                            photo: rel.company.logo ? `fs/${rel.company.logo}` : null
+                            img: rel.company.logo,
+                            image_url: rel.company.logo,
+                            photo: rel.company.logo
                         }
                         console.log(`[DriverPayments] Company wallet found: ${transformed.name}`)
                         wallets.push(transformed)

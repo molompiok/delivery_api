@@ -3,9 +3,5 @@
   "compilerOptions": {
     "rootDir": "./",
     "outDir": "./build"
-  },
-  "exclude": [
-    "delivery-ref",
-    "node_modules"
-  ]
+  }
 }

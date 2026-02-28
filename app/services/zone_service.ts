@@ -8,10 +8,17 @@ export default class ZoneService {
     /**
      * Get zones based on user context (Admin, Driver, or Manager)
      */
-    static async listZones(user: User, companyId: string | null) {
+    static async listZones(user: User, companyId: string | null, filters: { ownerType?: ZoneOwnerType } = {}) {
         const query = Zone.query()
 
-        if (user.isAdmin) {
+        if (filters.ownerType) {
+            query.where('ownerType', filters.ownerType)
+            if (filters.ownerType === 'Company' && companyId) {
+                query.where('ownerId', companyId)
+            } else if (filters.ownerType === 'User') {
+                query.where('ownerId', user.id)
+            }
+        } else if (user.isAdmin) {
             // Admins see all zones
         } else if (user.isDriver) {
             // Drivers see:
@@ -33,9 +40,11 @@ export default class ZoneService {
                 q.where('ownerType', 'Company').where('ownerId', companyId)
                 q.orWhere('ownerType', 'Sublymus')
             })
-        } else {
-            throw new Error('User not associated with a company or driver')
         }
+
+        // Always sort by ownerType (Company first) and then name
+        query.orderByRaw("CASE WHEN owner_type = 'Company' THEN 0 WHEN owner_type = 'User' THEN 1 ELSE 2 END")
+        query.orderBy('name', 'asc')
 
         return await query
     }
@@ -49,16 +58,17 @@ export default class ZoneService {
             let ownerType: ZoneOwnerType = 'User'
             let ownerId: string | null = user.id
 
-            // If company manager, default to Company owner unless specified
-            if (!user.isDriver && companyId) {
+            // If companyId is provided, we default to Company ownership
+            // This covers the case where a manager is also a driver
+            if (companyId) {
                 ownerType = 'Company'
                 ownerId = companyId
             }
 
-            // Allow override if provided (e.g. admin creating a zone for a specific entity)
+            // Allow explicit override from data if provided
             if (data.ownerType) {
                 ownerType = data.ownerType as ZoneOwnerType
-                ownerId = data.ownerId ?? null
+                ownerId = data.ownerId ?? ownerId
             }
 
             // Only admins can create Sublymus zones
@@ -170,11 +180,16 @@ export default class ZoneService {
         try {
             const zone = await Zone.query({ client: trx })
                 .where('id', zoneId)
-                .where('ownerId', companyId)
-                .where('ownerType', 'Company')
+                .where((q) => {
+                    // Zone must belong to the company
+                    q.where('ownerType', 'Company').where('ownerId', companyId)
+                    // OR be a User/Sublymus zone that is accessible (we trust the ID here as it was found in the manager's list)
+                    q.orWhere('ownerType', 'User')
+                    q.orWhere('ownerType', 'Sublymus')
+                })
                 .first()
 
-            if (!zone) throw new Error('Company Zone not found')
+            if (!zone) throw new Error('Zone not found or not accessible for assignment')
 
             const cds = await CompanyDriverSetting.query({ client: trx })
                 .where('companyId', companyId)

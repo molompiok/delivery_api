@@ -41,23 +41,107 @@ export default class OrderService {
 
     /**
      * Lists orders for a client with optimized summary format.
+     * Supports server-side pagination, search, and status filtering.
      */
-    async listOrdersSummary(clientId: string) {
-        const orders = await Order.query()
+    async listOrdersSummary(clientId: string, options: {
+        page?: number,
+        perPage?: number,
+        search?: string,
+        status?: string
+    } = {}) {
+        const page = options.page || 1
+        const perPage = options.perPage || 12
+
+        let query = Order.query()
             .where('clientId', clientId)
             .where('isDeleted', false)
             .preload('driver', (q) => q.preload('driverSetting', (sq) => sq.preload('activeVehicle')))
             .preload('vehicle')
             .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
-            .orderBy('createdAt', 'desc')
 
-        return orders.map(order => this.formatOrderSummary(order))
+        // Status filter
+        if (options.status && options.status !== 'ALL') {
+            if (options.status === 'IN_PROGRESS') {
+                query = query.whereIn('status', ['ACCEPTED', 'IN_TRANSIT', 'PICKING_UP', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+            } else if (options.status === 'INCIDENTS') {
+                query = query.where('status', 'FAILED')
+            } else {
+                query = query.where('status', options.status)
+            }
+        }
+
+        // Search by order ID or ref
+        if (options.search) {
+            const term = `%${options.search}%`
+            query = query.where((builder) => {
+                builder
+                    .whereILike('id', term)
+                    .orWhereILike('refId', term)
+            })
+        }
+
+        query = query.orderBy('createdAt', 'desc')
+
+        const paginated = await query.paginate(page, perPage)
+        const orders = paginated.all()
+
+        // --- Real-time Redis GPS Fallback ---
+        const driverIds = orders
+            .filter(o => o.driverId)
+            .map(o => o.driverId!)
+        const driverStatesMap = new Map<string, any>()
+
+        if (driverIds.length > 0) {
+            const RedisService = (await import('#services/redis_service')).default
+            const states = await Promise.all(driverIds.map(id => RedisService.getDriverState(id)))
+            states.forEach(state => {
+                if (state) driverStatesMap.set(state.id, state)
+            })
+        }
+
+        // --- Global Status Counts (for filter badges) ---
+        // Base query for counts (respects client and search, but NOT status filter)
+        const baseCountQuery = () => {
+            let q = Order.query().where('clientId', clientId).where('isDeleted', false)
+            if (options.search) {
+                const term = `%${options.search}%`
+                q = q.where((builder) => {
+                    builder.whereILike('id', term).orWhereILike('refId', term)
+                })
+            }
+            return q
+        }
+
+        const [totalAll, totalPending, totalInProgress, totalDelivered, totalFailed] = await Promise.all([
+            baseCountQuery().count('* as total'),
+            baseCountQuery().where('status', 'PENDING').count('* as total'),
+            baseCountQuery().whereIn('status', ['ACCEPTED', 'IN_TRANSIT', 'PICKING_UP', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY']).count('* as total'),
+            baseCountQuery().where('status', 'DELIVERED').count('* as total'),
+            baseCountQuery().where('status', 'FAILED').count('* as total')
+        ])
+
+        return {
+            data: orders.map(order => this.formatOrderSummary(order, driverStatesMap.get(order.driverId || ''))),
+            meta: {
+                total: paginated.total,
+                perPage: paginated.perPage,
+                currentPage: paginated.currentPage,
+                lastPage: paginated.lastPage,
+                counts: {
+                    ALL: Number(totalAll[0].$extras.total),
+                    PENDING: Number(totalPending[0].$extras.total),
+                    IN_PROGRESS: Number(totalInProgress[0].$extras.total),
+                    DELIVERED: Number(totalDelivered[0].$extras.total),
+                    INCIDENTS: Number(totalFailed[0].$extras.total)
+                }
+            }
+        }
     }
 
     /**
      * Formats an order into the optimized "nickel" summary JSON.
      */
-    private formatOrderSummary(order: Order) {
+    private formatOrderSummary(order: Order, redisDriverState?: any) {
         const metadata = order.metadata || {}
         const routeExec = metadata.route_execution || {}
         const visited = routeExec.visited || []
@@ -75,11 +159,27 @@ export default class OrderService {
         const getStopActions = (stop: any) => {
             const actions = stop?.actions || []
             return {
-                pickup: actions.filter((a: any) => String(a.type).toUpperCase() === 'PICKUP').length,
-                drop: actions.filter((a: any) => String(a.type).toUpperCase() === 'DELIVERY').length,
-                service: actions.filter((a: any) => String(a.type).toUpperCase() === 'SERVICE').length
+                pickup: actions.filter((a: any) => String(a.type).toUpperCase() === 'PICKUP').reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
+                drop: actions.filter((a: any) => String(a.type).toUpperCase() === 'DELIVERY').reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
+                service: actions.filter((a: any) => String(a.type).toUpperCase() === 'SERVICE').reduce((acc: number, a: any) => acc + (a.quantity || 0), 0)
             }
         }
+
+        // --- Aggregate Order-wide Action Totals (Quantities) ---
+        const actionTotals = {
+            pickup: 0,
+            drop: 0,
+            service: 0
+        }
+        allStops.forEach(stop => {
+            const actions = stop.actions || []
+            actions.forEach((a: any) => {
+                const q = a.quantity || 0
+                if (String(a.type).toUpperCase() === 'PICKUP') actionTotals.pickup += q
+                else if (String(a.type).toUpperCase() === 'DELIVERY') actionTotals.drop += q
+                else if (String(a.type).toUpperCase() === 'SERVICE') actionTotals.service += q
+            })
+        })
 
         // Identify key stops for the summary
         const effectivePlanned = planned.length > 0
@@ -99,6 +199,8 @@ export default class OrderService {
             lastStopObj = {
                 id: lastStop.id,
                 address: lastStop.address?.formattedAddress || lastStop.address?.street || 'Départ non défini',
+                lat: lastStop.address?.lat,
+                lng: lastStop.address?.lng,
                 actions: getStopActions(lastStop)
             }
             displayFrom = lastStopObj.address
@@ -108,6 +210,8 @@ export default class OrderService {
             nextStopObj = {
                 id: nextStop.id,
                 address: nextStop.address?.formattedAddress || nextStop.address?.street || 'Destination non définie',
+                lat: nextStop.address?.lat,
+                lng: nextStop.address?.lng,
                 actions: getStopActions(nextStop)
             }
             displayTo = nextStopObj.address
@@ -146,7 +250,16 @@ export default class OrderService {
                     id: order.driver?.id,
                     name: order.driver?.fullName,
                     phone: order.driver?.phone,
-                    avatar: null // To be handled later if needed
+                    avatar: null, // To be handled later if needed
+                    position: (redisDriverState?.last_lat && redisDriverState?.last_lng)
+                        ? {
+                            lat: Number(redisDriverState.last_lat),
+                            lng: Number(redisDriverState.last_lng)
+                        }
+                        : (order.driver?.driverSetting ? {
+                            lat: order.driver.driverSetting.currentLat,
+                            lng: order.driver.driverSetting.currentLng
+                        } : null)
                 },
                 vehicle: (order.driver?.driverSetting?.vehiclePlate
                     ? {
@@ -170,7 +283,8 @@ export default class OrderService {
                 stops: {
                     last: lastStopObj,
                     next: nextStopObj
-                }
+                },
+                actionTotals
             },
             nextStopActions,
             pricing: {

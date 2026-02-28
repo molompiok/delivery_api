@@ -1,0 +1,634 @@
+nohup: les entrées sont ignorées
+c[ info ] starting HTTP server...
+[INIT] Initializing application services...
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 735 ms                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[21:42:19.604] INFO (263627): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[21:42:20.072] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[21:42:20.097] INFO (263627): WebSocket service booted successfully
+[21:42:20.476] INFO (263627): Client connected to WebSocket
+    socketId: "vprkYK0gxeqfa4coAAAB"
+[21:42:20.476] INFO (263627): Starting LocationSearchService worker...
+[21:42:20.681] INFO (263627): Client connected to WebSocket
+    socketId: "bhuL0A7L-LVOZy8tAAAD"
+[LOCATION WORKER] Flushing batch... 3494
+[21:42:22.300] INFO (263627): Client connected to WebSocket
+    socketId: "cEb7QoapdO2bjT6tAAAF"
+[21:42:24.099] INFO (263627): Client connected to WebSocket
+    socketId: "-klAUizn89A1uHc_AAAH"
+[21:42:25.018] INFO (263627): Client connected to WebSocket
+    socketId: "B5dg87dip2D6Rwe6AAAJ"
+[21:42:25.169] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 451
+[21:42:25.931] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:42:31.007] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 450
+[21:42:31.874] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3496
+[21:42:36.951] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 449
+[21:42:39.877] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3497
+[21:42:44.962] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 461
+[21:42:45.704] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:42:50.798] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 459
+[LOCATION WORKER] Flushing batch... 3498
+[21:42:51.800] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:42:56.873] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 458
+[21:42:58.701] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3499
+[21:43:03.772] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 456
+[21:43:06.731] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3500
+[21:43:11.802] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 450
+[21:43:17.782] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3501
+[21:43:22.865] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 448
+[21:43:24.665] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:43:29.758] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 439
+[LOCATION WORKER] Flushing batch... 3502
+[21:43:31.711] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:43:36.786] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 437
+[21:43:38.787] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3503
+[21:43:43.862] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 435
+[21:43:45.750] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:43:50.823] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 434
+[LOCATION WORKER] Flushing batch... 3504
+[21:43:54.758] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:43:59.828] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 437
+[LOCATION WORKER] Flushing batch... 3505
+[21:44:02.922] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:44:07.994] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 442
+[21:44:09.808] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3506
+[21:44:14.901] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 462
+[21:44:17.107] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3507
+[21:44:22.178] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 458
+[21:44:24.044] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:44:29.115] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 452
+[LOCATION WORKER] Flushing batch... 3508
+[21:44:32.811] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:44:37.883] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 452
+[21:44:39.675] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3509
+[21:44:44.745] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 453
+[21:44:46.775] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3510
+[21:44:51.845] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 455
+[21:44:52.920] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:44:57.993] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 456
+[21:44:58.699] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... repeat:838b3beffe78c979811aba0e52deaea1:1772055900000
+[21:45:03.768] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 458
+[21:45:04.809] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3512
+[21:45:09.879] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 460
+[21:45:13.819] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:45:18.889] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 464
+[LOCATION WORKER] Flushing batch... 3513
+[LOCATION WORKER] Flushing batch... 3514
+[LOCATION WORKER] Flushing batch... 3515
+[LOCATION WORKER] Flushing batch... 3516
+[21:45:57.845] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3517
+[21:46:02.919] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 456
+[21:46:05.831] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3518
+[21:46:10.901] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 456
+[21:46:12.793] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:46:17.863] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 453
+[LOCATION WORKER] Flushing batch... 3519
+[21:46:19.859] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:46:24.940] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 452
+[21:46:25.797] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3520
+[21:46:30.865] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 452
+[21:46:34.927] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3521
+[21:46:40.002] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 456
+[21:46:41.973] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:46:47.053] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 460
+[LOCATION WORKER] Flushing batch... 3522
+[21:46:49.863] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:46:54.958] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 443
+[21:46:56.925] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3523
+[21:47:01.996] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 439
+[21:47:02.867] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:47:07.938] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 437
+[LOCATION WORKER] Flushing batch... 3524
+[21:47:11.991] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:47:17.061] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 434
+[21:47:18.844] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3525
+[21:47:23.916] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 436
+[21:47:24.885] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3526
+[21:47:29.952] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 438
+[21:47:31.946] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:47:37.013] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 442
+[21:47:37.887] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[LOCATION WORKER] Flushing batch... 3527
+[21:47:42.963] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 449
+[21:47:43.846] INFO (263627): [OR_TOOLS] Calling microservice...
+    url: "http://localhost:5055/optimize"
+[21:47:48.914] INFO (263627): [ORDERS_CONTROLLER] nav_trace generated 🚴
+    orderId: "ord_4rz29drrw6b97qszgs"
+    points: 449
+[LOCATION WORKER] Flushing batch... repeat:838b3beffe78c979811aba0e52deaea1:1772056200000
+cfull-reload app/services/order/index.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 746 ms                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[21:51:53.640] INFO (265797): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[21:51:53.869] INFO (265797): WebSocket service booted successfully
+[21:51:54.313] INFO (265797): Client connected to WebSocket
+    socketId: "5up8PekqLIN8Pki_AAAB"
+[21:51:54.313] INFO (265797): Starting LocationSearchService worker...
+[21:51:54.632] INFO (265797): Client connected to WebSocket
+    socketId: "aFgzasnJI0BuuJSqAAAD"
+[21:51:55.121] INFO (265797): Client connected to WebSocket
+    socketId: "ZwsdBC1R6QEi-2KjAAAF"
+[21:51:55.535] INFO (265797): Client connected to WebSocket
+    socketId: "ezJI26Cjp3YoWNjAAAAH"
+[21:51:56.088] INFO (265797): Client connected to WebSocket
+    socketId: "bIgkxotplQDW_tRgAAAJ"
+cfull-reload app/services/order/index.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 755 ms                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[21:56:51.441] INFO (266837): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[21:56:51.727] INFO (266837): WebSocket service booted successfully
+[21:56:51.913] INFO (266837): Client connected to WebSocket
+    socketId: "AJXLwZ80fkzJvew4AAAB"
+[21:56:51.913] INFO (266837): Starting LocationSearchService worker...
+[21:56:52.195] INFO (266837): Client connected to WebSocket
+    socketId: "ROW7DD_-ijAN150fAAAD"
+[21:56:53.061] INFO (266837): Client connected to WebSocket
+    socketId: "y19ZBdwhHJQA-cBvAAAF"
+[21:56:53.234] INFO (266837): Client connected to WebSocket
+    socketId: "ip7gI2oUVH--t3i9AAAH"
+[21:56:53.588] INFO (266837): Client connected to WebSocket
+    socketId: "XjSLjo4ijgDgjztEAAAJ"
+[21:57:07.032] INFO (266837): Client joining room
+    socketId: "y19ZBdwhHJQA-cBvAAAF"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[21:57:07.032] INFO (266837): Client joining room
+    socketId: "ip7gI2oUVH--t3i9AAAH"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[21:57:07.065] INFO (266837): Client joining room
+    socketId: "ROW7DD_-ijAN150fAAAD"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[21:57:24.617] INFO (266837): Client connected to WebSocket
+    socketId: "PnI5SswRs4i0XfWDAAAL"
+[21:57:24.619] INFO (266837): Client joining room
+    socketId: "PnI5SswRs4i0XfWDAAAL"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[21:59:05.409] INFO (266837): Client disconnected from WebSocket
+    socketId: "PnI5SswRs4i0XfWDAAAL"
+    reason: "transport close"
+[21:59:05.755] INFO (266837): Client connected to WebSocket
+    socketId: "B_IvA3dprpE7-5GnAAAN"
+[21:59:05.762] INFO (266837): Client joining room
+    socketId: "B_IvA3dprpE7-5GnAAAN"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[22:00:36.068] INFO (266837): Client disconnected from WebSocket
+    socketId: "B_IvA3dprpE7-5GnAAAN"
+    reason: "transport close"
+[22:00:36.530] INFO (266837): Client connected to WebSocket
+    socketId: "QdiZjztPDl8A2_DgAAAP"
+[22:00:36.533] INFO (266837): Client joining room
+    socketId: "QdiZjztPDl8A2_DgAAAP"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[22:13:41.510] INFO (266837): Client disconnected from WebSocket
+    socketId: "QdiZjztPDl8A2_DgAAAP"
+    reason: "transport close"
+[22:13:41.511] INFO (266837): Client disconnected from WebSocket
+    socketId: "ip7gI2oUVH--t3i9AAAH"
+    reason: "transport close"
+[22:13:41.525] INFO (266837): Client disconnected from WebSocket
+    socketId: "ROW7DD_-ijAN150fAAAD"
+    reason: "transport close"
+[22:13:41.530] INFO (266837): Client disconnected from WebSocket
+    socketId: "y19ZBdwhHJQA-cBvAAAF"
+    reason: "transport close"
+[22:13:41.538] INFO (266837): Client disconnected from WebSocket
+    socketId: "AJXLwZ80fkzJvew4AAAB"
+    reason: "transport close"
+[00:17:50.472] INFO (266837): Client disconnected from WebSocket
+    socketId: "XjSLjo4ijgDgjztEAAAJ"
+    reason: "transport close"
+[00:17:51.397] INFO (266837): Client connected to WebSocket
+    socketId: "N5zyOCLRucLy17FCAAAR"
+[00:17:51.404] INFO (266837): Client joining room
+    socketId: "N5zyOCLRucLy17FCAAAR"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:00:29.937] INFO (266837): Client joining room
+    socketId: "N5zyOCLRucLy17FCAAAR"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:00:29.961] INFO (266837): Client joining room
+    socketId: "N5zyOCLRucLy17FCAAAR"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:01:58.026] INFO (266837): Client disconnected from WebSocket
+    socketId: "N5zyOCLRucLy17FCAAAR"
+    reason: "transport close"
+[01:01:59.478] INFO (266837): Client connected to WebSocket
+    socketId: "5M3nHsHxdTPi8a0fAAAT"
+[01:01:59.614] INFO (266837): Client joining room
+    socketId: "5M3nHsHxdTPi8a0fAAAT"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:02:56.517] INFO (266837): Client disconnected from WebSocket
+    socketId: "5M3nHsHxdTPi8a0fAAAT"
+    reason: "transport close"
+[01:02:58.186] INFO (266837): Client connected to WebSocket
+    socketId: "kMjkBVQjFBiw3SmzAAAV"
+[01:02:58.331] INFO (266837): Client joining room
+    socketId: "kMjkBVQjFBiw3SmzAAAV"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:03:47.863] INFO (266837): Client disconnected from WebSocket
+    socketId: "kMjkBVQjFBiw3SmzAAAV"
+    reason: "transport close"
+[01:03:49.186] INFO (266837): Client connected to WebSocket
+    socketId: "xPt0QNu7blTE38M1AAAX"
+[01:03:49.271] INFO (266837): Client joining room
+    socketId: "xPt0QNu7blTE38M1AAAX"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:07:12.126] INFO (266837): Client connected to WebSocket
+    socketId: "YW9yeRKO89-KuRvZAAAZ"
+[01:07:12.214] INFO (266837): Client joining room
+    socketId: "YW9yeRKO89-KuRvZAAAZ"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:07:25.411] INFO (266837): Client disconnected from WebSocket
+    socketId: "xPt0QNu7blTE38M1AAAX"
+    reason: "transport close"
+[01:07:27.573] INFO (266837): Client connected to WebSocket
+    socketId: "UQsVmk9WsPj11JHxAAAb"
+[01:07:27.763] INFO (266837): Client joining room
+    socketId: "UQsVmk9WsPj11JHxAAAb"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:19:37.877] INFO (266837): Client disconnected from WebSocket
+    socketId: "YW9yeRKO89-KuRvZAAAZ"
+    reason: "transport close"
+[01:19:39.219] INFO (266837): Client connected to WebSocket
+    socketId: "DcB97TSBSXNKDxqoAAAd"
+[01:19:39.241] INFO (266837): Client joining room
+    socketId: "DcB97TSBSXNKDxqoAAAd"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:19:45.350] INFO (266837): Client connected to WebSocket
+    socketId: "Yhjnz1Ve8MF0qj9UAAAf"
+[01:19:45.384] INFO (266837): Client joining room
+    socketId: "Yhjnz1Ve8MF0qj9UAAAf"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:25:50.175] INFO (266837): Client disconnected from WebSocket
+    socketId: "DcB97TSBSXNKDxqoAAAd"
+    reason: "transport close"
+[01:25:51.410] INFO (266837): Client connected to WebSocket
+    socketId: "uQMfldqkLKGXqkBLAAAh"
+[01:25:51.437] INFO (266837): Client joining room
+    socketId: "uQMfldqkLKGXqkBLAAAh"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:26:08.993] INFO (266837): Client disconnected from WebSocket
+    socketId: "uQMfldqkLKGXqkBLAAAh"
+    reason: "transport close"
+[01:26:09.469] INFO (266837): Client connected to WebSocket
+    socketId: "c0tjpixSWTBhelE8AAAj"
+[01:26:09.516] INFO (266837): Client joining room
+    socketId: "c0tjpixSWTBhelE8AAAj"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:27:29.410] INFO (266837): Client disconnected from WebSocket
+    socketId: "c0tjpixSWTBhelE8AAAj"
+    reason: "transport close"
+[01:27:30.043] INFO (266837): Client connected to WebSocket
+    socketId: "EgxuyMwoWr-uC3WAAAAl"
+[01:27:30.102] INFO (266837): Client joining room
+    socketId: "EgxuyMwoWr-uC3WAAAAl"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:29:01.772] INFO (266837): Client disconnected from WebSocket
+    socketId: "EgxuyMwoWr-uC3WAAAAl"
+    reason: "transport close"
+[01:29:02.368] INFO (266837): Client connected to WebSocket
+    socketId: "-XfPxyYwKB-BSaJBAAAn"
+[01:29:02.412] INFO (266837): Client joining room
+    socketId: "-XfPxyYwKB-BSaJBAAAn"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:29:57.030] INFO (266837): Client disconnected from WebSocket
+    socketId: "-XfPxyYwKB-BSaJBAAAn"
+    reason: "transport close"
+[01:29:58.165] INFO (266837): Client connected to WebSocket
+    socketId: "ywzSgUPhNyRxbIWvAAAp"
+[01:29:58.261] INFO (266837): Client joining room
+    socketId: "ywzSgUPhNyRxbIWvAAAp"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:31:06.088] INFO (266837): Client disconnected from WebSocket
+    socketId: "ywzSgUPhNyRxbIWvAAAp"
+    reason: "transport close"
+[01:31:07.362] INFO (266837): Client connected to WebSocket
+    socketId: "DypOL-V6g1QOiFSvAAAr"
+[01:31:07.462] INFO (266837): Client joining room
+    socketId: "DypOL-V6g1QOiFSvAAAr"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:35:49.169] INFO (266837): Client disconnected from WebSocket
+    socketId: "DypOL-V6g1QOiFSvAAAr"
+    reason: "transport close"
+[01:35:51.511] INFO (266837): Client connected to WebSocket
+    socketId: "fzgZNzRzPfkyPon1AAAt"
+[01:35:51.599] INFO (266837): Client joining room
+    socketId: "fzgZNzRzPfkyPon1AAAt"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:41:23.377] INFO (266837): Client connected to WebSocket
+    socketId: "iNJ2dudK7TMWEyM3AAAv"
+[01:41:23.457] INFO (266837): Client joining room
+    socketId: "iNJ2dudK7TMWEyM3AAAv"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+[01:42:48.334] INFO (266837): Client disconnected from WebSocket
+    socketId: "iNJ2dudK7TMWEyM3AAAv"
+    reason: "transport close"
+[01:42:49.068] INFO (266837): Client connected to WebSocket
+    socketId: "Fw-TXpRFDbkE8sDZAAAx"
+[01:42:49.138] INFO (266837): Client joining room
+    socketId: "Fw-TXpRFDbkE8sDZAAAx"
+    room: "fleet:cmp_m1lweyvo8dfmytbgx7"
+cfull-reload app/services/zone_service.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 1.38 s                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[01:51:55.651] INFO (321744): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[01:51:56.034] INFO (321744): WebSocket service booted successfully
+[01:51:56.124] INFO (321744): Client connected to WebSocket
+    socketId: "a18k9Ovlx7AqyLUsAAAB"
+[01:51:56.124] INFO (321744): Starting LocationSearchService worker...
+[01:51:57.453] INFO (321744): Client connected to WebSocket
+    socketId: "wsNJqDlai4XrPoypAAAD"
+[01:51:59.924] INFO (321744): Client connected to WebSocket
+    socketId: "WvM6YWK5YOnv8HDmAAAF"
+[01:52:00.440] INFO (321744): Client connected to WebSocket
+    socketId: "zatvDxDGEAyobkhgAAAH"
+cfull-reload app/models/order.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 1.35 s                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[01:56:15.146] INFO (322779): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[01:56:15.511] INFO (322779): WebSocket service booted successfully
+[01:56:15.786] INFO (322779): Client connected to WebSocket
+    socketId: "BMN3xOE0Kl9_wHcaAAAB"
+[01:56:15.786] INFO (322779): Starting LocationSearchService worker...
+[01:56:15.959] INFO (322779): Client connected to WebSocket
+    socketId: "lXVqE_bRPTnjDsn1AAAD"
+[01:56:16.221] INFO (322779): Client connected to WebSocket
+    socketId: "oRCrJeTel3p81aszAAAF"
+[01:56:19.443] INFO (322779): Client connected to WebSocket
+    socketId: "ErLMRJFaqEKz_A1WAAAH"
+cfull-reload app/models/user.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 1.63 s                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[01:56:41.560] INFO (322906): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[01:56:42.021] INFO (322906): WebSocket service booted successfully
+[01:56:42.257] INFO (322906): Client connected to WebSocket
+    socketId: "LRKapxtVwntrw50WAAAB"
+[01:56:42.257] INFO (322906): Starting LocationSearchService worker...
+[01:56:43.288] INFO (322906): Client connected to WebSocket
+    socketId: "idmYCLT0JkXALk4rAAAD"
+[01:56:45.245] INFO (322906): Client connected to WebSocket
+    socketId: "PAQyWVh1edWVLv7xAAAF"
+[01:56:46.844] INFO (322906): Client connected to WebSocket
+    socketId: "bbfU5kczOxQSbewoAAAH"
+cfull-reload app/models/order.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 1.3 s                              │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[01:56:53.864] INFO (323025): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[01:56:54.461] INFO (323025): WebSocket service booted successfully
+[01:56:57.275] INFO (323025): Client connected to WebSocket
+    socketId: "f0hQ6s0FcvZR92RnAAAB"
+[01:56:57.275] INFO (323025): Starting LocationSearchService worker...
+[01:56:58.167] INFO (323025): Client connected to WebSocket
+    socketId: "YeReSuDwZgY23N-oAAAD"
+[01:56:58.460] INFO (323025): Client connected to WebSocket
+    socketId: "kvzVn5uuMcjelbv4AAAF"
+[01:56:59.011] INFO (323025): Client connected to WebSocket
+    socketId: "RrY2k7Hisf3ry99UAAAH"
+cfull-reload app/models/user.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 1.46 s                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[01:57:09.958] INFO (323107): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[01:57:10.485] INFO (323107): WebSocket service booted successfully
+[01:57:12.588] INFO (323107): Client connected to WebSocket
+    socketId: "d9bf2sJjlpmeD3crAAAB"
+[01:57:12.588] INFO (323107): Starting LocationSearchService worker...
+[01:57:12.839] INFO (323107): Client connected to WebSocket
+    socketId: "qCv06NFz2oWAoYP-AAAD"
+[01:57:13.477] INFO (323107): Client connected to WebSocket
+    socketId: "QKVfwRH_TrtPayOvAAAF"
+[01:57:15.330] INFO (323107): Client connected to WebSocket
+    socketId: "tkvPmCe9ff5hJm7SAAAH"
+cfull-reload app/models/user.ts
+╭─────────────────────────────────────────────────╮
+│                                                 │
+│    Server address: http://127.0.0.1:3333        │
+│    Watch Mode: HMR                              │
+│    Ready in: 1.88 s                             │
+│                                                 │
+╰─────────────────────────────────────────────────╯
+[INIT] Initializing application services...
+[01:58:45.154] INFO (323468): started HTTP server on 0.0.0.0:3333
+[REDIS] Warm-up: Syncing 11 drivers...
+[REDIS] Warm-up completed.
+✅ WebSocket Server initialized
+[01:58:45.701] INFO (323468): WebSocket service booted successfully
+[01:58:45.748] INFO (323468): Client connected to WebSocket
+    socketId: "kKwrxjhKVmU41SK5AAAB"
+[01:58:45.748] INFO (323468): Starting LocationSearchService worker...
+[01:58:49.260] INFO (323468): Client connected to WebSocket
+    socketId: "7r1wcSG0_O__XpkLAAAD"
+[01:58:49.777] INFO (323468): Client connected to WebSocket
+    socketId: "WAZAjBVzNvEOw7IrAAAF"
+[01:58:50.068] INFO (323468): Client connected to WebSocket
+    socketId: "fdJbQtQbk7doCS0_AAAH"
+[02:03:47.944] INFO (323468): Client disconnected from WebSocket
+    socketId: "7r1wcSG0_O__XpkLAAAD"
+    reason: "transport close"

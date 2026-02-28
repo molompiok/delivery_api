@@ -5,13 +5,14 @@ import CompanyDriverSetting from '#models/company_driver_setting'
 import SmsService from '#services/sms_service'
 import { DateTime } from 'luxon'
 import { inject } from '@adonisjs/core'
+import { OrderTemplate } from '#constants/order_templates'
 
 @inject()
 export default class CompanyService {
     /**
      * Create a company
      */
-    async create(user: User, data: { name: string, registreCommerce?: string, logo?: string, description?: string }) {
+    async create(user: User, data: { name: string, activityType: OrderTemplate, registreCommerce?: string, logo?: string, description?: string }) {
         if (user.companyId) {
             throw new Error('User already owns a company')
         }
@@ -19,6 +20,8 @@ export default class CompanyService {
         const company = await Company.create({
             ...data,
             ownerId: user.id,
+            // Par défaut, le template d'usage est le même que l'identité métier à la création
+            defaultTemplate: data.activityType
         })
 
         user.companyId = company.id

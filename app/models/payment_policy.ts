@@ -4,6 +4,7 @@ import { generateId } from '../utils/id_generator.js'
 import Company from '#models/company'
 import User from '#models/user'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import type { OrderTemplate } from '#constants/order_templates'
 
 export type ClientPaymentTrigger = 'BEFORE_START' | 'ON_DELIVERY' | 'PROGRESSIVE' | 'ON_ACCEPT'
 export type DriverPaymentTrigger = 'ON_DELIVERY' | 'PROGRESSIVE' | 'SALARY' | 'END_OF_PERIOD'
@@ -26,8 +27,13 @@ export default class PaymentPolicy extends BaseModel {
     @column()
     declare name: string
 
+    /**
+     * CLÉ DE SÉLECTION : Définit à quel type d'ordre cette politique de paiement s'applique.
+     * Contrairement à Company.activityType (Identité), ceci est un filtre opérationnel utilisé par le PaymentPolicyService.
+     * Si null, cette politique sert de fallback pour toutes les activités de l'entité.
+     */
     @column()
-    declare domain: string | null
+    declare template: OrderTemplate | null
 
     @column()
     declare clientPaymentTrigger: ClientPaymentTrigger
@@ -41,6 +47,9 @@ export default class PaymentPolicy extends BaseModel {
 
     @column()
     declare platformCommissionFixed: number
+
+    @column()
+    declare platformCommissionExempt: boolean
 
     // Commission entreprise
     @column()
@@ -59,9 +68,6 @@ export default class PaymentPolicy extends BaseModel {
 
     @column()
     declare codFeePercent: number
-
-    @column()
-    declare isDefault: boolean
 
     @column()
     declare isActive: boolean

@@ -9,14 +9,20 @@ import Action from '#models/action'
 import ActionProof from '#models/action_proof'
 import OrderLeg from '#models/order_leg'
 import GeoService from '#services/geo_service'
-import PricingService, { SimplePackageInfo } from '#services/pricing_service'
+import PricingFilterService from '#services/pricing_filter_service'
+import PaymentPolicyService from '#services/payment_policy_service'
+import OrderPaymentService from '#services/order_payment_service'
+import { SimplePackageInfo } from '#services/pricing_service'
 import OrderStatusUpdated from '#events/order_status_updated'
 import DispatchService from '#services/dispatch_service'
 import LogisticsService from '#services/logistics_service'
 import { inject } from '@adonisjs/core'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import { OrderTemplate } from '#constants/order_templates'
 import ActionService from './action_service.js'
 import TransitItem from '#models/transit_item'
+import User from '#models/user'
+import Company from '#models/company'
 import VroomService from '../vroom_service.js'
 import OrToolsService, { OrToolsStop, OrToolsAction } from '../optimizer/or_tools_service.js'
 import redis from '@adonisjs/redis/services/main'
@@ -141,12 +147,46 @@ export default class OrderDraftService {
     /**
      * Initiates a new order in DRAFT status.
      */
-    async initiateOrder(clientId: string, data: any = {}, trx?: TransactionClientContract) {
+    async initiateOrder(clientId: string, data: { template?: OrderTemplate } & any = {}, trx?: TransactionClientContract) {
         const effectiveTrx = trx || await db.transaction()
+
         try {
+            // Resolve company and driver defaults
+            const user = await User.findOrFail(clientId, { client: effectiveTrx })
+            await user.load('driverSetting', (q) => { if (effectiveTrx) q.useTransaction(effectiveTrx) })
+
+            const company = await Company.query({ client: effectiveTrx })
+                .where('owner_id', clientId)
+            // 1. Résolution du template par défaut
+            // Hiérarchie : Préférence Driver > Préférence Company > Global Default ('COMMANDE')
+            // Note : L'identité métier (activityType) de l'entreprise sert de base au defaultTemplate à la création.
+            const defaultTemplate = user.driverSetting?.defaultTemplate || company?.defaultTemplate || 'COMMANDE'
+
+            // 2. Le template final est soit celui précisé dans l'ordre, soit le défaut résolu
+            const template = data.template || defaultTemplate
+
+            // Receiver Validation Logic
+            if (company && data.from_receiver) {
+                const settings = company.settings || {}
+                const receivers = settings.receivers || {}
+                const templateConfig = receivers[template] || {}
+
+                // Default behavior: MISSION is closed, others are open
+                const isTemplateNaturallyOpen = ['COMMANDE', 'VOYAGE'].includes(template)
+                const isExplicitlyEnabled = templateConfig.enabled === true
+                const isExplicitlyDisabled = templateConfig.enabled === false
+
+                const canReceive = isExplicitlyEnabled || (isTemplateNaturallyOpen && !isExplicitlyDisabled)
+
+                if (!canReceive) {
+                    throw new Error(`This company is not accepting orders for template: ${template}`)
+                }
+            }
+
             const order = await Order.create({
                 clientId,
                 status: 'DRAFT',
+                template: template,
                 assignmentMode: data.assignment_mode || 'GLOBAL',
                 priority: data.priority || 'MEDIUM',
                 refId: data.ref_id || null,
@@ -615,11 +655,29 @@ export default class OrderDraftService {
             quantity: 1
         }))
 
-        const pricing = await PricingService.calculateFees(
-            routeDetails.global_summary.total_distance_meters,
-            routeDetails.global_summary.total_duration_seconds,
-            pricingPackages
-        )
+        // Resolver le filtre de prix applicable
+        const filter = await PricingFilterService.resolve(order.driverId, order.clientId, order.template, trx)
+        if (!filter) throw new Error('Aucun filtre de prix trouvé pour cette commande')
+
+        const stopPriceInputs = allStopsForRouting.slice(1).map((_, idx) => ({
+            distanceKm: (routeDetails.legs[idx]?.distance_meters || 0) / 1000,
+            durationSeconds: routeDetails.legs[idx]?.duration_seconds || 0,
+            weightKg: 0, // À raffiner si on veut le poids par stop
+        }))
+
+        const { total, stopBreakdowns } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
+
+        // Résoudre la part chauffeur via la policy et le moteur de split
+        const policy = await PaymentPolicyService.resolve(order.driverId, order.clientId, order.template, trx)
+        const splits = OrderPaymentService.calculateSplits(total, policy, order.companyId)
+        const driverRemuneration = splits.driverAmount
+
+        const pricing = {
+            clientFee: total,
+            driverRemuneration,
+            currency: 'XOF',
+            breakdown: stopBreakdowns
+        }
 
         return {
             estimation: {
@@ -1202,11 +1260,28 @@ export default class OrderDraftService {
             quantity: 1
         }))
 
-        order.pricingData = await PricingService.calculateFees(
-            order.totalDistanceMeters!,
-            order.totalDurationSeconds!,
-            pricingPackages
-        )
+        // Resolver le filtre de prix applicable
+        const filter = await PricingFilterService.resolve(order.driverId, order.clientId, order.template, effectiveTrx)
+        if (filter) {
+            const stopPriceInputs = order.totalDistanceMeters ? [{
+                distanceKm: order.totalDistanceMeters / 1000,
+                durationSeconds: order.totalDurationSeconds || 0,
+                weightKg: pricingPackages.reduce((acc, p) => acc + (p.dimensions?.weight || 0), 0) / 1000
+            }] : []
+
+            const { total } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
+
+            // Résoudre la part chauffeur via la policy
+            const policy = await PaymentPolicyService.resolve(order.driverId, order.clientId, order.template, effectiveTrx)
+            const driverPercent = policy?.platformCommissionPercent ? (100 - policy.platformCommissionPercent) : 95
+            const driverRemuneration = Math.round(total * driverPercent / 100)
+
+            order.pricingData = {
+                clientFee: total,
+                driverRemuneration,
+                currency: 'XOF'
+            } as any
+        }
 
         // 3. Centralized Notification: Notify all parties after successful recalculation
         // We use a commit hook to ensure we only notify if the DB update persisted.
@@ -1267,7 +1342,7 @@ export default class OrderDraftService {
     }
 
     /**
-     * Internal helper to map domain data to OrTools microservice and perform optimization.
+     * Internal helper to map template data to OrTools microservice and perform optimization.
      */
     private async optimizeViaOrTools(order: Order, options: { startLocation?: [number, number], visitedIds: Set<string>, useVirtualState?: boolean }) {
         const stops: OrToolsStop[] = []

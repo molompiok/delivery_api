@@ -34,8 +34,8 @@ export default class PaymentPoliciesController {
      */
     public async resolve({ request, response }: HttpContext) {
         try {
-            const { driverId, companyId, domain } = request.qs()
-            const policy = await paymentPolicyService.resolve(driverId, companyId, domain)
+            const { driverId, companyId, template } = request.qs()
+            const policy = await paymentPolicyService.resolve(driverId, companyId, template)
             return response.ok(policy)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

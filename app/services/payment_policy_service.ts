@@ -4,6 +4,7 @@ import vine from '@vinejs/vine'
 import PaymentPolicy from '#models/payment_policy'
 import User from '#models/user'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import { OrderTemplate } from '#constants/order_templates'
 
 /**
  * PaymentPolicyService
@@ -22,92 +23,87 @@ const createPolicySchema = vine.object({
     companyId: vine.string().optional(),
     driverId: vine.string().optional(),
     name: vine.string().trim().minLength(2).maxLength(100),
-    domain: vine.string().trim().optional(),
+    template: vine.string().trim().optional(),
     clientPaymentTrigger: vine.enum(['BEFORE_START', 'ON_DELIVERY', 'PROGRESSIVE', 'ON_ACCEPT']).optional(),
     driverPaymentTrigger: vine.enum(['ON_DELIVERY', 'PROGRESSIVE', 'SALARY', 'END_OF_PERIOD']).optional(),
     platformCommissionPercent: vine.number().min(0).max(100).optional(),
     platformCommissionFixed: vine.number().min(0).optional(),
+    platformCommissionExempt: vine.boolean().optional(),
     companyCommissionPercent: vine.number().min(0).max(100).optional(),
     companyCommissionFixed: vine.number().min(0).optional(),
     progressiveMinAmount: vine.number().min(0).optional(),
     allowCod: vine.boolean().optional(),
     codFeePercent: vine.number().min(0).max(100).optional(),
-    isDefault: vine.boolean().optional(),
     isActive: vine.boolean().optional(),
 })
 
 const updatePolicySchema = vine.object({
     name: vine.string().trim().minLength(2).maxLength(100).optional(),
-    domain: vine.string().trim().nullable().optional(),
+    template: vine.string().trim().nullable().optional(),
     clientPaymentTrigger: vine.enum(['BEFORE_START', 'ON_DELIVERY', 'PROGRESSIVE', 'ON_ACCEPT']).optional(),
     driverPaymentTrigger: vine.enum(['ON_DELIVERY', 'PROGRESSIVE', 'SALARY', 'END_OF_PERIOD']).optional(),
     platformCommissionPercent: vine.number().min(0).max(100).optional(),
     platformCommissionFixed: vine.number().min(0).optional(),
+    platformCommissionExempt: vine.boolean().optional(),
     companyCommissionPercent: vine.number().min(0).max(100).optional(),
     companyCommissionFixed: vine.number().min(0).optional(),
     progressiveMinAmount: vine.number().min(0).nullable().optional(),
     allowCod: vine.boolean().optional(),
     codFeePercent: vine.number().min(0).max(100).optional(),
-    isDefault: vine.boolean().optional(),
     isActive: vine.boolean().optional(),
 })
 
 class PaymentPolicyService {
 
-    // ── Resolve (chaîne driver → company → default) ──
+    // ── Resolve (chaîne driver → company → global) ──
 
-    async resolve(driverId?: string | null, companyId?: string | null, domain?: string | null, trx?: TransactionClientContract): Promise<PaymentPolicy | null> {
+    async resolve(driverId?: string | null, companyId?: string | null, template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PaymentPolicy | null> {
         // 1. Politique du driver IDEP
         if (driverId) {
-            const driverPolicy = await this.findWithDomainFallback('driver_id', driverId, domain, trx)
+            const driverPolicy = await this.findWithTemplateFallback('driver_id', driverId, template, trx)
             if (driverPolicy) {
-                logger.debug({ driverId, policyId: driverPolicy.id, domain }, '[PaymentPolicy] Resolved driver policy')
+                logger.debug({ driverId, policyId: driverPolicy.id, template }, '[PaymentPolicy] Resolved driver policy')
                 return driverPolicy
             }
         }
 
         // 2. Politique de l'entreprise
         if (companyId) {
-            const companyPolicy = await this.findWithDomainFallback('company_id', companyId, domain, trx)
+            const companyPolicy = await this.findWithTemplateFallback('company_id', companyId, template, trx)
             if (companyPolicy) {
-                logger.debug({ companyId, policyId: companyPolicy.id, domain }, '[PaymentPolicy] Resolved company policy')
+                logger.debug({ companyId, policyId: companyPolicy.id, template }, '[PaymentPolicy] Resolved company policy')
                 return companyPolicy
             }
         }
 
-        // 3. Politique par défaut (pas de company ni driver)
-        let defaultQuery = PaymentPolicy.query({ client: trx })
-            .whereNull('company_id')
-            .whereNull('driver_id')
-            .where('is_default', true)
-            .where('is_active', true)
-
-        if (domain) {
-            defaultQuery = defaultQuery.where('domain', domain)
+        // 3. Politique Globale (isActive: true)
+        const globalPolicy = await this.findGlobalFallback(template, trx)
+        if (globalPolicy) {
+            logger.debug({ policyId: globalPolicy.id, template }, '[PaymentPolicy] Resolved global policy')
         } else {
-            defaultQuery = defaultQuery.whereNull('domain')
+            logger.warn('[PaymentPolicy] No policy found (no global active set)')
         }
 
-        let defaultPolicy = await defaultQuery.first()
+        return globalPolicy
+    }
 
-        // Fallback: default sans domain
-        if (!defaultPolicy && domain) {
-            defaultPolicy = await PaymentPolicy.query({ client: trx })
+    private async findGlobalFallback(template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PaymentPolicy | null> {
+        if (template) {
+            const exact = await PaymentPolicy.query({ client: trx })
                 .whereNull('company_id')
                 .whereNull('driver_id')
-                .where('is_default', true)
                 .where('is_active', true)
-                .whereNull('domain')
+                .where('template', template)
                 .first()
+            if (exact) return exact
         }
 
-        if (defaultPolicy) {
-            logger.debug({ policyId: defaultPolicy.id, domain }, '[PaymentPolicy] Resolved default policy')
-        } else {
-            logger.warn('[PaymentPolicy] No policy found (no default set)')
-        }
-
-        return defaultPolicy
+        return PaymentPolicy.query({ client: trx })
+            .whereNull('company_id')
+            .whereNull('driver_id')
+            .where('is_active', true)
+            .whereNull('template')
+            .first()
     }
 
     // ── List / Find ──
@@ -161,16 +157,16 @@ class PaymentPolicyService {
                 }
             }
 
-            // Si c'est un défaut, désactiver les autres défauts du même scope
-            if (validated.isDefault) {
-                await this.unsetOtherDefaults(validated.companyId, validated.driverId, effectiveTrx)
+            // Exclusivité par template
+            if (validated.isActive) {
+                await this.ensureExclusivity(validated.companyId, validated.driverId, validated.template, effectiveTrx)
             }
 
             const policy = await PaymentPolicy.create({
                 companyId: validated.companyId || null,
                 driverId: validated.driverId || null,
                 name: validated.name,
-                domain: validated.domain || null,
+                template: validated.template || null,
                 clientPaymentTrigger: validated.clientPaymentTrigger || 'ON_DELIVERY',
                 driverPaymentTrigger: validated.driverPaymentTrigger || 'ON_DELIVERY',
                 platformCommissionPercent: validated.platformCommissionPercent ?? 5,
@@ -180,7 +176,6 @@ class PaymentPolicyService {
                 progressiveMinAmount: validated.progressiveMinAmount ?? null,
                 allowCod: validated.allowCod ?? false,
                 codFeePercent: validated.codFeePercent ?? 0,
-                isDefault: validated.isDefault ?? false,
                 isActive: validated.isActive ?? true,
             }, { client: effectiveTrx })
 
@@ -210,8 +205,8 @@ class PaymentPolicyService {
                 throw new Error('Not authorized to update this policy')
             }
 
-            if (validated.isDefault && !policy.isDefault) {
-                await this.unsetOtherDefaults(policy.companyId, policy.driverId, effectiveTrx)
+            if (validated.isActive && !policy.isActive) {
+                await this.ensureExclusivity(policy.companyId, policy.driverId, validated.template || policy.template, effectiveTrx)
             }
 
             policy.merge(validated as any)
@@ -268,22 +263,13 @@ class PaymentPolicyService {
             .first()
     }
 
-    async getDefault(trx?: TransactionClientContract): Promise<PaymentPolicy | null> {
-        return PaymentPolicy.query({ client: trx })
-            .whereNull('company_id')
-            .whereNull('driver_id')
-            .where('is_default', true)
-            .where('is_active', true)
-            .first()
-    }
-
     // ── Private ──
 
-    private async findWithDomainFallback(ownerColumn: string, ownerId: string, domain?: string | null, trx?: TransactionClientContract): Promise<PaymentPolicy | null> {
-        if (domain) {
+    private async findWithTemplateFallback(ownerColumn: string, ownerId: string, template?: string | null, trx?: TransactionClientContract): Promise<PaymentPolicy | null> {
+        if (template) {
             const exact = await PaymentPolicy.query({ client: trx })
                 .where(ownerColumn, ownerId)
-                .where('domain', domain)
+                .where('template', template)
                 .where('is_active', true)
                 .first()
             if (exact) return exact
@@ -291,13 +277,13 @@ class PaymentPolicyService {
 
         return PaymentPolicy.query({ client: trx })
             .where(ownerColumn, ownerId)
-            .whereNull('domain')
+            .whereNull('template')
             .where('is_active', true)
             .first()
     }
 
-    private async unsetOtherDefaults(companyId?: string | null, driverId?: string | null, trx?: TransactionClientContract) {
-        const query = PaymentPolicy.query({ client: trx }).where('is_default', true)
+    private async ensureExclusivity(companyId?: string | null, driverId?: string | null, template?: string | null, trx?: TransactionClientContract) {
+        const query = PaymentPolicy.query({ client: trx }).where('is_active', true)
 
         if (companyId) {
             query.where('company_id', companyId)
@@ -307,9 +293,15 @@ class PaymentPolicyService {
             query.whereNull('company_id').whereNull('driver_id')
         }
 
+        if (template) {
+            query.where('template', template)
+        } else {
+            query.whereNull('template')
+        }
+
         const existing = await query.exec()
         for (const p of existing) {
-            p.isDefault = false
+            p.isActive = false
             if (trx) {
                 await p.useTransaction(trx).save()
             } else {

@@ -12,7 +12,7 @@ export default class VehicleController {
         vine.object({
             ownerType: vine.enum(['User', 'Company']),
             ownerId: vine.string(),
-            type: vine.enum(['MOTO', 'CAR_SEDAN', 'VAN', 'TRUCK', 'BICYCLE']),
+            type: vine.enum(['MOTO', 'CAR_SEDAN', 'VAN', 'TRUCK', 'BICYCLE', 'CONTAINER_12M', 'TANKER_12M', 'BUS_DOUBLE']),
             brand: vine.string().optional(),
             model: vine.string().optional(),
             plate: vine.string(),

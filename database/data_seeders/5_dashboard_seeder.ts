@@ -20,6 +20,8 @@ export default class DashboardSeeder extends BaseSeeder {
             { type: 'MOTO', brand: 'KTM', model: 'Duke', plate: 'CD-5678-CI', color: 'Orange', energy: 'GASOLINE' },
             { type: 'CAR_SEDAN', brand: 'Toyota', model: 'Corolla', plate: 'EF-9012-CI', color: 'White', energy: 'HYBRID' },
             { type: 'VAN', brand: 'Mercedes', model: 'Sprinter', plate: 'GH-3456-CI', color: 'White', energy: 'DIESEL' },
+            { type: 'TANKER_12M', brand: 'Scania', model: 'R450 Citerne', plate: 'IJ-7890-CI', color: 'Silver', energy: 'DIESEL' },
+            { type: 'BUS_DOUBLE', brand: 'Volvo', model: '9700 Double', plate: 'KL-1234-CI', color: 'Red', energy: 'DIESEL' },
         ]
 
         for (let i = 0; i < vehicleData.length; i++) {

@@ -13,7 +13,7 @@ export default class CompanyController {
     public async createCompany({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user!
-            const data = request.only(['name', 'registreCommerce', 'logo', 'description'])
+            const data = request.only(['name', 'activityType', 'registreCommerce', 'logo', 'description'])
             const company = await this.companyService.create(user, data)
             return response.created(company)
         } catch (error: any) {

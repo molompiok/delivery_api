@@ -40,10 +40,11 @@ export default class ZonesController {
         return { user, companyId }
     }
 
-    async index({ response, auth }: HttpContext) {
+    async index({ request, response, auth }: HttpContext) {
         try {
             const { user, companyId } = await this.getContext(auth)
-            const zones = await ZoneService.listZones(user, companyId)
+            const ownerType = request.input('ownerType')
+            const zones = await ZoneService.listZones(user, companyId, { ownerType })
             return response.ok(zones)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

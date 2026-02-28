@@ -69,41 +69,51 @@ export default class Schedule extends BaseModel {
     }
 
     // Polymorphic ownership
-    @column()
+    @column({ serializeAs: 'owner_type' })
     declare ownerType: ScheduleOwnerType
 
-    @column()
+    @column({ serializeAs: 'owner_id' })
     declare ownerId: string
 
     // Types
-    @column()
+    @column({ serializeAs: 'schedule_type' })
     declare scheduleType: ScheduleType
 
-    @column()
+    @column({ serializeAs: 'schedule_category' })
     declare scheduleCategory: ScheduleCategory
 
-    @column()
+    @column({ serializeAs: 'recurrence_type' })
     declare recurrenceType: RecurrenceType
 
-    // WEEKLY
-    @column()
-    declare dayOfWeek: number | null // 0-6
+    // WEEKLY — multiple days (0=Sunday, 1=Monday, ..., 6=Saturday)
+    @column({
+        serializeAs: 'days_of_week',
+        prepare: (value: number[]) => JSON.stringify(value || []),
+        consume: (value: any) => {
+            if (Array.isArray(value)) return value
+            if (typeof value === 'string') {
+                try { return JSON.parse(value) } catch { return [] }
+            }
+            return []
+        }
+    })
+    declare daysOfWeek: number[]
 
     // SPECIFIC_DATE / DATE_RANGE
-    @column.date()
+    @column.date({ serializeAs: 'specific_date' })
     declare specificDate: DateTime | null
 
-    @column.date()
+    @column.date({ serializeAs: 'start_date' })
     declare startDate: DateTime | null
 
-    @column.date()
+    @column.date({ serializeAs: 'end_date' })
     declare endDate: DateTime | null
 
     // Time
-    @column()
+    @column({ serializeAs: 'start_time' })
     declare startTime: string // HH:mm
 
-    @column()
+    @column({ serializeAs: 'end_time' })
     declare endTime: string // HH:mm
 
     // Metadata
@@ -113,10 +123,10 @@ export default class Schedule extends BaseModel {
     @column()
     declare timezone: string
 
-    @column()
+    @column({ serializeAs: 'is_active' })
     declare isActive: boolean
 
-    @column()
+    @column({ serializeAs: 'is_public' })
     declare isPublic: boolean
 
     @column()
@@ -140,7 +150,7 @@ export default class Schedule extends BaseModel {
     })
     declare links: ScheduleLink[]
 
-    @column()
+    @column({ serializeAs: 'affects_availability' })
     declare affectsAvailability: boolean
 
     // Many-to-many relationship with users
@@ -150,14 +160,15 @@ export default class Schedule extends BaseModel {
         pivotForeignKey: 'schedule_id',
         relatedKey: 'id',
         pivotRelatedForeignKey: 'user_id',
-        pivotTimestamps: true
+        pivotTimestamps: true,
+        serializeAs: 'assigned_users'
     })
     declare assignedUsers: ManyToMany<typeof User>
 
-    @column.dateTime({ autoCreate: true })
+    @column.dateTime({ autoCreate: true, serializeAs: 'created_at' })
     declare createdAt: DateTime
 
-    @column.dateTime({ autoCreate: true, autoUpdate: true })
+    @column.dateTime({ autoCreate: true, autoUpdate: true, serializeAs: 'updated_at' })
     declare updatedAt: DateTime | null
 
     /**

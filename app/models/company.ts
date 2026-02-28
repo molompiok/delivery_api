@@ -4,6 +4,7 @@ import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
 import Vehicle from '#models/vehicle'
 import type { HasMany, BelongsTo } from '@adonisjs/lucid/types/relations'
+import type { OrderTemplate } from '#constants/order_templates'
 
 export default class Company extends BaseModel {
     @column({ isPrimary: true })
@@ -31,6 +32,20 @@ export default class Company extends BaseModel {
 
     @column()
     declare ownerId: string
+
+    /**
+     * Identité structurelle de l'entreprise (ex: Livraison, VTC, Services).
+     * Définit le cœur de métier et déverrouille les fonctionnalités liées.
+     */
+    @column()
+    declare activityType: OrderTemplate
+
+    /**
+     * Préférence d'usage au quotidien pour la création de commandes.
+     * Peut être différent de l'activityType si l'entreprise diversifie ponctuellement ses activités.
+     */
+    @column()
+    declare defaultTemplate: OrderTemplate | null
 
     @column({
         prepare: (value: any) => value ? JSON.stringify(value) : JSON.stringify({}),

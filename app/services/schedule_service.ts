@@ -51,6 +51,7 @@ export default class ScheduleService {
         const schedules = await Schedule.query()
             .where('ownerType', ownerType)
             .where('ownerId', ownerId)
+            .preload('assignedUsers')
             .orderBy('priority', 'desc')
             .orderBy('createdAt', 'desc')
 
@@ -65,7 +66,7 @@ export default class ScheduleService {
      * Get single schedule details
      */
     async getScheduleDetails(user: User, scheduleId: string) {
-        const schedule = await Schedule.findOrFail(scheduleId)
+        const schedule = await Schedule.query().where('id', scheduleId).preload('assignedUsers').firstOrFail()
         if (!await this.canViewSchedule(user, schedule.ownerType, schedule.ownerId, schedule)) {
             throw new Error('Unauthorized to view this schedule')
         }
@@ -131,16 +132,16 @@ export default class ScheduleService {
                 throw new Error('Unauthorized')
             }
 
-            await schedule.related('assignedUsers').attach(
+            await schedule.related('assignedUsers').sync(
                 userIds.reduce((acc, targetUserId) => {
                     acc[targetUserId] = {
-                        id: generateId('sas'),
                         assigned_by: user.id,
-                        created_at: DateTime.now().toSQL(),
-                        updated_at: DateTime.now().toSQL()
+                        created_at: DateTime.now(),
+                        updated_at: DateTime.now()
                     }
                     return acc
                 }, {} as Record<string, any>),
+                false, // Do not detach existing if you want to APPEND, but usually assignUsers means "set the list"
                 trx
             )
             await trx.commit()
@@ -219,7 +220,9 @@ export default class ScheduleService {
                 }).orWhere((sub) => {
                     sub.where('recurrenceType', RecurrenceType.DATE_RANGE).where('startDate', '<=', dateStr).where('endDate', '>=', dateStr)
                 }).orWhere((sub) => {
-                    sub.where('recurrenceType', RecurrenceType.WEEKLY).where('dayOfWeek', jsDay)
+                    // daysOfWeek is a JSON array, check if it contains jsDay
+                    sub.where('recurrenceType', RecurrenceType.WEEKLY)
+                        .whereRaw("days_of_week::jsonb @> ?::jsonb", [JSON.stringify([jsDay])])
                 }).orWhere((sub) => {
                     sub.where('recurrenceType', RecurrenceType.MANUAL_OVERRIDE).where('specificDate', dateStr)
                 })

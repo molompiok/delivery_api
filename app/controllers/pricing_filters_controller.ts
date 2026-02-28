@@ -34,8 +34,8 @@ export default class PricingFiltersController {
      */
     public async resolve({ request, response }: HttpContext) {
         try {
-            const { driverId, companyId, domain } = request.qs()
-            const filter = await pricingFilterService.resolve(driverId, companyId, domain)
+            const { driverId, companyId, template } = request.qs()
+            const filter = await pricingFilterService.resolve(driverId, companyId, template)
             return response.ok(filter)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
