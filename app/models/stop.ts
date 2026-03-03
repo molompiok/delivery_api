@@ -4,6 +4,7 @@ import { generateId } from '../utils/id_generator.js'
 import Order from '#models/order'
 import Address from '#models/address'
 import Action from '#models/action'
+import PaymentIntent from '#models/payment_intent'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 
 export default class Stop extends BaseModel {
@@ -96,4 +97,7 @@ export default class Stop extends BaseModel {
 
     @hasMany(() => Action)
     declare actions: HasMany<typeof Action>
+
+    @hasMany(() => PaymentIntent)
+    declare paymentIntents: HasMany<typeof PaymentIntent>
 }

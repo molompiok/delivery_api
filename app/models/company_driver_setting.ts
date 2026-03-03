@@ -83,7 +83,7 @@ export default class CompanyDriverSetting extends BaseModel {
 
     @hasMany(() => Document, {
         foreignKey: 'tableId',
-        onQuery: (q) => q.where('tableName', 'CompanyDriverSetting')
+        onQuery: (q:any) => q.where('tableName', 'CompanyDriverSetting')
     })
     declare documents: HasMany<typeof Document>
 }

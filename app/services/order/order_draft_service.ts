@@ -9,7 +9,7 @@ import Action from '#models/action'
 import ActionProof from '#models/action_proof'
 import OrderLeg from '#models/order_leg'
 import GeoService from '#services/geo_service'
-import PricingFilterService from '#services/pricing_filter_service'
+import PricingFilterService, { StopPriceInput } from '#services/pricing_filter_service'
 import PaymentPolicyService from '#services/payment_policy_service'
 import OrderPaymentService from '#services/order_payment_service'
 import { SimplePackageInfo } from '#services/pricing_service'
@@ -49,6 +49,18 @@ export default class OrderDraftService {
         protected vroomService: VroomService,
         protected orToolsService: OrToolsService
     ) { }
+
+    private assertTemplateAllowedForCompanyActivity(company: Company, template: string, context: 'INTERNAL' | 'TARGET') {
+        const activityType = String(company.activityType || '').toUpperCase()
+        const normalizedTemplate = String(template || '').toUpperCase()
+
+        // Regime rule: COMMANDE companies cannot create MISSION/VOYAGE orders.
+        if (activityType === 'COMMANDE' && ['MISSION', 'VOYAGE'].includes(normalizedTemplate)) {
+            throw new Error(
+                `E_ACTIVITY_TEMPLATE_FORBIDDEN: company ${company.id} activityType=COMMANDE cannot create template=${normalizedTemplate} in ${context} mode. Allowed template: COMMANDE.`
+            )
+        }
+    }
 
     /**
      * Reconstructs the VROOM-like route object from DB Legs + Stops.
@@ -155,19 +167,133 @@ export default class OrderDraftService {
             const user = await User.findOrFail(clientId, { client: effectiveTrx })
             await user.load('driverSetting', (q) => { if (effectiveTrx) q.useTransaction(effectiveTrx) })
 
-            const company = await Company.query({ client: effectiveTrx })
+            const ownedCompany = await Company.query({ client: effectiveTrx })
                 .where('owner_id', clientId)
+                .first()
+
+            // Active manager context: currentCompanyManaged has priority over ownership.
+            let company = ownedCompany
+            if (user.currentCompanyManaged) {
+                const managedCompany = await Company.query({ client: effectiveTrx })
+                    .where('id', user.currentCompanyManaged)
+                    .first()
+                if (managedCompany) {
+                    company = managedCompany
+                }
+            }
             // 1. Résolution du template par défaut
             // Hiérarchie : Préférence Driver > Préférence Company > Global Default ('COMMANDE')
             // Note : L'identité métier (activityType) de l'entreprise sert de base au defaultTemplate à la création.
-            const defaultTemplate = user.driverSetting?.defaultTemplate || company?.defaultTemplate || 'COMMANDE'
+            const defaultTemplate = user.driverSetting?.defaultTemplate || (company as any)?.defaultTemplate || 'COMMANDE'
 
             // 2. Le template final est soit celui précisé dans l'ordre, soit le défaut résolu
-            const template = data.template || defaultTemplate
+            const template = String(data.template || defaultTemplate || 'COMMANDE').toUpperCase()
+
+            const assignmentMode = String(data.assignment_mode || data.assignmentMode || 'GLOBAL').toUpperCase()
+            const targetCompanyIdFromPayload = data.targetCompanyId || data.target_company_id || null
+            const targetDriverIdFromPayload = data.targetDriverId || data.target_driver_id || null
+            const explicitRefId = data.ref_id || data.refId || null
+
+            // TARGET contract: either company target OR driver target is required.
+            if (assignmentMode === 'TARGET' && !targetCompanyIdFromPayload && !targetDriverIdFromPayload && !explicitRefId) {
+                throw new Error('TARGET assignment requires either targetCompanyId or targetDriverId (or ref_id).')
+            }
+
+            let targetCompanyIdResolved: string | null = targetCompanyIdFromPayload
+            let targetDriverIdResolved: string | null = targetDriverIdFromPayload
+
+            // Resolve ref_id as company or driver target for TARGET mode.
+            if (assignmentMode === 'TARGET' && explicitRefId) {
+                const refCompany = await Company.query({ client: effectiveTrx }).where('id', explicitRefId).first()
+                if (refCompany) {
+                    targetCompanyIdResolved = refCompany.id
+                } else {
+                    const refDriver = await User.query({ client: effectiveTrx })
+                        .where('id', explicitRefId)
+                        .where('is_driver', true)
+                        .select('id', 'company_id')
+                        .first()
+                    if (refDriver) {
+                        targetDriverIdResolved = refDriver.id
+                        targetCompanyIdResolved = refDriver.companyId || targetCompanyIdResolved
+                    }
+                }
+            }
+
+            if (assignmentMode === 'TARGET' && targetDriverIdResolved && !targetCompanyIdResolved) {
+                const targetDriver = await User.query({ client: effectiveTrx })
+                    .where('id', targetDriverIdResolved)
+                    .where('is_driver', true)
+                    .select('company_id')
+                    .first()
+                targetCompanyIdResolved = targetDriver?.companyId || null
+            }
+
+            if (assignmentMode === 'INTERNAL' && !company?.id) {
+                throw new Error('INTERNAL assignment requires an active manager company context (owner or currentCompanyManaged).')
+            }
+
+            if (assignmentMode === 'INTERNAL' && company) {
+                this.assertTemplateAllowedForCompanyActivity(company, template, 'INTERNAL')
+            }
+
+            let targetCompanyResolved: Company | null = null
+            if (assignmentMode === 'TARGET' && targetCompanyIdResolved) {
+                targetCompanyResolved = await Company.query({ client: effectiveTrx })
+                    .where('id', targetCompanyIdResolved)
+                    .first()
+
+                if (targetCompanyResolved) {
+                    this.assertTemplateAllowedForCompanyActivity(targetCompanyResolved, template, 'TARGET')
+                }
+            }
+
+            // B2B verification is only required for TARGET + MISSION.
+            if (assignmentMode === 'TARGET' && template === 'MISSION') {
+                if (!targetCompanyIdResolved) {
+                    throw new Error('TARGET + MISSION requires targetCompanyId (directly or resolved from target driver/ref).')
+                }
+
+                const targetCompanyQuery =
+                    targetCompanyResolved ||
+                    await Company.query({ client: effectiveTrx })
+                        .where('id', targetCompanyIdResolved)
+                        .first()
+
+                if (!targetCompanyQuery) {
+                    throw new Error(`Target company ${targetCompanyIdResolved} not found`)
+                }
+
+                const isManagerOfTarget =
+                    targetCompanyQuery.ownerId === clientId || user.currentCompanyManaged === targetCompanyQuery.id
+
+                if (!isManagerOfTarget) {
+                    const isAuthorized = await db.from('company_b2b_partners')
+                        .useTransaction(effectiveTrx)
+                        .where('company_id', targetCompanyIdResolved)
+                        .where('client_id', clientId)
+                        .where('status', 'ACTIVE')
+                        .first()
+
+                    if (!isAuthorized) {
+                        throw new Error(`Unauthorized: Client ${clientId} is not an active B2B partner for company ${targetCompanyIdResolved}. TARGET + MISSION requires explicit authorization.`)
+                    }
+                }
+            }
+
+            const resolvedCompanyId =
+                assignmentMode === 'GLOBAL'
+                    ? null
+                    : assignmentMode === 'INTERNAL'
+                        ? (company?.id || null)
+                        : (targetCompanyIdResolved || null)
+
+            const normalizedRefId =
+                explicitRefId || (assignmentMode === 'TARGET' ? (targetDriverIdResolved || targetCompanyIdResolved || null) : null)
 
             // Receiver Validation Logic
             if (company && data.from_receiver) {
-                const settings = company.settings || {}
+                const settings = (company as any)?.settings || {}
                 const receivers = settings.receivers || {}
                 const templateConfig = receivers[template] || {}
 
@@ -185,11 +311,14 @@ export default class OrderDraftService {
 
             const order = await Order.create({
                 clientId,
+                initiatorId: clientId,
+                companyId: resolvedCompanyId,
                 status: 'DRAFT',
                 template: template,
-                assignmentMode: data.assignment_mode || 'GLOBAL',
+                assignmentMode: assignmentMode as 'GLOBAL' | 'INTERNAL' | 'TARGET',
                 priority: data.priority || 'MEDIUM',
-                refId: data.ref_id || null,
+                refId: normalizedRefId,
+                vehicleId: data.vehicleId || null,
                 assignmentAttemptCount: 0,
                 metadata: data.metadata || {}
             }, { client: effectiveTrx })
@@ -411,11 +540,25 @@ export default class OrderDraftService {
                 const visitedIds = new Set<string>() // empty for draft
                 const startLocation = await this.getDriverStartLocation(order.driverId) || [-3.967, 5.350] as [number, number]
 
-                // Helper to format as VROOM-like response for frontend compatibility
-                const calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
-                    .then(async res => await this.mapOrToolsToVroomFormat(res, order, startLocation))
-
-                promises.push(calcPromise)
+                // MISSION / INTERVENTION Bypass: Use direct sequence instead of OR-Tools optimization
+                if (order.template === 'MISSION' || order.isIntervention) {
+                    const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
+                    const waypoints = [
+                        { coordinates: startLocation, type: 'break' as const },
+                        ...virtualState.steps.flatMap((s: any) => s.stops || []).map((stop: any) => ({
+                            coordinates: stop.coordinates,
+                            address_text: stop.address_text,
+                            type: 'break' as const
+                        }))
+                    ]
+                    const calcPromise = GeoService.calculateOptimizedRoute(waypoints)
+                    promises.push(calcPromise)
+                } else {
+                    // Helper to format as VROOM-like response for frontend compatibility
+                    const calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
+                        .then(async res => await this.mapOrToolsToVroomFormat(res, order, startLocation))
+                    promises.push(calcPromise)
+                }
                 sources.live = 'ortools'
             }
         } else {
@@ -435,19 +578,32 @@ export default class OrderDraftService {
                 promises.push(Promise.resolve(JSON.parse(cached)))
                 sources.pending = 'redis'
             } else {
-                // Calculate and Cache
                 const visitedIds = new Set<string>()
                 const startLocation = await this.getDriverStartLocation(order.driverId) || [-3.967, 5.350] as [number, number]
 
-                const calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
-                    .then(async (res) => {
-                        const formatted = await this.mapOrToolsToVroomFormat(res, order, startLocation)
-                        if (formatted) {
-                            // Cache for 1h
-                            await redis.set(cacheKey, JSON.stringify(formatted), 'EX', 3600)
-                        }
-                        return formatted
-                    })
+                let calcPromise: Promise<any>
+                if (order.template === 'MISSION' || order.isIntervention) {
+                    const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
+                    const waypoints = [
+                        { coordinates: startLocation, type: 'break' as const },
+                        ...virtualState.steps.flatMap((s: any) => s.stops || []).map((stop: any) => ({
+                            coordinates: stop.coordinates,
+                            address_text: stop.address_text,
+                            type: 'break' as const
+                        }))
+                    ]
+                    calcPromise = GeoService.calculateOptimizedRoute(waypoints)
+                } else {
+                    calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
+                        .then(async (res) => {
+                            const formatted = await this.mapOrToolsToVroomFormat(res, order, startLocation)
+                            if (formatted) {
+                                // Cache for 1h
+                                await redis.set(cacheKey, JSON.stringify(formatted), 'EX', 3600)
+                            }
+                            return formatted
+                        })
+                }
                 promises.push(calcPromise)
                 sources.pending = 'ortools'
             }
@@ -567,12 +723,15 @@ export default class OrderDraftService {
                     return {
                         id: stop.id,
                         address_id: stop.addressId,
-                        address: stop.address ? stop.address.toJSON() : null,
+                        address: typeof stop.address?.toJSON === 'function' ? stop.address.toJSON() : (stop.address || null),
                         address_text: stop.address?.formattedAddress || stop.address?.street || '',
                         coordinates: [stop.address?.lng || 0, stop.address?.lat || 0],
+                        contact: (stop as any).contact,
                         opening_hours: stop.client?.opening_hours || null,
                         display_order: stop.displayOrder,
                         execution_order: stop.executionOrder,
+                        status: stop.status,
+                        metadata: stop.metadata,
                         is_pending_change: stop.isPendingChange,
                         is_delete_required: stop.isDeleteRequired,
                         actions: stopActions.map(action => {
@@ -582,7 +741,10 @@ export default class OrderDraftService {
                                 type: action.type,
                                 quantity: action.quantity,
                                 transit_item_id: action.transitItemId,
+                                transit_item: typeof action.transitItem?.toJSON === 'function' ? action.transitItem.toJSON() : (action.transitItem || null),
                                 service_time: action.serviceTime || 300,
+                                status: action.status,
+                                metadata: action.metadata,
                                 requirements: item?.metadata?.requirements || [],
                                 is_pending_change: action.isPendingChange,
                                 is_delete_required: action.isDeleteRequired
@@ -647,33 +809,43 @@ export default class OrderDraftService {
         const routeDetails = await GeoService.calculateOptimizedRoute(allStopsForRouting)
         if (!routeDetails) throw new Error('Route calculation failed')
 
-        const pricingPackages: SimplePackageInfo[] = order.transitItems.map((ti: TransitItem) => ({
-            dimensions: {
-                weight: ti.weight ?? 0,
-                ...ti.dimensions
-            },
-            quantity: 1
-        }))
+        // const pricingPackages: SimplePackageInfo[] = order.transitItems.map((ti: TransitItem) => ({
+        //     dimensions: {
+        //         weight: ti.weight ?? 0,
+        //         ...ti.dimensions
+        //     },
+        //     quantity: 1
+        // }))
 
         // Resolver le filtre de prix applicable
         const filter = await PricingFilterService.resolve(order.driverId, order.clientId, order.template, trx)
         if (!filter) throw new Error('Aucun filtre de prix trouvé pour cette commande')
 
-        const stopPriceInputs = allStopsForRouting.slice(1).map((_, idx) => ({
-            distanceKm: (routeDetails.legs[idx]?.distance_meters || 0) / 1000,
-            durationSeconds: routeDetails.legs[idx]?.duration_seconds || 0,
-            weightKg: 0, // À raffiner si on veut le poids par stop
-        }))
+        const stopPriceInputs: StopPriceInput[] = []
+        let currentLegIdx = 0
+        virtualState.steps.forEach((step: any) => {
+            step.stops.forEach((stop: any) => {
+                const overrideAmount = stop.metadata?.price_override?.is_active ? stop.metadata.price_override.amount : undefined
+                stopPriceInputs.push({
+                    distanceKm: (routeDetails.legs[currentLegIdx]?.distance_meters || 0) / 1000,
+                    durationSeconds: routeDetails.legs[currentLegIdx]?.duration_seconds || 0,
+                    weightKg: 0, // À raffiner si on veut le poids par stop
+                    overrideAmount
+                })
+                currentLegIdx++
+            })
+        })
 
-        const { total, stopBreakdowns } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
+        const { calculatedAmount, finalAmount, stopBreakdowns } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
 
         // Résoudre la part chauffeur via la policy et le moteur de split
         const policy = await PaymentPolicyService.resolve(order.driverId, order.clientId, order.template, trx)
-        const splits = OrderPaymentService.calculateSplits(total, policy, order.companyId)
+        const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId)
         const driverRemuneration = splits.driverAmount
 
         const pricing = {
-            clientFee: total,
+            clientFee: finalAmount,
+            calculatedAmount,
             driverRemuneration,
             currency: 'XOF',
             breakdown: stopBreakdowns
@@ -729,7 +901,7 @@ export default class OrderDraftService {
 
             const validation = LogisticsService.validateOrderConsistency(virtualStateForValidation, 'SUBMIT')
             if (!validation.success || (validation.warnings && validation.warnings.length > 0)) {
-                const errors = validation.errors.map(e => `[ERROR] [${e.path}] ${e.message}`)
+                const errors = validation.validationErrors.map(e => `[ERROR] [${e.path}] ${e.message}`)
                 const warnings = (validation.warnings || []).map(w => `[WARNING] [${w.path}] ${w.message}`)
                 const allMessages = [...errors, ...warnings].join(', ')
                 throw new Error(`Order validation failed: ${allMessages}`)
@@ -742,6 +914,10 @@ export default class OrderDraftService {
             await order.load('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
 
             await this.calculateOrderStats(order, effectiveTrx)
+
+            // ── GENERATE PAYMENT INTENTS ──
+            // Based on order template and resolved policy
+            await OrderPaymentService.generateIntentsForOrder(order, effectiveTrx)
 
             order.status = 'PENDING'
             order.statusHistory = [
@@ -1043,40 +1219,59 @@ export default class OrderDraftService {
      * Recalculates route, timing and pricing.
      */
     async calculateOrderStats(order: Order, effectiveTrx: TransactionClientContract, options: { forcedStartLocation?: [number, number] } = {}) {
+        // MissionService can call this with a plain Order.find() entity (without preloads).
+        if (!(order as any).$preloaded?.steps) {
+            await order.load('steps', (q) =>
+                q.orderBy('sequence', 'asc').preload('stops', (sq) =>
+                    sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))
+                )
+            )
+        }
+        if (!(order as any).$preloaded?.transitItems) {
+            await order.load('transitItems')
+        }
+
         // 0. Retrieve Driver position or fallback to Cocody (Lat: 5.350, Lng: -3.967) for re-optimization
         const startLocation = options.forcedStartLocation || await this.getDriverStartLocation(order.driverId) || [-3.967, 5.350]
 
         const execution = order.metadata?.route_execution || { visited: [], remaining: [] }
         const visitedIds = new Set(execution.visited || [])
 
-        // 1. Get optimal sequence for REMAINING stops from VROOM
-        const liveState = this.buildVirtualState(order, { view: 'DRIVER' })
+        // 1. Get optimal sequence for REMAINING stops from VROOM (Skips for VOYAGE and MISSION)
+        let routeResult: any = null
 
-        // Filter out visited stops from the optimization pool
-        if (liveState.steps) {
-            liveState.steps = liveState.steps.map((step: any) => ({
-                ...step,
-                stops: step.stops.filter((s: any) => !visitedIds.has(s.id))
-            })).filter((step: any) => step.stops.length > 0)
+        if (order.template !== 'VOYAGE' && order.template !== 'MISSION') {
+            const liveState = this.buildVirtualState(order, { view: 'DRIVER' })
+
+            // Filter out visited stops from the optimization pool
+            if (liveState.steps && Array.isArray(liveState.steps)) {
+                liveState.steps = liveState.steps.map((step: any) => ({
+                    ...step,
+                    stops: (step.stops || []).filter((s: any) => !visitedIds.has(s.id))
+                })).filter((step: any) => step.stops.length > 0)
+            }
+
+            routeResult = await this.optimizeViaOrTools(order, { startLocation, visitedIds: visitedIds as Set<string> })
         }
 
-        const routeResult = await this.optimizeViaOrTools(order, { startLocation, visitedIds: visitedIds as Set<string> })
-
-        // If optimization returns null (e.g. no stops to optimize), we still need to ensure metadata is consistent
+        // If optimization returns null (e.g. no stops to optimize, or bypassed template), we still need to ensure metadata is consistent
         // This handles cases where order is just created with stops but route hasn't been calculated yet
         const meta = order.metadata || {}
 
         let newRemaining: string[] = []
         let planned: string[] = []
 
-        if (routeResult && routeResult.status === 'success') {
-            newRemaining = routeResult.stopOrder.map((s: any) => s.stop_id)
+        const optimizedStopOrder: any[] = Array.isArray(routeResult?.stopOrder) ? routeResult.stopOrder : []
+        const hasValidOptimizedRoute = routeResult && routeResult.status === 'success' && optimizedStopOrder.length > 0
+
+        if (hasValidOptimizedRoute) {
+            newRemaining = optimizedStopOrder.map((s: any) => s.stop_id)
             // Concatenation of Past + Optimized Future
             planned = [...(execution?.visited || []), ...newRemaining]
         } else {
             // Fallback: If optimization didn't run or failed, use current stops order as default plan
             // This ensures new orders have a valid initial state
-            const allStops = order.steps.flatMap(s => s.stops || [])
+            const allStops = (order.steps || []).flatMap((s: any) => s.stops || [])
             newRemaining = allStops.filter(s => !visitedIds.has(s.id)).map(s => s.id)
             planned = allStops.map(s => s.id)
         }
@@ -1089,37 +1284,47 @@ export default class OrderDraftService {
         order.metadata = meta
         await order.useTransaction(effectiveTrx).save()
 
-        if (!routeResult || routeResult.status !== 'success') return
+        const allStops = (order.steps || []).flatMap((s: any) => s.stops || [])
 
-        // 2. Update executionOrder on each stop based on OR-Tools result
-        const allStops = order.steps.flatMap((s: any) => s.stops || [])
-
-        // Reset executionOrder for all stops before applying new results
-        for (const stop of allStops) {
-            stop.executionOrder = null
-        }
-
-        let maxExecutionOrder = -1
-
-        // Apply optimized order
-        for (const optimizedStop of routeResult.stopOrder) {
-            const stop = allStops.find(s => s.id === optimizedStop.stop_id)
-            if (stop) {
-                stop.executionOrder = optimizedStop.execution_order
-                maxExecutionOrder = Math.max(maxExecutionOrder, optimizedStop.execution_order)
-                await stop.useTransaction(effectiveTrx).save()
+        if (hasValidOptimizedRoute) {
+            // 2. Update executionOrder on each stop based on OR-Tools result
+            // Reset executionOrder for all stops before applying new results
+            for (const stop of allStops) {
+                stop.executionOrder = null
             }
-        }
 
-        // Handle dropped stops (append to end)
-        if (routeResult.droppedStops && routeResult.droppedStops.length > 0) {
-            for (const droppedStopId of routeResult.droppedStops) {
-                const stop = allStops.find(s => s.id === droppedStopId)
+            let maxExecutionOrder = -1
+
+            // Apply optimized order
+            for (const optimizedStop of optimizedStopOrder) {
+                const stop = allStops.find((s: any) => s.id === optimizedStop.stop_id)
                 if (stop) {
-                    maxExecutionOrder++
-                    stop.executionOrder = maxExecutionOrder
+                    stop.executionOrder = optimizedStop.execution_order
+                    maxExecutionOrder = Math.max(maxExecutionOrder, optimizedStop.execution_order)
                     await stop.useTransaction(effectiveTrx).save()
                 }
+            }
+
+            // Handle dropped stops (append to end)
+            if (routeResult.droppedStops && routeResult.droppedStops.length > 0) {
+                for (const droppedStopId of routeResult.droppedStops) {
+                    const stop = allStops.find((s: any) => s.id === droppedStopId)
+                    if (stop) {
+                        maxExecutionOrder++
+                        stop.executionOrder = maxExecutionOrder
+                        await stop.useTransaction(effectiveTrx).save()
+                    }
+                }
+            }
+        } else {
+            // Fallback: maintain natural ordering for VOYAGE, MISSION, or failed optimizations
+            let fallbackExecutionOrder = 0
+            for (const stop of allStops) {
+                if (stop.executionOrder === null || stop.executionOrder === undefined) {
+                    stop.executionOrder = fallbackExecutionOrder
+                    await stop.useTransaction(effectiveTrx).save()
+                }
+                fallbackExecutionOrder++
             }
         }
 
@@ -1134,18 +1339,20 @@ export default class OrderDraftService {
             }
         }
 
-        // 3. Sort steps and stops based EXCLUSIVELY on executionOrder (visited stops keep their order from history)
+        // 4. Sort steps and stops based EXCLUSIVELY on executionOrder (visited stops keep their order from history)
         // For visited stops, we could use their visited index, but for the rest, executionOrder is king.
 
         // Sorting stops within steps
-        order.steps.forEach(s => {
+        const currentSteps = order.steps || []
+
+        currentSteps.forEach(s => {
             if (s.stops) {
                 s.stops.sort((a, b) => (a.executionOrder ?? 0) - (b.executionOrder ?? 0))
             }
         })
 
         // Sorting steps by their first stop's executionOrder
-        order.steps = order.steps.sort((a, b) => {
+        order.steps = currentSteps.sort((a, b) => {
             const stopA = a.stops?.[0]
             const stopB = b.stops?.[0]
             if (!stopA || !stopB) return 0
@@ -1252,41 +1459,69 @@ export default class OrderDraftService {
             order.legId = leg.id
         }
 
-        const pricingPackages: SimplePackageInfo[] = order.transitItems.map(ti => ({
+        const pricingPackages: SimplePackageInfo[] = order.transitItems?.map((ti: any) => ({
             dimensions: {
                 weight: ti.weight ?? 0,
                 ...ti.dimensions
             },
             quantity: 1
-        }))
+        })) || []
 
         // Resolver le filtre de prix applicable
         const filter = await PricingFilterService.resolve(order.driverId, order.clientId, order.template, effectiveTrx)
         if (filter) {
-            const stopPriceInputs = order.totalDistanceMeters ? [{
-                distanceKm: order.totalDistanceMeters / 1000,
-                durationSeconds: order.totalDurationSeconds || 0,
-                weightKg: pricingPackages.reduce((acc, p) => acc + (p.dimensions?.weight || 0), 0) / 1000
-            }] : []
+            // Preserve manually overridden price if one exists (order-level)
+            const existingPricingData = order.pricingData as any
+            const orderOverrideAmount = existingPricingData?.isPriceOverridden ? existingPricingData.clientFee : undefined
 
-            const { total } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
+            const allStops = order.steps.flatMap((s: any) => s.stops || [])
+            const stopPriceInputs: StopPriceInput[] = []
 
-            // Résoudre la part chauffeur via la policy
+            if (allStops.length > 0 && order.leg) {
+                // If we have stops and leg info, calculate per-stop
+                for (const stop of allStops) {
+                    const stopMeta = stop.metadata || {}
+                    const routeInfo = stopMeta.route_info || {}
+                    const overrideAmount = stopMeta.price_override?.is_active ? stopMeta.price_override.amount : undefined
+
+                    stopPriceInputs.push({
+                        distanceKm: (routeInfo.distance_from_start || 0) / 1000,
+                        durationSeconds: routeInfo.arrival_offset || 0,
+                        weightKg: 0, // refinement possible here
+                        overrideAmount
+                    })
+                }
+            } else {
+                // Fallback to order-level summary
+                stopPriceInputs.push({
+                    distanceKm: (order.totalDistanceMeters || 0) / 1000,
+                    durationSeconds: order.totalDurationSeconds || 0,
+                    weightKg: pricingPackages.reduce((acc, p) => acc + (p.dimensions?.weight || 0), 0) / 1000,
+                    overrideAmount: orderOverrideAmount
+                })
+            }
+
+            const { calculatedAmount, finalAmount, stopBreakdowns } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
+
+            // Résoudre la part chauffeur via la policy et le moteur de split
             const policy = await PaymentPolicyService.resolve(order.driverId, order.clientId, order.template, effectiveTrx)
-            const driverPercent = policy?.platformCommissionPercent ? (100 - policy.platformCommissionPercent) : 95
-            const driverRemuneration = Math.round(total * driverPercent / 100)
+            const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId)
+            const driverRemuneration = splits.driverAmount
 
             order.pricingData = {
-                clientFee: total,
+                clientFee: finalAmount,
+                calculatedAmount,
                 driverRemuneration,
-                currency: 'XOF'
+                isPriceOverridden: (existingPricingData?.isPriceOverridden || stopBreakdowns.some(b => b.isPriceOverridden)),
+                currency: 'XOF',
+                breakdown: stopBreakdowns
             } as any
         }
 
-        // 3. Centralized Notification: Notify all parties after successful recalculation
+        // 5. Centralized Notification: Notify all parties after successful recalculation
         // We use a commit hook to ensure we only notify if the DB update persisted.
         effectiveTrx.after('commit', () => {
-            wsService.notifyOrderRouteUpdate(order.id, order.driverId, order.clientId)
+            wsService.notifyOrderRouteUpdate(order.id, order.driverId, order.clientId, { template: order.template || undefined })
         })
     }
 

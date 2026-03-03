@@ -32,8 +32,8 @@ export default class ActionProof extends BaseModel {
     declare isVerified: boolean
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v: string) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: any
 

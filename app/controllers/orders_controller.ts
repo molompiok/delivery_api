@@ -53,6 +53,22 @@ export default class OrdersController {
     }
 
     /**
+     * Publish a draft or pending order.
+     */
+    async publish({ params, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const order = await this.orderService.publishOrder(params.id, user.id)
+            return response.ok({
+                message: 'Order published successfully',
+                order: order.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
      * Pushes pending shadow updates to the stable order view.
      */
     async pushUpdates({ params, response, auth }: HttpContext) {

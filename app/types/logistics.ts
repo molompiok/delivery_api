@@ -1,5 +1,7 @@
 export interface PricingDetails {
     clientFee: number
+    calculatedAmount?: number
+    isPriceOverridden?: boolean
     driverRemuneration: number
     currency?: string
     breakdown?: {
@@ -12,6 +14,7 @@ export interface PricingDetails {
             fragile?: number
         }
     }
+    matrix?: Record<string, Record<string, number>>
 }
 
 export enum WaypointStatus {
@@ -59,6 +62,7 @@ export interface LogisticsValidationResult {
 
 export interface LogisticsOperationResult<T> {
     entity: T
+    validationErrors?: LogisticsValidationError[]
 }
 
 export interface OrderMetadata {
@@ -84,5 +88,6 @@ export interface OrderMetadata {
     driver_choices?: {
         next_stop_id?: string
     }
+    seatMap?: Record<string, string>
     [key: string]: any
 }

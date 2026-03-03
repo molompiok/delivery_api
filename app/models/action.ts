@@ -52,21 +52,21 @@ export default class Action extends BaseModel {
     declare serviceTime: number
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v: string) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare confirmationRules: any
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v: string) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: any
 
     @column({
         serializeAs: 'statusHistory',
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify([]),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify([]),
+        consume: (v: string) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare statusHistory: Array<{ status: string; timestamp: string; note?: string }>
 

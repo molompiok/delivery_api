@@ -1,13 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import MissionService from '#services/mission_service'
-import vine from '@vinejs/vine'
-
-const verifyCodeValidator = vine.compile(
-    vine.object({
-        code: vine.string().trim().minLength(6).maxLength(6),
-    })
-)
 
 @inject()
 export default class MissionsController {
@@ -125,7 +118,7 @@ export default class MissionsController {
     async verifyCode({ request, response, params, auth }: HttpContext) {
         try {
             auth.getUserOrFail()
-            const { code } = await request.validateUsing(verifyCodeValidator)
+            const code = request.input('code')
             const leg = await this.missionService.verifyCode(params.id, code)
 
             return response.ok({
@@ -223,12 +216,6 @@ export default class MissionsController {
         try {
             const user = auth.getUserOrFail()
 
-            // Log Requester Info
-            // const DriverSetting = (await import('#models/driver_setting')).default
-            // const ds = await DriverSetting.query().where('userId', user.id).preload('currentCompany').first()
-            // console.log(`\n[API] 📥 Mission Request from: ${user.fullName} (${user.phone})`)
-            // console.log(`      🏢 Working for/Company: ${ds?.currentCompany?.name || 'Indépendant'}`)
-
             const filter = request.input('filter')
             const page = request.input('page') ? Number(request.input('page')) : 1
             const limit = request.input('limit') ? Number(request.input('limit')) : 20
@@ -244,14 +231,6 @@ export default class MissionsController {
                 missions = result as any[]
             }
 
-            // Log Missions Summary
-            // console.log(`[API] 📤 Sending ${missions.length} Missions:`)
-            // missions.forEach((m: any, i) => {
-            //     //@ts-ignore
-            //     console.log(`      #${i + 1}: ${m.id} | Status: ${m.status} | Client: ${m.client?.fullName} | Company: ${m.client?.company?.name || 'IDEP'}`)
-            // })
-            // console.log(`\n`)
-
             if (page && limit) {
                 return response.ok({
                     data: missions.map(m => m.serialize()),
@@ -262,6 +241,30 @@ export default class MissionsController {
             return response.ok(missions.map(m => m.serialize()))
         } catch (error: any) {
             return response.internalServerError({ message: error.message })
+        }
+    }
+
+    /**
+     * Create an emergency intervention.
+     */
+    async createIntervention(ctx: HttpContext) {
+        const { request, response, auth } = ctx
+        const container = (ctx as any).container
+        try {
+            const user = auth.getUserOrFail()
+            const payload = request.all()
+
+            const OrderService = (await import('#services/order/index')).default
+            const orderService = await container.make(OrderService)
+
+            const order = await orderService.createIntervention(user.id, payload)
+
+            return response.created({
+                message: 'Emergency intervention created',
+                order: order.serialize()
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
         }
     }
 }

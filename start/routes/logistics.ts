@@ -9,6 +9,18 @@ const ActionsController = () => import('#controllers/actions_controller')
 const TransitItemsController = () => import('#controllers/transit_items_controller')
 const GeoController = () => import('#controllers/geo_controller')
 
+const VoyagesController = () => import('#controllers/voyages_controller')
+const BookingsController = () => import('#controllers/bookings_controller')
+const CompanyB2BsController = () => import('#controllers/company_b_2_bs_controller')
+
+// --- PUBLIC VOYAGE ROUTES ---
+router.group(() => {
+    router.get('/voyages', [VoyagesController, 'index'])
+    router.get('/voyages/:id', [VoyagesController, 'show'])
+    router.get('/voyages/:id/seats', [VoyagesController, 'seats'])
+}).prefix('/v1')
+
+// --- AUTH PROTECTED ROUTES ---
 router.group(() => {
     // Geo / Places
     router.get('/geo/reverse', [GeoController, 'reverseGeocode'])
@@ -18,6 +30,7 @@ router.group(() => {
     router.post('/orders', [OrdersController, 'store'])
     router.post('/orders/initiate', [OrdersController, 'initiate'])
     router.post('/orders/:id/submit', [OrdersController, 'submit'])
+    router.post('/orders/:id/publish', [OrdersController, 'publish']) // New: Publish VOYAGE
     router.post('/orders/:id/push-updates', [OrdersController, 'pushUpdates'])
     router.post('/orders/:id/revert', [OrdersController, 'revertChanges'])
     router.get('/orders/:id/estimate-draft', [OrdersController, 'estimateDraft'])
@@ -31,6 +44,9 @@ router.group(() => {
     router.post('/orders/:id/driver/next-stop', [OrdersController, 'setNextStop'])
     router.post('/orders/:id/recalculate', [OrdersController, 'recalculate'])
 
+    // Bookings
+    router.post('/voyages/:id/bookings', [BookingsController, 'store'])
+
     // Granular Order Management
     router.post('/orders/:orderId/steps', [StepsController, 'store'])
     router.patch('/steps/:id', [StepsController, 'update'])
@@ -39,6 +55,7 @@ router.group(() => {
     router.post('/steps/:stepId/stops', [StopsController, 'store'])
     router.patch('/stops/:id', [StopsController, 'update'])
     router.delete('/stops/:id', [StopsController, 'destroy'])
+    router.post('/stops/:id/restore-price', [StopsController, 'restorePrice'])
 
     router.post('/stops/:stopId/actions', [ActionsController, 'store'])
     router.patch('/actions/:id', [ActionsController, 'update'])
@@ -46,6 +63,11 @@ router.group(() => {
 
     router.patch('/items/:id', [TransitItemsController, 'update'])
 
+    // Company B2B Partners
+    router.get('/companies/:companyId/b2b-clients', [CompanyB2BsController, 'index'])
+    router.post('/companies/:companyId/b2b-clients', [CompanyB2BsController, 'store'])
+    router.patch('/companies/:companyId/b2b-clients/:id', [CompanyB2BsController, 'update'])
+    router.delete('/companies/:companyId/b2b-clients/:id', [CompanyB2BsController, 'destroy'])
 
     // IDEP Vehicles
     router.get('/idep/vehicles', [IdepVehicleController, 'index'])

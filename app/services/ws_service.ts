@@ -67,7 +67,7 @@ class WsService {
     /**
      * Notify all parties (Driver & Manager/Dashboard) that an order route has been updated.
      */
-    public notifyOrderRouteUpdate(orderId: string, driverId?: string | null, clientId?: string | null) {
+    public notifyOrderRouteUpdate(orderId: string, driverId?: string | null, clientId?: string | null, opts: { template?: string } = {}) {
         const payload = {
             orderId,
             message: 'Route updated. Refresh map.',
@@ -86,7 +86,7 @@ class WsService {
         this.emitToRoom('logistics', 'route_updated', payload)
 
         // 4. Notify the driver-specific room
-        if (driverId) {
+        if (driverId && opts.template !== 'VOYAGE') {
             this.emitToRoom(`driver:${driverId}`, 'route_updated', payload)
         }
     }

@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon'
 import { BaseModel, beforeCreate, column, belongsTo } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
-import OrderPayment from '#models/order_payment'
+import PaymentIntent from '#models/payment_intent'
 import Order from '#models/order'
 import User from '#models/user'
 import Stop from '#models/stop'
@@ -21,7 +21,7 @@ export default class CodCollection extends BaseModel {
     }
 
     @column()
-    declare orderPaymentId: string
+    declare paymentIntentId: string
 
     @column()
     declare orderId: string
@@ -75,8 +75,8 @@ export default class CodCollection extends BaseModel {
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
 
-    @belongsTo(() => OrderPayment)
-    declare orderPayment: BelongsTo<typeof OrderPayment>
+    @belongsTo(() => PaymentIntent)
+    declare paymentIntent: BelongsTo<typeof PaymentIntent>
 
     @belongsTo(() => Order)
     declare order: BelongsTo<typeof Order>

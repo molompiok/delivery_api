@@ -4,6 +4,7 @@ import emitter from '@adonisjs/core/services/emitter'
 import redis from '@adonisjs/redis/services/main'
 import Order from '#models/order'
 import OrderStatusUpdated from '#events/order_status_updated'
+import wsService from '#services/ws_service'
 import { inject } from '@adonisjs/core'
 import StepService from './step_service.js'
 import StopService from './stop_service.js'
@@ -16,6 +17,8 @@ import PricingService from '../pricing_service.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import PayloadMapper from './payload_mapper.js'
 import OrderStructureChanged from '#events/order_structure_changed'
+import vine from '@vinejs/vine'
+import { createOrderSchema } from '#validators/order_validator'
 
 @inject()
 export default class OrderService {
@@ -143,7 +146,7 @@ export default class OrderService {
      */
     private formatOrderSummary(order: Order, redisDriverState?: any) {
         const metadata = order.metadata || {}
-        const routeExec = metadata.route_execution || {}
+        const routeExec = metadata.route_execution || { visited: [] as string[], remaining: [] as string[], planned: [] as string[] }
         const visited = routeExec.visited || []
         const remaining = routeExec.remaining || []
         const planned = routeExec.planned || []
@@ -309,25 +312,7 @@ export default class OrderService {
      * Submits a draft order to PENDING status.
      */
     async submitOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
-        const order = await Order.query({ client: trx })
-            .where('id', orderId)
-            .where('clientId', clientId)
-            .firstOrFail()
-
-        order.status = 'PENDING'
-        if (trx) {
-            await order.useTransaction(trx).save()
-        } else {
-            await order.save()
-        }
-
-        emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
-            orderId: order.id,
-            status: order.status,
-            clientId: order.clientId
-        }))
-
-        return order
+        return this.orderDraftService.submitOrder(orderId, clientId, trx)
     }
 
     /**
@@ -382,7 +367,7 @@ export default class OrderService {
             await order.useTransaction(effectiveTrx).save()
 
             const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
-            res.validationErrors = LogisticsService.validateDraftConsistency(virtualState).errors
+            res.validationErrors = LogisticsService.validateDraftConsistency(virtualState).validationErrors
 
             if (!options.trx) await effectiveTrx.commit()
 
@@ -676,6 +661,18 @@ export default class OrderService {
 
                 if (stepData.stops) {
                     for (const stopData of stepData.stops) {
+                        // Inject price override if provided in payload
+                        if (payload.priceOverrides) {
+                            const stopKey = stopData.id || stopData.reference_id || stopData.reference
+                            if (stopKey && payload.priceOverrides[stopKey] !== undefined) {
+                                stopData.metadata = stopData.metadata || {}
+                                stopData.metadata.price_override = {
+                                    is_active: true,
+                                    amount: payload.priceOverrides[stopKey]
+                                }
+                            }
+                        }
+
                         if (stopData.id) {
                             await this.stopService.updateStop(stopData.id, clientId, stopData, trx)
                         } else {
@@ -829,10 +826,11 @@ export default class OrderService {
      * Full order creation (Bulk).
      */
     async createOrder(clientId: string, payload: any, trx?: TransactionClientContract) {
+        const validatedPayload = await vine.validate({ schema: createOrderSchema, data: payload })
         const effectiveTrx = trx || await db.transaction()
         try {
-            const order = await this.initiateOrder(clientId, {}, effectiveTrx)
-            await this.updateOrder(order.id, clientId, payload, effectiveTrx)
+            const order = await this.initiateOrder(clientId, validatedPayload, effectiveTrx)
+            await this.updateOrder(order.id, clientId, validatedPayload, effectiveTrx)
             if (!trx) await effectiveTrx.commit()
             return order
         } catch (error) {
@@ -846,5 +844,96 @@ export default class OrderService {
      */
     async estimateDraft(orderId: string, clientId: string) {
         return this.orderDraftService.estimateDraft(orderId, clientId)
+    }
+
+    /**
+     * Restores the original price for a stop.
+     */
+    async restoreStopPrice(stopId: string, clientId: string) {
+        return this.stopService.restorePrice(stopId, clientId)
+    }
+
+    /**
+     * Transition a DRAFT or PENDING order to PUBLISHED.
+     * Mainly for VOYAGE template.
+     */
+    async publishOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .where('clientId', clientId)
+                .firstOrFail()
+
+            if (order.status !== 'DRAFT' && order.status !== 'PENDING') {
+                throw new Error(`Cannot publish order in status: ${order.status}`)
+            }
+
+            order.status = 'PUBLISHED'
+            order.statusHistory = [
+                ...(order.statusHistory || []),
+                {
+                    status: 'PUBLISHED',
+                    timestamp: DateTime.now().toISO()!,
+                    note: 'Order published for public viewing/booking'
+                }
+            ]
+            await order.useTransaction(effectiveTrx).save()
+
+            // Notify the driver that the voyage is PUBLISHED
+            if (order.driverId) {
+                wsService.emitToRoom(`driver:${order.driverId}`, 'order_published', {
+                    orderId: order.id,
+                    message: 'Le voyage a été publié et est ouvert aux réservations.'
+                })
+            }
+
+            if (!trx) await effectiveTrx.commit()
+            return order
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Creates an emergency INTERVENTION order.
+     */
+    async createIntervention(clientId: string, data: any, trx?: TransactionClientContract) {
+        // Force intervention flags
+        const interventionData = {
+            ...data,
+            template: 'MISSION',
+            assignmentMode: 'TARGET', // Explicitly trigger B2B targeting validation
+            isIntervention: true
+        }
+
+        // We use createOrder which goes through initiateOrder (Draft validation)
+        // and then updateOrder. This ensures all B2B checks run.
+        const order = await this.createOrder(clientId, interventionData, trx)
+
+        // Ensure flags are persisted perfectly and upgrade to PENDING.
+        // Internal manager bypasses and B2B active clients will reach here successfully.
+        order.isIntervention = true
+        order.template = 'MISSION'
+        order.assignmentMode = 'TARGET'
+        order.status = 'PENDING'
+
+        order.statusHistory = [
+            ...(order.statusHistory || []),
+            {
+                status: 'PENDING',
+                timestamp: DateTime.now().toISO()!,
+                note: 'Emergency intervention accepted and pending driver assignment.'
+            }
+        ]
+
+        if (trx) {
+            await order.useTransaction(trx).save()
+        } else {
+            await order.save()
+        }
+
+        return order
     }
 }

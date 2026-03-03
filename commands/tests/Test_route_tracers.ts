@@ -20,7 +20,7 @@ export default class TestRouteTracers extends BaseCommand {
         const Stop = (await import('#models/stop')).default
         const OrderService = (await import('#services/order/index')).default
         const OrderDraftService = (await import('#services/order/order_draft_service')).default
-        const RedisService = (await import('#services/redis_service')).default
+        // const RedisService = (await import('#services/redis_service')).default
 
         const orderService = await this.app.container.make(OrderService)
         const orderDraftService = await this.app.container.make(OrderDraftService)

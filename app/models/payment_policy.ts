@@ -43,6 +43,9 @@ export default class PaymentPolicy extends BaseModel {
 
     // Commission plateforme
     @column()
+    declare ticketMarkupPercent: number
+
+    @column()
     declare platformCommissionPercent: number
 
     @column()

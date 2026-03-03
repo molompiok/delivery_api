@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import orderPaymentService from '#services/order_payment_service'
+import Order from '#models/order'
 
 export default class OrderPaymentsController {
 
@@ -23,8 +24,16 @@ export default class OrderPaymentsController {
         try {
             const user = auth.user!
             const data = request.body()
-            const payment = await orderPaymentService.initiate(user, data)
-            return response.created(payment)
+
+            const order = await Order.findOrFail(data.orderId)
+
+            if (order.clientId !== user.id) {
+                const companyId = user.currentCompanyManaged || user.companyId
+                if (!companyId) return response.unauthorized({ message: 'Not authorized for this order' })
+            }
+
+            const intents = await orderPaymentService.generateIntentsForOrder(order)
+            return response.created(intents)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }

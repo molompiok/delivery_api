@@ -64,6 +64,9 @@ export default class Vehicle extends BaseModel {
     declare color: string | null
 
     @column()
+    declare capacity: number | null
+
+    @column()
     declare energy: VehicleEnergy
 
     // Logistics Specs
@@ -98,6 +101,16 @@ export default class Vehicle extends BaseModel {
             managerName: string
             action: 'ASSIGNED' | 'UNASSIGNED'
             timestamp: string
+        }>
+        seatDisposition?: Array<{
+            id: string
+            number: string
+            '3d_data': {
+                stage: number
+                column: number
+                row: number
+                [key: string]: any
+            }
         }>
     } | null
 

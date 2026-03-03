@@ -35,26 +35,28 @@ export default class LogisticsService {
                                 const actionPath = `${stopPath}.actions[${actionIdx}]`
                                 const actType = (action.type || 'service').toLowerCase()
 
-                                // Enforce quantity/type logic
-                                if (actType === 'service') {
-                                    if (action.quantity !== undefined && action.quantity !== 0) {
-                                        errors.push({ message: 'Quantity must be 0 for service actions', path: actionPath, field: 'quantity', severity: 'error' })
+                                // Enforce quantity/type logic only for COMMANDE
+                                if (orderState.template !== 'VOYAGE' && orderState.template !== 'MISSION') {
+                                    if (actType === 'service') {
+                                        if (action.quantity !== undefined && action.quantity !== 0) {
+                                            errors.push({ message: 'Quantity must be 0 for service actions', path: actionPath, field: 'quantity', severity: 'error' })
+                                        }
+                                    } else {
+                                        if (action.quantity === undefined || action.quantity <= 0) {
+                                            errors.push({ message: 'Quantity must be greater than 0 for pickup or delivery', path: actionPath, field: 'quantity', severity: 'error' })
+                                        }
                                     }
-                                } else {
-                                    if (action.quantity === undefined || action.quantity <= 0) {
-                                        errors.push({ message: 'Quantity must be greater than 0 for pickup or delivery', path: actionPath, field: 'quantity', severity: 'error' })
-                                    }
-                                }
 
-                                if (actType !== 'service' && action.transit_item_id) {
-                                    const item = transitItems.find((ti: any) => ti.id === action.transit_item_id)
-                                    if (!item) {
-                                        errors.push({
-                                            message: `Action refers to unknown transit item: ${action.transit_item_id}`,
-                                            path: actionPath,
-                                            field: 'transit_item_id',
-                                            severity: 'error'
-                                        })
+                                    if (actType !== 'service' && action.transit_item_id) {
+                                        const item = transitItems.find((ti: any) => ti.id === action.transit_item_id)
+                                        if (!item) {
+                                            errors.push({
+                                                message: `Action refers to unknown transit item: ${action.transit_item_id}`,
+                                                path: actionPath,
+                                                field: 'transit_item_id',
+                                                severity: 'error'
+                                            })
+                                        }
                                     }
                                 }
                             })
@@ -89,17 +91,20 @@ export default class LogisticsService {
                 })
 
                 // Rule: For each item, (Balance before Step + Total Pickups in Step) >= Total Deliveries in Step
-                stepDeliveries.forEach((totalDelivery, itemId) => {
-                    const balanceBefore = runningItemBalances.get(itemId) || 0
-                    const totalPickupInStep = stepPickups.get(itemId) || 0
-                    if (balanceBefore + totalPickupInStep < totalDelivery) {
-                        errors.push({
-                            message: `Step is non-viable for item ${itemId}: Available ${balanceBefore + totalPickupInStep} < Required ${totalDelivery}`,
-                            path: stepPath,
-                            severity: 'error'
-                        })
-                    }
-                })
+                // Skip strict delivery tracking for MISSION
+                if (orderState.template !== 'MISSION' && orderState.template !== 'VOYAGE') {
+                    stepDeliveries.forEach((totalDelivery, itemId) => {
+                        const balanceBefore = runningItemBalances.get(itemId) || 0
+                        const totalPickupInStep = stepPickups.get(itemId) || 0
+                        if (balanceBefore + totalPickupInStep < totalDelivery) {
+                            errors.push({
+                                message: `Step is non-viable for item ${itemId}: Available ${balanceBefore + totalPickupInStep} < Required ${totalDelivery}`,
+                                path: stepPath,
+                                severity: 'error'
+                            })
+                        }
+                    })
+                }
 
                 // Update running balance for next step
                 stepPickups.forEach((qty, itemId) => {
@@ -174,7 +179,7 @@ export default class LogisticsService {
 
         return {
             success: errors.length === 0,
-            errors,
+            validationErrors: errors,
             warnings
         }
     }

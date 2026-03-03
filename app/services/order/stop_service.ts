@@ -15,6 +15,43 @@ import ActionService from './action_service.js'
 export default class StopService {
     constructor(protected actionService: ActionService) { }
 
+    private hasFiniteNumber(value: unknown): value is number {
+        return typeof value === 'number' && Number.isFinite(value)
+    }
+
+    private async resolveAddressCoordinates(data: {
+        coordinates?: number[]
+        address?: { lat?: number, lng?: number, street?: string, address_id?: string }
+    }): Promise<[number, number]> {
+        if (data.address?.address_id) {
+            throw new Error('E_ADDRESS_ID_NOT_ALLOWED: address_id is not supported in stop payload. Send street/lat/lng instead.')
+        }
+
+        // Priority 1: Top-level coordinates [lat, lng]
+        if (Array.isArray(data.coordinates) && data.coordinates.length === 2) {
+            const [lat, lng] = data.coordinates
+            if (this.hasFiniteNumber(lat) && this.hasFiniteNumber(lng)) {
+                return [lng, lat]
+            }
+        }
+
+        // Priority 2: Address lat/lng
+        if (this.hasFiniteNumber(data.address?.lat) && this.hasFiniteNumber(data.address?.lng)) {
+            return [data.address!.lng!, data.address!.lat!]
+        }
+
+        // Priority 3: Geocode from street
+        if (data.address?.street) {
+            const geocoded = await GeoService.geocode(data.address.street)
+            if (geocoded && this.hasFiniteNumber(geocoded[0]) && this.hasFiniteNumber(geocoded[1])) {
+                return geocoded as [number, number]
+            }
+            throw new Error(`E_GEOCODING_FAILED: unable to geocode address "${data.address.street}"`)
+        }
+
+        throw new Error('E_MISSING_COORDINATES: provide coordinates [lat,lng], address.lat/address.lng, or a geocodable address.street')
+    }
+
     /**
      * Adds a stop to a step.
      */
@@ -28,26 +65,7 @@ export default class StopService {
             }
             const order = await Order.query({ client: effectiveTrx }).where('id', step.orderId).where('clientId', clientId).first()
             if (!order) throw new Error('Unauthorized or Order not found')
-            // Priority 1: Top-level coordinates [lat, lng]
-            // Priority 2: Address lat/lng
-            // Priority 3: Geocode from street
-            let coordinates: number[] | undefined | null = undefined
-
-            if (validatedData.coordinates && validatedData.coordinates.length === 2) {
-                // Store as [lng, lat] internally for consistency with logic below
-                coordinates = [validatedData.coordinates[1], validatedData.coordinates[0]]
-            } else if (validatedData.address?.lat && validatedData.address?.lng) {
-                coordinates = [validatedData.address.lng, validatedData.address.lat]
-            }
-
-            if (!coordinates && validatedData.address?.street) {
-                const geocoded = await GeoService.geocode(validatedData.address.street)
-                coordinates = geocoded as number[] | null
-            }
-
-            if (!coordinates && validatedData.address?.street) {
-                throw new Error(`Geocoding failed for ${validatedData.address.street}`)
-            }
+            const coordinates = await this.resolveAddressCoordinates(validatedData as any)
 
             // Reverse Geocode if requested
             let addressInfo = {
@@ -212,21 +230,14 @@ export default class StopService {
 
             // Update Address if provided
             if (validatedData.address) {
-                let coords: number[] | undefined | null = validatedData.address.lat && validatedData.address.lng
-                    ? [validatedData.address.lng, validatedData.address.lat]
-                    : undefined
-
-                if (!coords && validatedData.address.street) {
-                    const geocoded = await GeoService.geocode(validatedData.address.street)
-                    coords = geocoded as number[] | null
-                }
+                const coords = await this.resolveAddressCoordinates({
+                    address: validatedData.address as any
+                })
 
                 const address = await Address.query().useTransaction(effectiveTrx).where('id', targetStop.addressId).first()
                 if (address) {
-                    if (coords) {
-                        address.lat = coords[1]
-                        address.lng = coords[0]
-                    }
+                    address.lat = coords[1]
+                    address.lng = coords[0]
                     if (validatedData.address.street !== undefined) {
                         address.formattedAddress = validatedData.address.street
                         address.street = validatedData.address.street
@@ -318,6 +329,39 @@ export default class StopService {
             return { success: true }
         } catch (error) {
             if (!trx) await (effectiveTrx as any).rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Restores the original price for a stop by removing overrides.
+     */
+    async restorePrice(stopId: string, clientId: string, trx?: TransactionClientContract) {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const stop = await Stop.query({ client: effectiveTrx }).where('id', stopId).first()
+            if (!stop) throw new Error('Stop not found')
+
+            const order = await Order.query({ client: effectiveTrx }).where('id', stop.orderId).where('clientId', clientId).first()
+            if (!order) throw new Error('Unauthorized or Order not found')
+
+            const meta = stop.metadata || {}
+            if (meta.price_override) {
+                delete meta.price_override
+                stop.metadata = { ...meta }
+                await stop.useTransaction(effectiveTrx).save()
+            }
+
+            if (order.status !== 'DRAFT') {
+                order.hasPendingChanges = true
+                await order.useTransaction(effectiveTrx).save()
+            }
+
+            if (!trx) await effectiveTrx.commit()
+
+            return { success: true, entity: stop }
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
             throw error
         }
     }

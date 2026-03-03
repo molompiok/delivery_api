@@ -49,4 +49,17 @@ export default class StopsController {
             return response.badRequest({ message: error.message })
         }
     }
+
+    async restorePrice({ params, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const result = await this.orderService.restoreStopPrice(params.id, user.id)
+            return response.ok(result)
+        } catch (error: any) {
+            if (error.message.includes('not found')) {
+                return response.notFound({ message: error.message })
+            }
+            return response.badRequest({ message: error.message })
+        }
+    }
 }

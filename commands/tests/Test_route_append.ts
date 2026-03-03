@@ -54,7 +54,7 @@ export default class TestRouteAppend extends BaseCommand {
             this.logger.info(`Added Bassam: ${stop2.entity.id}`)
 
             // Check initial route
-            let routeInitial = await orderDraftService.getRoute(order.id, clientUser.id, { live: false, pending: true, force: true }, trx)
+            // let routeInitial = await orderDraftService.getRoute(order.id, clientUser.id, { live: false, pending: true, force: true }, trx)
             // const seq1 = routeInitial.pending_route.stops.map((s: any) => s.address_text)
             // this.logger.info(`Initial Sequence: ${seq1.join(' -> ')}`)
 

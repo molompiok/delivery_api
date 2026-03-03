@@ -1,0 +1,1350 @@
+app/controllers/actions_controller.ts(16,42): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Action>'.
+app/controllers/actions_controller.ts(30,42): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Action>'.
+app/controllers/address_controller.ts(14,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/address_controller.ts(15,39): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/controllers/address_controller.ts(16,38): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/controllers/address_controller.ts(20,35): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/address_controller.ts(21,33): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/address_controller.ts(22,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/address_controller.ts(23,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/address_controller.ts(24,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/admin_controller.ts(40,29): error TS7006: Parameter 'admin' implicitly has an 'any' type.
+app/controllers/auth_controller.ts(28,53): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/auth_controller.ts(29,45): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/auth_controller.ts(117,41): error TS7006: Parameter 'k' implicitly has an 'any' type.
+app/controllers/debug_controller.ts(7,34): error TS2339: Property 'all' does not exist on type 'typeof File'.
+app/controllers/debug_controller.ts(12,37): error TS2339: Property 'all' does not exist on type 'typeof FileData'.
+app/controllers/driver_controller.ts(12,75): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["MOTORCYCLE", "CAR", "VAN", "TRUCK"]>'.
+app/controllers/driver_controller.ts(13,68): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/driver_controller.ts(21,36): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/driver_controller.ts(50,59): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/controllers/driver_controller.ts(155,70): error TS7006: Parameter 'id' implicitly has an 'any' type.
+app/controllers/driver_controller.ts(170,49): error TS7006: Parameter 'l' implicitly has an 'any' type.
+app/controllers/driver_payments_controller.ts(50,58): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/controllers/driver_payments_controller.ts(314,54): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/controllers/driver_payments_controller.ts(319,27): error TS7006: Parameter 'r' implicitly has an 'any' type.
+app/controllers/file_tests_controller.ts(13,39): error TS2339: Property 'create' does not exist on type 'typeof FileTest'.
+app/controllers/file_tests_controller.ts(42,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof FileTest'.
+app/controllers/file_tests_controller.ts(52,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof FileTest'.
+app/controllers/file_tests_controller.ts(69,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof FileTest'.
+app/controllers/file_tests_controller.ts(83,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof FileTest'.
+app/controllers/file_tests_controller.ts(105,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof FileTest'.
+app/controllers/idep_vehicle_controller.ts(21,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/idep_vehicle_controller.ts(22,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/idep_vehicle_controller.ts(24,33): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/idep_vehicle_controller.ts(25,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/idep_vehicle_controller.ts(26,35): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/idep_vehicle_controller.ts(28,42): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/idep_vehicle_controller.ts(29,44): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/idep_vehicle_controller.ts(30,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/idep_vehicle_controller.ts(31,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/idep_vehicle_controller.ts(32,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/idep_vehicle_controller.ts(33,16): error TS2339: Property 'optional' does not exist on type 'VineObject<{ maxWeight: any; cargoVolume: any; height: any; length: any; width: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/controllers/idep_vehicle_controller.ts(66,39): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/controllers/idep_vehicle_controller.ts(108,39): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/controllers/order_payments_controller.ts(28,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+app/controllers/orders_controller.ts(147,43): error TS7006: Parameter 'o' implicitly has an 'any' type.
+app/controllers/orders_controller.ts(162,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/controllers/orders_controller.ts(169,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/controllers/orders_controller.ts(232,32): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/controllers/orders_controller.ts(234,32): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/controllers/orders_controller.ts(237,28): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/controllers/steps_controller.ts(16,42): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Step>'.
+app/controllers/steps_controller.ts(30,42): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Step>'.
+app/controllers/stops_controller.ts(16,42): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Stop>'.
+app/controllers/stops_controller.ts(30,42): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Stop>'.
+app/controllers/storage_controller.ts(32,33): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/controllers/storage_controller.ts(63,42): error TS2339: Property 'decrypt' does not exist on type 'EncryptionService'.
+app/controllers/test_user_controller.ts(22,33): error TS2339: Property 'create' does not exist on type 'typeof User'.
+app/controllers/test_user_controller.ts(51,33): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+app/controllers/test_user_controller.ts(72,33): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+app/controllers/vehicle_controller.ts(16,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/vehicle_controller.ts(17,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/vehicle_controller.ts(19,33): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/vehicle_controller.ts(20,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/vehicle_controller.ts(21,35): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/vehicle_controller.ts(23,42): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/vehicle_controller.ts(24,44): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/vehicle_controller.ts(25,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/vehicle_controller.ts(26,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/vehicle_controller.ts(27,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/vehicle_controller.ts(28,16): error TS2339: Property 'optional' does not exist on type 'VineObject<{ maxWeight: any; cargoVolume: any; height: any; length: any; width: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/controllers/vehicle_controller.ts(29,38): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/controllers/zones_controller.ts(7,49): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/zones_controller.ts(8,74): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/controllers/zones_controller.ts(9,52): error TS2339: Property 'nullable' does not exist on type 'VineString'.
+app/controllers/zones_controller.ts(10,61): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["circle", "polygon", "rectangle"]>'.
+app/controllers/zones_controller.ts(15,16): error TS2339: Property 'optional' does not exist on type 'VineObject<{ lat: VineNumber; lng: VineNumber; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/controllers/zones_controller.ts(16,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/controllers/zones_controller.ts(22,15): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ lat: VineNumber; lng: VineNumber; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/controllers/zones_controller.ts(28,16): error TS2339: Property 'optional' does not exist on type 'VineObject<{ north: VineNumber; south: VineNumber; east: VineNumber; west: VineNumber; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>'.
+app/controllers/zones_controller.ts(29,12): error TS2339: Property 'optional' does not exist on type 'VineObject<{ center: any; radiusKm: any; paths: any; bounds: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/controllers/zones_controller.ts(30,34): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/controllers/zones_controller.ts(31,63): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["Company", "User", "Sublymus"]>'.
+app/controllers/zones_controller.ts(32,32): error TS2339: Property 'nullable' does not exist on type 'VineString'.
+app/exceptions/handler.ts(9,26): error TS2339: Property 'inProduction' does not exist on type 'ApplicationService'.
+app/listeners/mission_socket_listener.ts(13,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/listeners/mission_socket_listener.ts(17,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/listeners/order_socket_listener.ts(17,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/listeners/order_socket_listener.ts(21,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/listeners/order_socket_listener.ts(32,39): error TS2339: Property 'find' does not exist on type 'typeof Order'.
+app/listeners/order_socket_listener.ts(37,43): error TS2339: Property 'find' does not exist on type 'typeof User'.
+app/listeners/order_socket_listener.ts(48,47): error TS2339: Property 'find' does not exist on type 'typeof User'.
+app/listeners/order_socket_listener.ts(55,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/listeners/order_socket_listener.ts(71,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/listeners/order_socket_listener.ts(83,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/middleware/api_middleware.ts(25,44): error TS2339: Property 'query' does not exist on type 'typeof ApiKey'.
+app/middleware/api_middleware.ts(32,40): error TS2339: Property 'verify' does not exist on type 'HashService'.
+app/models/action.ts(55,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action.ts(56,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action.ts(61,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action.ts(62,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action.ts(68,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action.ts(69,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action_proof.ts(35,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/action_proof.ts(36,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/company_driver_setting.ts(86,19): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/models/file_data.ts(194,35): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/models/file_data.ts(201,33): error TS2339: Property 'create' does not exist on type 'typeof FileData'.
+app/models/file_test.ts(31,18): error TS2339: Property '$extras' does not exist on type 'FileTest'.
+app/models/file_test.ts(36,18): error TS2339: Property '$extras' does not exist on type 'FileTest'.
+app/models/file_test.ts(40,10): error TS2339: Property '$extras' does not exist on type 'FileTest'.
+app/models/file_test.ts(41,10): error TS2339: Property '$extras' does not exist on type 'FileTest'.
+app/models/order_leg.ts(40,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(49,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(59,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(80,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(89,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(103,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(104,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(112,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/order_leg.ts(113,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/step.ts(36,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/step.ts(37,19): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/models/stop.ts(7,1): error TS6133: 'Step' is declared but its value is never read.
+app/models/user.ts(19,46): error TS2339: Property 'use' does not exist on type 'HashService'.
+app/models/user.ts(36,14): error TS2339: Property '$dirty' does not exist on type 'User'.
+app/models/user.ts(37,34): error TS2339: Property 'make' does not exist on type 'HashService'.
+app/models/user.ts(104,15): error TS7006: Parameter 'query' implicitly has an 'any' type.
+app/models/user.ts(118,18): error TS2339: Property '$extras' does not exist on type 'User'.
+app/models/user.ts(123,18): error TS2339: Property '$extras' does not exist on type 'User'.
+app/models/user.ts(135,10): error TS2339: Property '$extras' does not exist on type 'User'.
+app/models/user.ts(136,10): error TS2339: Property '$extras' does not exist on type 'User'.
+app/models/vehicle.ts(81,19): error TS7006: Parameter 'query' implicitly has an 'any' type.
+app/models/vehicle.ts(112,21): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(112,55): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(119,22): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(124,22): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(129,22): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(134,14): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(135,14): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/vehicle.ts(136,14): error TS2339: Property '$extras' does not exist on type 'Vehicle'.
+app/models/zone.ts(84,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/models/zone.ts(87,33): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/models/zone.ts(91,50): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/models/zone.ts(94,33): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/models/zone.ts(107,35): error TS2339: Property 'findOrFail' does not exist on type 'typeof Zone'.
+app/models/zone.ts(113,33): error TS2339: Property 'create' does not exist on type 'typeof Zone'.
+app/services/address_service.ts(32,30): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/address_service.ts(53,50): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/address_service.ts(65,47): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/address_service.ts(74,47): error TS2339: Property 'create' does not exist on type 'typeof Address'.
+app/services/address_service.ts(90,43): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/address_service.ts(106,23): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/address_service.ts(118,43): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/admin_service.ts(15,43): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/admin_service.ts(41,27): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/auth_service.ts(20,33): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+app/services/auth_service.ts(25,48): error TS2339: Property 'query' does not exist on type 'typeof AsyncConfirm'.
+app/services/auth_service.ts(43,45): error TS2339: Property 'query' does not exist on type 'typeof AsyncConfirm'.
+app/services/auth_service.ts(61,32): error TS2339: Property 'query' does not exist on type 'typeof AsyncConfirm'.
+app/services/auth_service.ts(67,32): error TS2339: Property 'query' does not exist on type 'typeof AsyncConfirm'.
+app/services/auth_service.ts(75,36): error TS2339: Property 'make' does not exist on type 'HashService'.
+app/services/auth_service.ts(77,28): error TS2339: Property 'create' does not exist on type 'typeof AsyncConfirm'.
+app/services/auth_service.ts(108,48): error TS2339: Property 'query' does not exist on type 'typeof AsyncConfirm'.
+app/services/auth_service.ts(117,42): error TS2339: Property 'verify' does not exist on type 'HashService'.
+app/services/auth_service.ts(121,35): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/auth_service.ts(123,35): error TS2339: Property 'create' does not exist on type 'typeof User'.
+app/services/auth_service.ts(166,35): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/auth_service.ts(168,35): error TS2339: Property 'create' does not exist on type 'typeof User'.
+app/services/auth_service.ts(203,18): error TS2339: Property 'merge' does not exist on type 'User'.
+app/services/auth_service.ts(204,24): error TS2339: Property 'useTransaction' does not exist on type 'User'.
+app/services/auth_service.ts(219,37): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+app/services/auth_service.ts(221,52): error TS2339: Property 'query' does not exist on type 'typeof ApiKey'.
+app/services/auth_service.ts(231,40): error TS2339: Property 'make' does not exist on type 'HashService'.
+app/services/auth_service.ts(234,41): error TS2339: Property 'create' does not exist on type 'typeof ApiKey'.
+app/services/auth_service.ts(260,29): error TS2339: Property 'query' does not exist on type 'typeof ApiKey'.
+app/services/auth_service.ts(267,37): error TS2339: Property 'find' does not exist on type 'typeof ApiKey'.
+app/services/company_service.ts(20,39): error TS2339: Property 'create' does not exist on type 'typeof Company'.
+app/services/company_service.ts(29,20): error TS2339: Property 'save' does not exist on type 'User'.
+app/services/company_service.ts(43,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(56,30): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(71,39): error TS2339: Property 'firstOrCreate' does not exist on type 'typeof User'.
+app/services/company_service.ts(78,57): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(95,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(117,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(135,58): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(156,44): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(158,33): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/company_service.ts(169,39): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/company_service.ts(188,53): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(191,33): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/company_service.ts(198,39): error TS2339: Property 'findBy' does not exist on type 'typeof Vehicle'.
+app/services/company_service.ts(203,34): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/company_service.ts(205,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/company_service.ts(211,50): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/company_service.ts(212,41): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/company_service.ts(222,54): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/company_service.ts(223,54): error TS7006: Parameter 'z' implicitly has an 'any' type.
+app/services/company_service.ts(224,116): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/company_service.ts(237,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(246,49): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/company_service.ts(265,52): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/company_service.ts(274,36): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/company_service.ts(302,53): error TS2339: Property 'findOrFail' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(305,72): error TS7006: Parameter 't' implicitly has an 'any' type.
+app/services/company_service.ts(311,39): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/company_service.ts(335,40): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/company_service.ts(365,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(372,73): error TS7006: Parameter 't' implicitly has an 'any' type.
+app/services/company_service.ts(376,39): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/company_service.ts(385,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+app/services/company_service.ts(386,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(412,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/company_service.ts(425,37): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/company_service.ts(433,38): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/company_service.ts(441,38): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/company_service.ts(476,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(484,37): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/company_service.ts(492,38): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/company_service.ts(500,38): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/company_service.ts(530,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/company_service.ts(540,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/dispatch_service.ts(21,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(25,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(31,20): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(54,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(59,35): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/dispatch_service.ts(67,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(74,39): error TS2339: Property 'find' does not exist on type 'typeof Company'.
+app/services/dispatch_service.ts(76,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(80,16): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(93,25): error TS2339: Property 'load' does not exist on type 'Order'.
+app/services/dispatch_service.ts(98,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(100,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/dispatch_service.ts(110,36): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/dispatch_service.ts(118,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(123,16): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(125,21): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/dispatch_service.ts(135,21): error TS2339: Property 'load' does not exist on type 'Order'.
+app/services/dispatch_service.ts(135,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/dispatch_service.ts(140,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(158,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(165,16): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(184,28): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(195,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(210,45): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/dispatch_service.ts(266,24): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/dispatch_service.ts(272,35): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/dispatch_service.ts(286,21): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/dispatch_service.ts(292,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/document_service.ts(14,32): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(31,31): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(45,45): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(74,41): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/document_service.ts(88,45): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(126,57): error TS2339: Property 'findOrFail' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/document_service.ts(129,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof File'.
+app/services/document_service.ts(139,32): error TS2339: Property 'useTransaction' does not exist on type 'Document'.
+app/services/document_service.ts(148,46): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+app/services/document_service.ts(152,46): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+app/services/document_service.ts(166,49): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/document_service.ts(170,47): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(177,36): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/document_service.ts(211,39): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(227,43): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(235,40): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/document_service.ts(268,40): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(282,42): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/document_service.ts(287,69): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/services/document_service.ts(291,55): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/document_service.ts(310,57): error TS2339: Property 'find' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/document_service.ts(316,43): error TS2339: Property 'find' does not exist on type 'typeof Vehicle'.
+app/services/driver_service.ts(16,53): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/driver_service.ts(25,53): error TS2339: Property 'create' does not exist on type 'typeof DriverSetting'.
+app/services/driver_service.ts(34,28): error TS2339: Property 'useTransaction' does not exist on type 'User'.
+app/services/driver_service.ts(57,45): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(64,32): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(82,36): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/driver_service.ts(94,51): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/driver_service.ts(107,31): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(119,43): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/driver_service.ts(132,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/driver_service.ts(146,46): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/driver_service.ts(153,54): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(154,46): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(157,46): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(197,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/driver_service.ts(208,33): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof DriverSetting'.
+app/services/driver_service.ts(222,55): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/driver_service.ts(232,43): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/driver_service.ts(249,37): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/driver_service.ts(257,38): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/driver_service.ts(265,38): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/file_manager.ts(49,41): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/services/file_manager.ts(71,41): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/services/file_manager.ts(87,41): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/services/file_manager.ts(133,41): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/services/file_manager.ts(142,61): error TS7006: Parameter 'id' implicitly has an 'any' type.
+app/services/file_manager.ts(148,67): error TS7006: Parameter 'id' implicitly has an 'any' type.
+app/services/file_manager.ts(154,62): error TS7006: Parameter 'id' implicitly has an 'any' type.
+app/services/file_manager.ts(160,68): error TS7006: Parameter 'id' implicitly has an 'any' type.
+app/services/file_manager.ts(221,34): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/file_manager.ts(230,24): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/services/file_manager.ts(260,21): error TS2339: Property 'create' does not exist on type 'typeof File'.
+app/services/file_manager.ts(291,46): error TS2339: Property 'encrypt' does not exist on type 'EncryptionService'.
+app/services/file_manager.ts(296,20): error TS2339: Property 'create' does not exist on type 'typeof File'.
+app/services/file_manager.ts(312,33): error TS2339: Property 'find' does not exist on type 'typeof File'.
+app/services/file_manager.ts(332,34): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/file_manager.ts(338,26): error TS7006: Parameter 'f' implicitly has an 'any' type.
+app/services/file_manager.ts(349,41): error TS2339: Property 'query' does not exist on type 'typeof FileData'.
+app/services/file_manager.ts(372,33): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/file_manager.ts(383,27): error TS2339: Property 'encrypt' does not exist on type 'EncryptionService'.
+app/services/file_manager.ts(395,37): error TS2339: Property 'decrypt' does not exist on type 'EncryptionService'.
+app/services/geo_service.ts(101,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(112,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(124,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(133,24): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(146,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(175,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(206,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(238,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(258,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(303,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(359,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(434,16): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(450,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(458,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/geo_service.ts(480,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/idep_vehicle_service.ts(19,43): error TS2339: Property 'create' does not exist on type 'typeof Vehicle'.
+app/services/idep_vehicle_service.ts(42,32): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/idep_vehicle_service.ts(66,40): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/idep_vehicle_service.ts(69,40): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/idep_vehicle_service.ts(78,46): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/idep_vehicle_service.ts(86,42): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/idep_vehicle_service.ts(98,40): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/idep_vehicle_service.ts(101,39): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/idep_vehicle_service.ts(109,42): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/idep_vehicle_service.ts(117,38): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/location_search_service.ts(26,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(49,35): error TS2339: Property 'create' does not exist on type 'typeof SecurityLog'.
+app/services/location_search_service.ts(57,24): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(103,48): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+app/services/location_search_service.ts(112,32): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(115,32): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(119,32): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(122,36): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(126,44): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(133,44): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(137,44): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(157,28): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/location_search_service.ts(166,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mail_service.ts(28,36): error TS7006: Parameter 'message' implicitly has an 'any' type.
+app/services/mail_service.ts(39,32): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mail_service.ts(49,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/mail_service.ts(51,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mission_service.ts(39,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(51,44): error TS2339: Property 'findBy' does not exist on type 'typeof DriverSetting'.
+app/services/mission_service.ts(54,56): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/mission_service.ts(90,40): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/mission_service.ts(102,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(114,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mission_service.ts(125,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(156,29): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(191,44): error TS2339: Property 'query' does not exist on type 'typeof OrderLeg'.
+app/services/mission_service.ts(228,41): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/mission_service.ts(240,37): error TS2339: Property 'find' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(269,57): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/mission_service.ts(293,53): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/services/mission_service.ts(316,46): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(320,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(326,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(348,41): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/mission_service.ts(358,37): error TS2339: Property 'find' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(382,46): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(385,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(391,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(413,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(443,33): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(469,41): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/mission_service.ts(499,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(520,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(546,33): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(573,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(584,52): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(606,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(608,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/mission_service.ts(616,52): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/mission_service.ts(617,50): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(630,32): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(641,33): error TS2339: Property 'find' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(644,38): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/mission_service.ts(646,43): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(647,48): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(669,29): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(677,37): error TS2339: Property 'find' does not exist on type 'typeof Step'.
+app/services/mission_service.ts(679,48): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(680,60): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/mission_service.ts(690,52): error TS2339: Property 'find' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(695,36): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mission_service.ts(711,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(722,38): error TS2339: Property 'query' does not exist on type 'typeof OrderLeg'.
+app/services/mission_service.ts(724,38): error TS2339: Property 'create' does not exist on type 'typeof OrderLeg'.
+app/services/mission_service.ts(741,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/mission_service.ts(743,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mission_service.ts(754,39): error TS2339: Property 'find' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(760,38): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/mission_service.ts(763,29): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(763,32): error TS7006: Parameter 'b' implicitly has an 'any' type.
+app/services/mission_service.ts(765,29): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(765,32): error TS7006: Parameter 'b' implicitly has an 'any' type.
+app/services/mission_service.ts(767,42): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/mission_service.ts(771,52): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(772,54): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(773,50): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(779,67): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/mission_service.ts(812,29): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/mission_service.ts(840,35): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(843,21): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/mission_service.ts(845,28): error TS7006: Parameter 'pendingQ' implicitly has an 'any' type.
+app/services/mission_service.ts(847,37): error TS7006: Parameter 'subQ' implicitly has an 'any' type.
+app/services/mission_service.ts(849,39): error TS7006: Parameter 'targetQ' implicitly has an 'any' type.
+app/services/mission_service.ts(859,33): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/mission_service.ts(861,32): error TS7006: Parameter 'stepsQuery' implicitly has an 'any' type.
+app/services/mission_service.ts(863,46): error TS7006: Parameter 'stopsQuery' implicitly has an 'any' type.
+app/services/mission_service.ts(866,52): error TS7006: Parameter 'actionsQuery' implicitly has an 'any' type.
+app/services/mission_service.ts(879,40): error TS2339: Property 'findBy' does not exist on type 'typeof DriverSetting'.
+app/services/mission_service.ts(881,29): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(882,21): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/mission_service.ts(885,32): error TS7006: Parameter 'pendingQ' implicitly has an 'any' type.
+app/services/mission_service.ts(887,41): error TS7006: Parameter 'subQ' implicitly has an 'any' type.
+app/services/mission_service.ts(889,43): error TS7006: Parameter 'targetQ' implicitly has an 'any' type.
+app/services/mission_service.ts(894,43): error TS7006: Parameter 'globalQ' implicitly has an 'any' type.
+app/services/mission_service.ts(897,65): error TS7006: Parameter 'clientQ' implicitly has an 'any' type.
+app/services/mission_service.ts(910,32): error TS7006: Parameter 'activeQ' implicitly has an 'any' type.
+app/services/mission_service.ts(918,32): error TS7006: Parameter 'historyQ' implicitly has an 'any' type.
+app/services/mission_service.ts(924,33): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/mission_service.ts(926,32): error TS7006: Parameter 'stepsQuery' implicitly has an 'any' type.
+app/services/mission_service.ts(928,46): error TS7006: Parameter 'stopsQuery' implicitly has an 'any' type.
+app/services/mission_service.ts(931,52): error TS7006: Parameter 'actionsQuery' implicitly has an 'any' type.
+app/services/mission_service.ts(988,40): error TS2339: Property 'query' does not exist on type 'typeof OrderLeg'.
+app/services/mission_service.ts(1015,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(1033,28): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/mission_service.ts(1052,43): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/mission_service.ts(1067,25): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/navigation_service.ts(26,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+app/services/navigation_service.ts(39,45): error TS2339: Property 'find' does not exist on type 'typeof Stop'.
+app/services/navigation_service.ts(59,41): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/navigation_service.ts(77,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/navigation_service.ts(94,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/notification_service.ts(230,24): error TS2339: Property 'save' does not exist on type 'User'.
+app/services/optimizer/or_tools_service.ts(65,24): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(70,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(81,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(99,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(114,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(125,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(155,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/optimizer/or_tools_service.ts(159,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/order/action_service.ts(25,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/action_service.ts(28,43): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/action_service.ts(76,44): error TS2339: Property 'create' does not exist on type 'typeof Action'.
+app/services/order/action_service.ts(102,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<Action>'.
+app/services/order/action_service.ts(117,41): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/order/action_service.ts(120,45): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/action_service.ts(128,53): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/order/action_service.ts(137,49): error TS2339: Property 'create' does not exist on type 'typeof Action'.
+app/services/order/action_service.ts(224,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<Action>'.
+app/services/order/action_service.ts(238,41): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/order/action_service.ts(241,45): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/action_service.ts(249,35): error TS2339: Property 'query' does not exist on type 'typeof ActionProof'.
+app/services/order/action_service.ts(253,47): error TS2339: Property 'findOrFail' does not exist on type 'typeof Action'.
+app/services/order/action_service.ts(257,35): error TS2339: Property 'query' does not exist on type 'typeof ActionProof'.
+app/services/order/action_service.ts(261,35): error TS2339: Property 'query' does not exist on type 'typeof ActionProof'.
+app/services/order/action_service.ts(288,27): error TS2339: Property 'query' does not exist on type 'typeof ActionProof'.
+app/services/order/action_service.ts(293,35): error TS2339: Property 'create' does not exist on type 'typeof ActionProof'.
+app/services/order/action_service.ts(311,35): error TS2339: Property 'create' does not exist on type 'typeof ActionProof'.
+app/services/order/index.ts(34,22): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(55,27): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(58,33): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/index.ts(58,67): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/index.ts(60,32): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/index.ts(60,85): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/index.ts(60,166): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/index.ts(76,34): error TS7006: Parameter 'builder' implicitly has an 'any' type.
+app/services/order/index.ts(90,21): error TS7006: Parameter 'o' implicitly has an 'any' type.
+app/services/order/index.ts(91,18): error TS7006: Parameter 'o' implicitly has an 'any' type.
+app/services/order/index.ts(96,60): error TS7006: Parameter 'id' implicitly has an 'any' type.
+app/services/order/index.ts(97,28): error TS7006: Parameter 'state' implicitly has an 'any' type.
+app/services/order/index.ts(105,27): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(108,30): error TS7006: Parameter 'builder' implicitly has an 'any' type.
+app/services/order/index.ts(124,30): error TS7006: Parameter 'order' implicitly has an 'any' type.
+app/services/order/index.ts(147,35): error TS2339: Property 'visited' does not exist on type '{}'.
+app/services/order/index.ts(148,37): error TS2339: Property 'remaining' does not exist on type '{}'.
+app/services/order/index.ts(149,35): error TS2339: Property 'planned' does not exist on type '{}'.
+app/services/order/index.ts(312,35): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(324,17): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(353,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(363,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(382,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(385,17): error TS2339: Property 'validationErrors' does not exist on type 'LogisticsOperationResult<Step>'.
+app/services/order/index.ts(385,92): error TS2339: Property 'errors' does not exist on type 'LogisticsValidationResult'.
+app/services/order/index.ts(390,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(411,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(416,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(437,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(442,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(462,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(467,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(487,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(492,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(513,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(518,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(538,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(543,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(564,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(569,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(591,25): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/index.ts(597,27): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(625,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(704,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(725,21): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/index.ts(744,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(747,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/index.ts(750,50): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/index.ts(751,46): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/index.ts(763,47): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(765,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/index.ts(765,89): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/index.ts(765,170): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/index.ts(784,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/index.ts(787,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/index.ts(787,89): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/index.ts(787,170): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(60,25): error TS2339: Property 'load' does not exist on type 'Order'.
+app/services/order/order_draft_service.ts(60,38): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(142,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/order/order_draft_service.ts(155,37): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+app/services/order/order_draft_service.ts(156,47): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(158,43): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+app/services/order/order_draft_service.ts(186,39): error TS2339: Property 'create' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(198,40): error TS2339: Property 'create' does not exist on type 'typeof OrderLeg'.
+app/services/order/order_draft_service.ts(210,28): error TS2339: Property 'create' does not exist on type 'typeof Step'.
+app/services/order/order_draft_service.ts(235,16): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/order/order_draft_service.ts(236,29): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(238,32): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(239,36): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(241,42): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(247,20): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/order/order_draft_service.ts(262,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/order/order_draft_service.ts(296,57): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(297,59): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(310,62): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(316,78): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(367,29): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(371,32): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(372,36): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(374,42): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(570,62): error TS2339: Property 'toJSON' does not exist on type 'BelongsTo<typeof Address>'.
+app/services/order/order_draft_service.ts(650,15): error TS6133: 'pricingPackages' is declared but its value is never read.
+app/services/order/order_draft_service.ts(698,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(701,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(701,89): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(701,170): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(733,43): error TS2339: Property 'errors' does not exist on type 'LogisticsValidationResult'.
+app/services/order/order_draft_service.ts(733,54): error TS7006: Parameter 'e' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(743,40): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(743,93): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(743,174): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(760,21): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/order_draft_service.ts(782,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(784,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(784,62): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(793,50): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(794,49): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(803,54): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(818,61): error TS2339: Property 'find' does not exist on type 'typeof Action'.
+app/services/order/order_draft_service.ts(840,66): error TS7006: Parameter 'ti' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(847,62): error TS7006: Parameter 'ti' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(873,52): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(893,55): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(914,44): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(916,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(916,89): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(916,170): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(938,48): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/order/order_draft_service.ts(941,35): error TS2339: Property 'query' does not exist on type 'typeof ActionProof'.
+app/services/order/order_draft_service.ts(946,24): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/order_draft_service.ts(949,24): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/order_draft_service.ts(952,31): error TS2339: Property 'query' does not exist on type 'typeof TransitItem'.
+app/services/order/order_draft_service.ts(955,26): error TS2339: Property 'query' does not exist on type 'typeof Action'.
+app/services/order/order_draft_service.ts(958,24): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/order_draft_service.ts(961,24): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/order_draft_service.ts(964,31): error TS2339: Property 'query' does not exist on type 'typeof TransitItem'.
+app/services/order/order_draft_service.ts(967,25): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(988,54): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1020,51): error TS7006: Parameter 'a' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1029,57): error TS7006: Parameter 'other' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1095,21): error TS2339: Property 'useTransaction' does not exist on type 'Order'.
+app/services/order/order_draft_service.ts(1208,25): error TS2339: Property 'load' does not exist on type 'Order'.
+app/services/order/order_draft_service.ts(1208,38): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1211,49): error TS2339: Property 'create' does not exist on type 'typeof OrderLeg'.
+app/services/order/order_draft_service.ts(1236,41): error TS2339: Property 'find' does not exist on type 'typeof Stop'.
+app/services/order/order_draft_service.ts(1263,19): error TS2339: Property 'useTransaction' does not exist on type 'HasOne<typeof OrderLeg>'.
+app/services/order/order_draft_service.ts(1321,39): error TS2339: Property 'find' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(1331,44): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/order_draft_service.ts(1333,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1334,40): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1336,46): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+app/services/order/order_draft_service.ts(1348,21): error TS2339: Property 'emit' does not exist on type 'EmitterService'.
+app/services/order/step_service.ts(18,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/step_service.ts(24,41): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/step_service.ts(34,37): error TS2339: Property 'create' does not exist on type 'typeof Step'.
+app/services/order/step_service.ts(52,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<Step>'.
+app/services/order/step_service.ts(68,37): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/step_service.ts(71,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/step_service.ts(79,51): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/step_service.ts(87,45): error TS2339: Property 'create' does not exist on type 'typeof Step'.
+app/services/order/step_service.ts(117,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<Step>'.
+app/services/order/step_service.ts(132,37): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/step_service.ts(135,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/stop_service.ts(25,37): error TS2339: Property 'query' does not exist on type 'typeof Step'.
+app/services/order/stop_service.ts(29,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/stop_service.ts(71,43): error TS2339: Property 'create' does not exist on type 'typeof Address'.
+app/services/order/stop_service.ts(89,41): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/stop_service.ts(101,37): error TS2339: Property 'create' does not exist on type 'typeof Stop'.
+app/services/order/stop_service.ts(141,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<Stop>'.
+app/services/order/stop_service.ts(156,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/stop_service.ts(159,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/stop_service.ts(165,51): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/stop_service.ts(174,59): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/order/stop_service.ts(178,54): error TS2339: Property 'create' does not exist on type 'typeof Address'.
+app/services/order/stop_service.ts(195,45): error TS2339: Property 'create' does not exist on type 'typeof Stop'.
+app/services/order/stop_service.ts(224,47): error TS2339: Property 'query' does not exist on type 'typeof Address'.
+app/services/order/stop_service.ts(282,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<Stop>'.
+app/services/order/stop_service.ts(296,37): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+app/services/order/stop_service.ts(299,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/transit_item_service.ts(17,28): error TS2339: Property 'query' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(27,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/transit_item_service.ts(30,42): error TS2339: Property 'create' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(54,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<TransitItem>'.
+app/services/order/transit_item_service.ts(69,42): error TS2339: Property 'query' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(70,52): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<TransitItem>'.
+app/services/order/transit_item_service.ts(72,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/order/transit_item_service.ts(78,58): error TS2339: Property 'query' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(87,50): error TS2339: Property 'create' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(137,17): error TS2353: Object literal may only specify known properties, and 'validationErrors' does not exist in type 'LogisticsOperationResult<TransitItem>'.
+app/services/order/transit_item_service.ts(156,40): error TS2339: Property 'query' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(170,26): error TS2339: Property 'useTransaction' does not exist on type 'TransitItem'.
+app/services/order/transit_item_service.ts(172,40): error TS2339: Property 'create' does not exist on type 'typeof TransitItem'.
+app/services/order/transit_item_service.ts(186,48): error TS18047: 'ti' is possibly 'null'.
+app/services/order/transit_item_service.ts(186,55): error TS2345: Argument of type 'TransitItem | null' is not assignable to parameter of type 'TransitItem'.
+  Type 'null' is not assignable to type 'TransitItem'.
+app/services/order_payment_service.ts(43,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/order_payment_service.ts(44,47): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["CASH", "WAVE"]>'.
+app/services/order_payment_service.ts(45,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/order_payment_service.ts(46,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/order_payment_service.ts(47,26): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/order_payment_service.ts(48,27): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/order_payment_service.ts(52,49): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/order_payment_service.ts(61,37): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(73,30): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(103,56): error TS2339: Property 'create' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(142,64): error TS2339: Property 'create' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(163,56): error TS2339: Property 'create' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(182,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(197,48): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(199,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order_payment_service.ts(263,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(287,48): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(290,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order_payment_service.ts(314,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(333,45): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(346,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(356,48): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(358,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order_payment_service.ts(387,55): error TS2339: Property 'create' does not exist on type 'typeof CodCollection'.
+app/services/order_payment_service.ts(412,28): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(425,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(445,48): error TS2339: Property 'query' does not exist on type 'typeof PaymentIntent'.
+app/services/order_payment_service.ts(447,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order_payment_service.ts(467,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(477,46): error TS2339: Property 'query' does not exist on type 'typeof CodCollection'.
+app/services/order_payment_service.ts(479,40): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/order_payment_service.ts(479,66): error TS7006: Parameter 'o' implicitly has an 'any' type.
+app/services/order_payment_service.ts(500,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(505,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/order_payment_service.ts(518,47): error TS2551: Property 'company' does not exist on type 'BelongsTo<typeof Order>'. Did you mean 'companyId'?
+app/services/payment_policy_service.ts(23,30): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/payment_policy_service.ts(24,29): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/payment_policy_service.ts(26,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/payment_policy_service.ts(27,98): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["BEFORE_START", "ON_DELIVERY", "PROGRESSIVE", "ON_ACCEPT"]>'.
+app/services/payment_policy_service.ts(28,96): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["ON_DELIVERY", "PROGRESSIVE", "SALARY", "END_OF_PERIOD"]>'.
+app/services/payment_policy_service.ts(29,62): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(30,51): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(31,46): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/payment_policy_service.ts(32,61): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(33,50): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(34,48): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(35,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/payment_policy_service.ts(36,50): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(37,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/payment_policy_service.ts(41,60): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/payment_policy_service.ts(42,36): error TS2339: Property 'nullable' does not exist on type 'VineString'.
+app/services/payment_policy_service.ts(43,98): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["BEFORE_START", "ON_DELIVERY", "PROGRESSIVE", "ON_ACCEPT"]>'.
+app/services/payment_policy_service.ts(44,96): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["ON_DELIVERY", "PROGRESSIVE", "SALARY", "END_OF_PERIOD"]>'.
+app/services/payment_policy_service.ts(45,62): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(46,51): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(47,46): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/payment_policy_service.ts(48,61): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(49,50): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(50,48): error TS2339: Property 'nullable' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(51,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/payment_policy_service.ts(52,50): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/payment_policy_service.ts(53,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/payment_policy_service.ts(65,24): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(74,24): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(82,20): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(84,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(92,47): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(101,30): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(115,30): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(121,44): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(165,48): error TS2339: Property 'create' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(184,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(197,48): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(217,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(229,48): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(243,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/payment_policy_service.ts(253,30): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(260,30): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(270,47): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(278,30): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_policy_service.ts(286,37): error TS2339: Property 'query' does not exist on type 'typeof PaymentPolicy'.
+app/services/payment_service.ts(14,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/payment_service.ts(31,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/pricing_filter_service.ts(61,30): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/pricing_filter_service.ts(62,29): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/pricing_filter_service.ts(64,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/pricing_filter_service.ts(65,35): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(66,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(67,41): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(68,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(69,39): error TS2339: Property 'nullable' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(70,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(71,40): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(72,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(73,45): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(74,44): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(75,43): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(76,61): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(77,48): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(78,57): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(79,62): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(80,56): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(81,61): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(82,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/pricing_filter_service.ts(86,60): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/pricing_filter_service.ts(87,36): error TS2339: Property 'nullable' does not exist on type 'VineString'.
+app/services/pricing_filter_service.ts(88,35): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(89,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(90,41): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(91,39): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(92,39): error TS2339: Property 'nullable' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(93,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(94,40): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(95,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(96,45): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(97,44): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(98,43): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(99,61): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(100,48): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(101,57): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(102,62): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(103,56): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(104,61): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(105,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/pricing_filter_service.ts(112,40): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(113,35): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/pricing_filter_service.ts(114,34): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/pricing_filter_service.ts(115,33): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/services/pricing_filter_service.ts(116,50): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(117,46): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/pricing_filter_service.ts(119,45): error TS2339: Property 'optional' does not exist on type 'VineArray<VineString>'.
+app/services/pricing_filter_service.ts(143,47): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(152,30): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(166,30): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(172,44): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(213,48): error TS2339: Property 'create' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(239,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/pricing_filter_service.ts(252,48): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(271,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/pricing_filter_service.ts(283,48): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(297,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/pricing_filter_service.ts(384,43): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(389,43): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(427,16): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/pricing_filter_service.ts(435,47): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(443,30): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_filter_service.ts(451,37): error TS2339: Property 'query' does not exist on type 'typeof PricingFilter'.
+app/services/pricing_service.ts(63,20): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/pricing_service.ts(102,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/pricing_service.ts(120,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/redis_service.ts(121,30): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/services/redis_service.ts(282,45): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/redis_service.ts(303,44): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/redis_service.ts(310,56): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/route_service.ts(45,40): error TS2339: Property 'findOrFail' does not exist on type 'typeof OrderLeg'.
+app/services/route_service.ts(61,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/route_service.ts(67,28): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/route_service.ts(69,28): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/route_service.ts(77,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/route_service.ts(115,37): error TS2339: Property 'query' does not exist on type 'typeof OrderLeg'.
+app/services/salary_payment_service.ts(28,35): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/salary_payment_service.ts(29,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/services/salary_payment_service.ts(35,49): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/services/salary_payment_service.ts(46,37): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(58,44): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(78,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/salary_payment_service.ts(96,48): error TS2339: Property 'create' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(111,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(131,48): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(156,20): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(176,48): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(195,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(209,48): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(223,52): error TS2339: Property 'findOrFail' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/salary_payment_service.ts(229,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/salary_payment_service.ts(255,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(264,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(281,35): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/salary_payment_service.ts(299,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(304,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/salary_payment_service.ts(311,30): error TS2339: Property 'query' does not exist on type 'typeof SalaryPayment'.
+app/services/schedule_service.ts(5,1): error TS6133: 'generateId' is declared but its value is never read.
+app/services/schedule_service.ts(22,39): error TS2339: Property 'find' does not exist on type 'typeof User'.
+app/services/schedule_service.ts(40,39): error TS2339: Property 'find' does not exist on type 'typeof User'.
+app/services/schedule_service.ts(51,42): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(58,65): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/schedule_service.ts(62,32): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/schedule_service.ts(69,41): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(87,49): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(96,49): error TS2339: Property 'create' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(112,45): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(130,45): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(160,45): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(176,41): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(178,40): error TS7006: Parameter 'query' implicitly has an 'any' type.
+app/services/schedule_service.ts(205,32): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(211,46): error TS7006: Parameter 'sub' implicitly has an 'any' type.
+app/services/schedule_service.ts(217,24): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/schedule_service.ts(218,26): error TS7006: Parameter 'sub' implicitly has an 'any' type.
+app/services/schedule_service.ts(220,29): error TS7006: Parameter 'sub' implicitly has an 'any' type.
+app/services/schedule_service.ts(222,29): error TS7006: Parameter 'sub' implicitly has an 'any' type.
+app/services/schedule_service.ts(226,29): error TS7006: Parameter 'sub' implicitly has an 'any' type.
+app/services/schedule_service.ts(266,42): error TS2339: Property 'query' does not exist on type 'typeof Schedule'.
+app/services/schedule_service.ts(270,40): error TS7006: Parameter 'query' implicitly has an 'any' type.
+app/services/schedule_service.ts(272,65): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/schedule_service.ts(290,40): error TS7006: Parameter 's' implicitly has an 'any' type.
+app/services/security/document_security_service.ts(76,36): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/security/document_security_service.ts(87,36): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/security/document_security_service.ts(98,36): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/security/vehicle_document_security.ts(21,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/security/vehicle_document_security.ts(62,40): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/security/vehicle_document_security.ts(63,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/security/vehicle_document_security.ts(90,40): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/security/vehicle_document_security.ts(91,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/shift_service.ts(37,52): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/shift_service.ts(64,44): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/shift_service.ts(113,33): error TS2339: Property 'useTransaction' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(116,46): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(126,33): error TS2339: Property 'useTransaction' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(129,46): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(130,49): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(150,33): error TS2339: Property 'useTransaction' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(153,46): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(163,33): error TS2339: Property 'useTransaction' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(166,46): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(194,29): error TS2339: Property 'useTransaction' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(197,42): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(198,45): error TS2339: Property 'related' does not exist on type 'DriverSetting'.
+app/services/shift_service.ts(226,45): error TS2339: Property 'create' does not exist on type 'typeof Schedule'.
+app/services/shift_service.ts(246,49): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/shift_service.ts(268,53): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/shift_service.ts(278,43): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+app/services/shift_service.ts(296,45): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+app/services/sms_service.ts(22,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/sms_service.ts(39,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/sms_service.ts(44,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/sms_service.ts(47,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/tracking_service.ts(76,39): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/services/tracking_service.ts(84,37): error TS2339: Property 'createMany' does not exist on type 'typeof DriverLocationHistory'.
+app/services/tracking_service.ts(105,33): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/vehicle_service.ts(36,30): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(47,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(69,47): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(79,47): error TS2339: Property 'create' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(95,43): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(116,43): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(144,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+app/services/vehicle_service.ts(149,64): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/vehicle_service.ts(183,43): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(191,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/vehicle_service.ts(198,57): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/vehicle_service.ts(232,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/vehicle_service.ts(239,47): error TS2339: Property 'find' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(263,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(269,44): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/vehicle_service.ts(288,40): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/vehicle_service.ts(298,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(307,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/vehicle_service.ts(314,44): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/vehicle_service.ts(328,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(338,39): error TS7006: Parameter 'query' implicitly has an 'any' type.
+app/services/vehicle_service.ts(339,37): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/vehicle_service.ts(361,43): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(394,37): error TS2339: Property 'query' does not exist on type 'typeof File'.
+app/services/vehicle_service.ts(402,38): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/vehicle_service.ts(410,38): error TS2339: Property 'create' does not exist on type 'typeof Document'.
+app/services/vehicle_service.ts(447,36): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/vehicle_service.ts(465,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Vehicle'.
+app/services/vehicle_service.ts(468,37): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/vehicle_service.ts(479,35): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/verification_service.ts(12,37): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/verification_service.ts(17,37): error TS7006: Parameter 'u' implicitly has an 'any' type.
+app/services/verification_service.ts(17,68): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/verification_service.ts(19,37): error TS7006: Parameter 'u' implicitly has an 'any' type.
+app/services/verification_service.ts(19,68): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/verification_service.ts(21,37): error TS7006: Parameter 'u' implicitly has an 'any' type.
+app/services/verification_service.ts(21,68): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/verification_service.ts(23,37): error TS7006: Parameter 'u' implicitly has an 'any' type.
+app/services/verification_service.ts(23,68): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/services/verification_service.ts(40,30): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/verification_service.ts(52,44): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/verification_service.ts(61,42): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/verification_service.ts(70,40): error TS2339: Property 'query' does not exist on type 'typeof Vehicle'.
+app/services/verification_service.ts(74,41): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/services/verification_service.ts(77,47): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/verification_service.ts(87,38): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/services/verification_service.ts(99,36): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/services/verification_service.ts(130,36): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+app/services/verification_service.ts(157,42): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/verification_service.ts(167,45): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/services/verification_service.ts(168,44): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/services/verification_service.ts(169,43): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/services/verification_service.ts(171,51): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/verification_service.ts(197,51): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/verification_service.ts(215,31): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+app/services/verification_service.ts(228,39): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+app/services/verification_service.ts(235,36): error TS2339: Property 'query' does not exist on type 'typeof User'.
+app/services/verification_service.ts(240,42): error TS2339: Property 'query' does not exist on type 'typeof Document'.
+app/services/verification_service.ts(255,38): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+app/services/verification_service.ts(285,39): error TS2339: Property 'find' does not exist on type 'typeof Company'.
+app/services/verification_service.ts(307,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Company'.
+app/services/verification_service.ts(311,21): error TS2339: Property 'save' does not exist on type 'User'.
+app/services/verification_service.ts(316,25): error TS2339: Property 'toJSON' does not exist on type 'User'.
+app/services/vroom_service.ts(29,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(33,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(46,24): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(57,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(83,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(88,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(155,20): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(184,36): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/vroom_service.ts(239,45): error TS2339: Property 'find' does not exist on type 'typeof Stop'.
+app/services/wallet_bridge_service.ts(140,24): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(152,28): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(156,24): error TS2339: Property 'debug' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(164,28): error TS2339: Property 'warn' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(384,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(392,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(415,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/wallet_bridge_service.ts(418,20): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+app/services/ws_service.ts(24,20): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/ws_service.ts(34,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/ws_service.ts(39,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/ws_service.ts(43,16): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/ws_service.ts(52,24): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+app/services/zone_service.ts(12,28): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(28,26): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(32,32): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/zone_service.ts(39,26): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(79,37): error TS2339: Property 'create' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(98,33): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(100,21): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(104,28): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/zone_service.ts(107,32): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/zone_service.ts(122,37): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(124,25): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(155,37): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(157,25): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(181,37): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(183,25): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(194,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/zone_service.ts(219,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+app/services/zone_service.ts(244,37): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(246,25): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(254,55): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/zone_service.ts(278,55): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+app/services/zone_service.ts(298,43): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(305,41): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(326,33): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+app/services/zone_service.ts(328,21): error TS7006: Parameter 'q' implicitly has an 'any' type.
+app/services/zone_service.ts(331,28): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/zone_service.ts(333,32): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+app/services/zone_service.ts(347,34): error TS7006: Parameter 'd' implicitly has an 'any' type.
+app/utils/json_utils.ts(1,1): error TS6133: 'BaseModel' is declared but its value is never read.
+app/utils/json_utils.ts(20,53): error TS2749: 'BaseModel' refers to a value, but is being used as a type here. Did you mean 'typeof BaseModel'?
+app/validators/order_validator.ts(8,28): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(9,30): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(10,29): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(11,37): error TS2339: Property 'nullable' does not exist on type 'VineString'.
+app/validators/order_validator.ts(19,33): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(20,32): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(22,9): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ sequence: any; linked: any; stops: VineArray<VineAny>; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(24,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(25,49): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(26,31): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(27,32): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(28,30): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(29,9): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ id: any; name: any; weight: any; dimensions: any; metadata: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(30,107): error TS2339: Property 'transform' does not exist on type 'VineEnum<readonly ["GLOBAL", "INTERNAL", "TARGET", "global", "internal", "target"]>'.
+app/validators/order_validator.ts(30,118): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/validators/order_validator.ts(31,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(32,86): error TS2339: Property 'transform' does not exist on type 'VineEnum<readonly ["LOW", "MEDIUM", "HIGH", "low", "medium", "high"]>'.
+app/validators/order_validator.ts(32,97): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/validators/order_validator.ts(33,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(40,29): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(41,28): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(42,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(46,29): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(47,28): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(48,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(55,98): error TS2339: Property 'transform' does not exist on type 'VineEnum<readonly ["pickup", "delivery", "service", "PICKUP", "DELIVERY", "SERVICE"]>'.
+app/validators/order_validator.ts(55,109): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/validators/order_validator.ts(56,36): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(57,43): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(59,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(60,64): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(61,43): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(62,49): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(63,62): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["box", "fluid"]>'.
+app/validators/order_validator.ts(64,31): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(65,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(67,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(68,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(69,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(70,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(71,12): error TS2339: Property 'optional' does not exist on type 'VineObject<{ width_cm: any; height_cm: any; depth_cm: any; volume_l: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(72,96): error TS2339: Property 'optional' does not exist on type 'VineArray<VineEnum<readonly ["froid", "fragile", "dangerous", "sec"]>>'.
+app/validators/order_validator.ts(73,30): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(74,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ id: any; name: any; description: any; product_url: any; packaging_type: any; weight: any; unitary_price: any; dimensions: any; requirements: any; metadata: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(75,40): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(77,55): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ name: VineString; pickup: any; delivery: any; compare: any; reference: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(78,54): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ name: VineString; pickup: any; delivery: any; compare: any; reference: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(79,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ photo: any; code: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(80,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(84,98): error TS2339: Property 'transform' does not exist on type 'VineEnum<readonly ["pickup", "delivery", "service", "PICKUP", "DELIVERY", "SERVICE"]>'.
+app/validators/order_validator.ts(84,109): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/validators/order_validator.ts(85,36): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(86,43): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(88,34): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(90,43): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(91,49): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(92,62): error TS2339: Property 'optional' does not exist on type 'VineEnum<readonly ["box", "fluid"]>'.
+app/validators/order_validator.ts(93,31): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(94,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(96,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(97,38): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(98,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(99,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(100,12): error TS2339: Property 'optional' does not exist on type 'VineObject<{ width_cm: any; height_cm: any; depth_cm: any; volume_l: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(101,96): error TS2339: Property 'optional' does not exist on type 'VineArray<VineEnum<readonly ["froid", "fragile", "dangerous", "sec"]>>'.
+app/validators/order_validator.ts(102,30): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(103,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ id: any; name: VineString; description: any; product_url: any; packaging_type: any; weight: any; unitary_price: any; dimensions: any; requirements: any; metadata: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(104,40): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(106,55): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ name: VineString; pickup: any; delivery: any; compare: any; reference: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(107,54): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ name: VineString; pickup: any; delivery: any; compare: any; reference: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(108,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ photo: any; code: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(109,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(117,42): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(118,53): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(119,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(120,39): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(121,28): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(122,28): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(123,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(124,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(125,37): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(126,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ address_id: any; street: any; city: any; country: any; lat: any; lng: any; call: any; room: any; stage: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(128,41): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(129,64): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(130,37): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(131,37): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(132,38): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(134,41): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(135,39): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(136,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(137,12): error TS2339: Property 'optional' does not exist on type 'VineObject<{ start: any; end: any; duration: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(138,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ client_id: any; name: any; phone: any; email: any; avatar: any; opening_hours: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(139,34): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(140,44): error TS2339: Property 'optional' does not exist on type 'VineArray<VineNumber>'.
+app/validators/order_validator.ts(141,42): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ type: any; quantity: any; transit_item_id: any; transit_item: any; service_time: any; confirmation_rules: any; metadata: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(142,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(143,37): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(144,41): error TS2339: Property 'optional' does not exist on type 'VineBoolean'.
+app/validators/order_validator.ts(149,42): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(150,53): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(151,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(152,39): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(153,28): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(154,28): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(155,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(156,36): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(157,37): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(158,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ address_id: any; street: any; city: any; country: any; lat: any; lng: any; call: any; room: any; stage: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(160,41): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(161,64): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(162,37): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(163,37): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(164,38): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(166,41): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(167,39): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(168,37): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(169,12): error TS2339: Property 'optional' does not exist on type 'VineObject<{ start: any; end: any; duration: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(170,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ client_id: any; name: any; phone: any; email: any; avatar: any; opening_hours: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(171,34): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(172,44): error TS2339: Property 'optional' does not exist on type 'VineArray<VineNumber>'.
+app/validators/order_validator.ts(173,42): error TS2339: Property 'optional' does not exist on type 'VineArray<VineObject<{ type: any; quantity: any; transit_item_id: any; transit_item: any; service_time: any; confirmation_rules: any; metadata: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<...>, UndefinedOptional<...>>>'.
+app/validators/order_validator.ts(174,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+app/validators/order_validator.ts(181,30): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(182,38): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(183,60): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(184,39): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(185,45): error TS2339: Property 'optional' does not exist on type 'VineString'.
+app/validators/order_validator.ts(186,74): error TS2339: Property 'transform' does not exist on type 'VineEnum<readonly ["box", "fluid", "BOX", "FLUID"]>'.
+app/validators/order_validator.ts(186,85): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/validators/order_validator.ts(187,27): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(188,34): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(190,33): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(191,34): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(192,33): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(193,33): error TS2339: Property 'optional' does not exist on type 'VineNumber'.
+app/validators/order_validator.ts(194,8): error TS2339: Property 'optional' does not exist on type 'VineObject<{ width_cm: any; height_cm: any; depth_cm: any; volume_l: any; }, UndefinedOptional<{ [K in keyof Properties]: Properties[K][unique symbol]; }>, UndefinedOptional<{ [K_1 in keyof Properties]: Properties[K_1][unique symbol]; }>, UndefinedOptional<...>>'.
+app/validators/order_validator.ts(195,131): error TS2339: Property 'transform' does not exist on type 'VineEnum<readonly ["froid", "fragile", "dangerous", "sec", "FROID", "FRAGILE", "DANGEROUS", "SEC"]>'.
+app/validators/order_validator.ts(195,142): error TS7006: Parameter 'v' implicitly has an 'any' type.
+app/validators/order_validator.ts(195,173): error TS2339: Property 'optional' does not exist on type 'VineArray<any>'.
+app/validators/order_validator.ts(196,26): error TS2339: Property 'optional' does not exist on type 'VineAny'.
+bin/console.ts(36,9): error TS2339: Property 'booting' does not exist on type 'ApplicationService'.
+bin/console.ts(39,9): error TS2339: Property 'listen' does not exist on type 'ApplicationService'.
+bin/console.ts(39,37): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+bin/console.ts(40,9): error TS2339: Property 'listenIf' does not exist on type 'ApplicationService'.
+bin/console.ts(40,22): error TS2339: Property 'managedByPm2' does not exist on type 'ApplicationService'.
+bin/console.ts(40,56): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+bin/server.ts(36,9): error TS2339: Property 'booting' does not exist on type 'ApplicationService'.
+bin/server.ts(39,9): error TS2339: Property 'listen' does not exist on type 'ApplicationService'.
+bin/server.ts(39,37): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+bin/server.ts(40,9): error TS2339: Property 'listenIf' does not exist on type 'ApplicationService'.
+bin/server.ts(40,22): error TS2339: Property 'managedByPm2' does not exist on type 'ApplicationService'.
+bin/server.ts(40,56): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+bin/test.ts(38,9): error TS2339: Property 'booting' does not exist on type 'ApplicationService'.
+bin/test.ts(41,9): error TS2339: Property 'listen' does not exist on type 'ApplicationService'.
+bin/test.ts(41,37): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+bin/test.ts(42,9): error TS2339: Property 'listenIf' does not exist on type 'ApplicationService'.
+bin/test.ts(42,22): error TS2339: Property 'managedByPm2' does not exist on type 'ApplicationService'.
+bin/test.ts(42,56): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+bin/test.ts(50,14): error TS2339: Property 'rcFile' does not exist on type 'ApplicationService'.
+bin/test.ts(54,58): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+check_driver_wallets.ts(5,32): error TS2339: Property 'query' does not exist on type 'typeof User'.
+check_driver_wallets.ts(10,54): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+commands/BackfillRouteExecution.ts(16,36): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/BackfillRouteExecution.ts(17,32): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/BackfillRouteExecution.ts(19,37): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+commands/BackfillRouteExecution.ts(30,50): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/BackfillRouteExecution.ts(49,28): error TS7006: Parameter 'a' implicitly has an 'any' type.
+commands/BackfillRouteExecution.ts(49,31): error TS7006: Parameter 'b' implicitly has an 'any' type.
+commands/BackfillRouteExecution.ts(55,45): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/CheckWallets.ts(17,38): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/CheckWallets.ts(18,43): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/CheckWallets.ts(21,44): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+commands/CheckWallets.ts(22,49): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+commands/CheckWallets.ts(25,53): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+commands/CheckWallets.ts(26,58): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+commands/CleanupShadowTesters.ts(18,38): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/DEBUG_CleanupOrders.ts(9,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/DebugDriverWallets.ts(20,28): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/DebugDriverWallets.ts(43,29): error TS2339: Property 'warn' does not exist on type 'Logger'.
+commands/DebugDriverWallets.ts(46,58): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+commands/DeleteOpusOrders.ts(18,33): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/DeleteOpusOrders.ts(30,36): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/FindInvalidStop.ts(18,35): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/FindInvalidStop.ts(20,32): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/FindInvalidStop.ts(20,58): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+commands/FindInvalidStop.ts(21,32): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/FindInvalidStop.ts(31,52): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/FindInvalidStop.ts(40,50): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(17,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/Fix_order_aboisso.ts(18,35): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Fix_order_aboisso.ts(22,45): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Fix_order_aboisso.ts(30,39): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+commands/Fix_order_aboisso.ts(31,40): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(31,66): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(36,50): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(38,30): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(43,49): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(55,33): error TS7006: Parameter 's' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(59,52): error TS7006: Parameter 'a' implicitly has an 'any' type.
+commands/Fix_order_aboisso.ts(59,55): error TS7006: Parameter 'b' implicitly has an 'any' type.
+commands/GenerateToken.ts(11,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/GenerateToken.ts(20,33): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+commands/InspectOrder.ts(10,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/InspectOrder.ts(14,35): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/InspectOrder.ts(16,31): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/InspectOrder.ts(16,55): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+commands/InspectOrder.ts(28,50): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/InspectOrder.ts(32,45): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/ProvisionWallets.ts(34,34): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/ProvisionWallets.ts(60,41): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+commands/ProvisionWallets.ts(83,55): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+commands/Test_route_append.ts(17,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/Test_route_append.ts(18,35): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_route_append.ts(23,45): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_route_append.ts(24,50): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_route_append.ts(30,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+commands/Test_route_append.ts(57,17): error TS6133: 'routeInitial' is declared but its value is never read.
+commands/Test_route_tracers.ts(17,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/Test_route_tracers.ts(18,35): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_route_tracers.ts(23,15): error TS6133: 'RedisService' is declared but its value is never read.
+commands/Test_route_tracers.ts(25,45): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_route_tracers.ts(26,50): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_route_tracers.ts(32,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+commands/Test_route_tracers.ts(93,46): error TS2339: Property 'findOrFail' does not exist on type 'typeof Stop'.
+commands/Test_route_tracers.ts(104,38): error TS2339: Property 'query' does not exist on type 'typeof Stop'.
+commands/Test_route_tracers.ts(155,46): error TS2339: Property 'findOrFail' does not exist on type 'typeof Stop'.
+commands/Test_route_tracers.ts(161,41): error TS2339: Property 'findOrFail' does not exist on type 'typeof Stop'.
+commands/Test_services_shadow.ts(22,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/Test_services_shadow.ts(25,35): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_services_shadow.ts(33,50): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_services_shadow.ts(34,44): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_services_shadow.ts(35,46): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_services_shadow.ts(36,51): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/Test_services_shadow.ts(45,43): error TS2339: Property 'findOrFail' does not exist on type 'typeof User'.
+commands/Test_services_shadow.ts(152,76): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/Test_services_shadow.ts(154,36): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/Test_services_shadow.ts(154,89): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+commands/Test_services_shadow.ts(154,151): error TS7006: Parameter 'aq' implicitly has an 'any' type.
+commands/Test_services_shadow.ts(188,83): error TS2339: Property 'findOrFail' does not exist on type 'typeof TransitItem'.
+commands/VerifyMissionFlow.ts(19,24): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+commands/VerifyMissionFlow.ts(26,51): error TS2339: Property 'findBy' does not exist on type 'typeof Company'.
+commands/VerifyMissionFlow.ts(26,123): error TS2339: Property 'firstOrFail' does not exist on type 'typeof Company'.
+commands/VerifyMissionFlow.ts(29,44): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/VerifyMissionFlow.ts(30,31): error TS2339: Property 'create' does not exist on type 'typeof User'.
+commands/VerifyMissionFlow.ts(37,53): error TS2339: Property 'findBy' does not exist on type 'typeof DriverSetting'.
+commands/VerifyMissionFlow.ts(39,53): error TS2339: Property 'create' does not exist on type 'typeof DriverSetting'.
+commands/VerifyMissionFlow.ts(47,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+commands/VerifyMissionFlow.ts(53,44): error TS2339: Property 'create' does not exist on type 'typeof CompanyDriverSetting'.
+commands/VerifyMissionFlow.ts(68,44): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/VerifyMissionFlow.ts(69,31): error TS2339: Property 'create' does not exist on type 'typeof User'.
+commands/VerifyMissionFlow.ts(127,37): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+commands/VerifyMissionFlow.ts(141,33): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+commands/VerifyMissionFlow.ts(149,39): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/VerifyMissionFlow.ts(155,46): error TS2339: Property 'findOrFail' does not exist on type 'typeof Stop'.
+commands/VerifyMissionFlow.ts(164,48): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+commands/VerifyMissionFlow.ts(180,51): error TS2339: Property 'findOrFail' does not exist on type 'typeof Action'.
+commands/VerifyMissionFlow.ts(189,51): error TS2339: Property 'findOrFail' does not exist on type 'typeof Action'.
+commands/VerifyMissionFlow.ts(193,47): error TS2339: Property 'findOrFail' does not exist on type 'typeof Stop'.
+commands/VerifyMissionFlow.ts(198,49): error TS2339: Property 'findOrFail' does not exist on type 'typeof Order'.
+commands/VerifyPayments.ts(15,33): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/VerifyPayments.ts(18,43): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+commands/assignment_worker.ts(22,12): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+commands/assignment_worker.ts(33,16): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+commands/assignment_worker.ts(40,12): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+commands/assignment_worker.ts(50,39): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/assignment_worker.ts(56,14): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+commands/assignment_worker.ts(62,14): error TS2339: Property 'info' does not exist on type 'LoggerService'.
+commands/check_dispatch_readiness.ts(21,39): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/check_dispatch_readiness.ts(31,50): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+commands/check_dispatch_readiness.ts(68,39): error TS2339: Property 'query' does not exist on type 'typeof Company'.
+commands/check_dispatch_readiness.ts(72,43): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/check_dispatch_readiness.ts(107,14): error TS2339: Property 'error' does not exist on type 'LoggerService'.
+commands/test_import.ts(14,60): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/test_import.ts(16,42): error TS2339: Property 'query' does not exist on type 'typeof User'.
+commands/verify_or_tools.ts(25,33): error TS2339: Property 'query' does not exist on type 'typeof Order'.
+commands/verify_or_tools.ts(26,28): error TS7006: Parameter 'q' implicitly has an 'any' type.
+commands/verify_or_tools.ts(26,54): error TS7006: Parameter 'sq' implicitly has an 'any' type.
+config/app.ts(37,17): error TS2339: Property 'inProduction' does not exist on type 'ApplicationService'.
+config/logger.ts(19,24): error TS2339: Property 'inProduction' does not exist on type 'ApplicationService'.
+config/logger.ts(20,23): error TS2339: Property 'inProduction' does not exist on type 'ApplicationService'.
+database/data_seeders/0_sublymus_seeder.ts(195,24): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Zone'.
+database/data_seeders/2_companies_seeder.ts(15,40): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Company'.
+database/data_seeders/2_companies_seeder.ts(27,22): error TS2339: Property 'save' does not exist on type 'User'.
+database/data_seeders/2_companies_seeder.ts(36,40): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Company'.
+database/data_seeders/2_companies_seeder.ts(48,22): error TS2339: Property 'save' does not exist on type 'User'.
+database/data_seeders/3_drivers_seeder.ts(9,41): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+database/data_seeders/3_drivers_seeder.ts(26,87): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+database/data_seeders/3_drivers_seeder.ts(152,85): error TS2339: Property 'query' does not exist on type 'typeof DriverSetting'.
+database/data_seeders/3_zones_seeder.ts(11,44): error TS2339: Property 'findBy' does not exist on type 'typeof Company'.
+database/data_seeders/3_zones_seeder.ts(26,24): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Zone'.
+database/data_seeders/3_zones_seeder.ts(40,36): error TS2339: Property 'query' does not exist on type 'typeof User'.
+database/data_seeders/3_zones_seeder.ts(42,43): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Zone'.
+database/data_seeders/3_zones_seeder.ts(65,40): error TS2339: Property 'query' does not exist on type 'typeof User'.
+database/data_seeders/3_zones_seeder.ts(84,41): error TS2339: Property 'query' does not exist on type 'typeof Zone'.
+database/data_seeders/3_zones_seeder.ts(85,52): error TS2339: Property 'query' does not exist on type 'typeof CompanyDriverSetting'.
+database/data_seeders/4_invitations_seeder.ts(12,42): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+database/data_seeders/4_invitations_seeder.ts(13,41): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+database/data_seeders/4_invitations_seeder.ts(15,44): error TS2339: Property 'findBy' does not exist on type 'typeof Company'.
+database/data_seeders/4_invitations_seeder.ts(16,41): error TS2339: Property 'findBy' does not exist on type 'typeof Company'.
+database/data_seeders/4_invitations_seeder.ts(23,40): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+database/data_seeders/4_invitations_seeder.ts(26,33): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+database/data_seeders/4_invitations_seeder.ts(36,37): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof DriverSetting'.
+database/data_seeders/4_invitations_seeder.ts(45,32): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+database/data_seeders/4_invitations_seeder.ts(52,34): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+database/data_seeders/4_invitations_seeder.ts(65,32): error TS2339: Property 'findBy' does not exist on type 'typeof User'.
+database/data_seeders/5_dashboard_seeder.ts(11,44): error TS2339: Property 'findBy' does not exist on type 'typeof Company'.
+database/data_seeders/5_dashboard_seeder.ts(14,36): error TS2339: Property 'query' does not exist on type 'typeof User'.
+database/data_seeders/5_dashboard_seeder.ts(28,27): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Vehicle'.
+database/data_seeders/5_dashboard_seeder.ts(50,40): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof Schedule'.
+database/data_seeders/admin_seeder.ts(15,37): error TS2339: Property 'firstOrCreate' does not exist on type 'typeof User'.
+database/data_seeders/test_verification_seeder.ts(7,20): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof User'.
+database/data_seeders/test_verification_seeder.ts(18,35): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof User'.
+database/data_seeders/test_verification_seeder.ts(29,29): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof DriverSetting'.
+database/data_seeders/test_verification_seeder.ts(37,20): error TS2339: Property 'updateOrCreate' does not exist on type 'typeof User'.
+database/migrations/1772108751000_create_migrate_day_of_week_to_days_of_week_table.ts(13,27): error TS7006: Parameter 'db' implicitly has an 'any' type.
+database/migrations/1772108751000_create_migrate_day_of_week_to_days_of_week_table.ts(33,27): error TS7006: Parameter 'db' implicitly has an 'any' type.
+database/seeders/helpers/seeder_helper.ts(17,29): error TS2339: Property 'firstOrCreate' does not exist on type 'typeof User'.
+database/seeders/helpers/seeder_helper.ts(98,29): error TS2339: Property 'create' does not exist on type 'typeof File'.
+providers/app_provider.ts(25,18): error TS2339: Property 'getEnvironment' does not exist on type 'ApplicationService'.
+scripts/debug_order_nav.ts(6,35): error TS2339: Property 'find' does not exist on type 'typeof Order'.
+scripts/resubmit_document.ts(5,28): error TS2339: Property 'findOrFail' does not exist on type 'typeof Document'.
+scripts/verify_payment_flow.ts(9,20): error TS7006: Parameter 'filePath' implicitly has an 'any' type.
+scripts/verify_payment_flow.ts(13,15): error TS2339: Property 'init' does not exist on type 'ApplicationService'.
+scripts/verify_payment_flow.ts(14,15): error TS2339: Property 'boot' does not exist on type 'ApplicationService'.
+scripts/verify_payment_flow.ts(16,29): error TS2339: Property 'query' does not exist on type 'typeof User'.
+scripts/verify_payment_flow.ts(19,34): error TS2339: Property 'container' does not exist on type 'ApplicationService'.
+scripts/verify_payment_flow.ts(59,15): error TS2339: Property 'terminate' does not exist on type 'ApplicationService'.
+start/events.ts(24,9): error TS2339: Property 'on' does not exist on type 'EmitterService'.
+start/events.ts(25,9): error TS2339: Property 'on' does not exist on type 'EmitterService'.
+start/events.ts(26,9): error TS2339: Property 'on' does not exist on type 'EmitterService'.
+start/events.ts(27,9): error TS2339: Property 'on' does not exist on type 'EmitterService'.
+start/events.ts(28,9): error TS2339: Property 'on' does not exist on type 'EmitterService'.
+start/ws.ts(9,5): error TS2339: Property 'ready' does not exist on type 'ApplicationService'.
+test_wallet_bridge.ts(5,31): error TS2339: Property 'query' does not exist on type 'typeof User'.
+tests/functional/file_creation_flow.spec.ts(53,27): error TS2339: Property 'create' does not exist on type 'typeof User'.
+tests/functional/file_creation_flow.spec.ts(60,32): error TS2339: Property 'create' does not exist on type 'typeof User'.
+tests/functional/file_creation_flow.spec.ts(82,33): error TS2339: Property 'query' does not exist on type 'typeof File'.
+tests/functional/file_creation_flow.spec.ts(130,40): error TS2339: Property 'find' does not exist on type 'typeof File'.
+tests/functional/file_creation_flow.spec.ts(157,40): error TS2339: Property 'find' does not exist on type 'typeof File'.
+tests/functional/file_creation_flow.spec.ts(211,33): error TS2339: Property 'query' does not exist on type 'typeof File'.
+tests/functional/order_bulk_creation.spec.ts(37,33): error TS2339: Property 'create' does not exist on type 'typeof User'.
+tests/functional/order_progressive.spec.ts(15,33): error TS2339: Property 'create' does not exist on type 'typeof User'.
+tests/functional/order_shadow_mechanism.spec.ts(11,33): error TS2339: Property 'create' does not exist on type 'typeof User'.

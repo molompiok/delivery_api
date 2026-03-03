@@ -35,8 +35,8 @@ export default class Product extends BaseModel {
      * Dimensions par défaut (poids, hauteur, largeur, profondeur, volume)
      */
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : null,
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : null,
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare dimensions: any
 
@@ -47,14 +47,14 @@ export default class Product extends BaseModel {
      * Type de conditionnement (box | fluid)
      */
     @column()
-    declare packagingType: 'box' | 'fluid'
+    declare packagingType: 'box' | 'fluid' | 'person'
 
     @column()
     declare category: string | null
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: any
 

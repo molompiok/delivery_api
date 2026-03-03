@@ -2,7 +2,6 @@ import Schedule, { ScheduleType, RecurrenceType, ScheduleOwnerType } from '#mode
 import { DateTime } from 'luxon'
 import User from '#models/user'
 import db from '@adonisjs/lucid/services/db'
-import { generateId } from '../utils/id_generator.js'
 import { inject } from '@adonisjs/core'
 
 @inject()

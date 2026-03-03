@@ -1,9 +1,9 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, hasMany, belongsTo } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, hasMany, belongsTo, manyToMany } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
 import Vehicle from '#models/vehicle'
-import type { HasMany, BelongsTo } from '@adonisjs/lucid/types/relations'
+import type { HasMany, BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
 import type { OrderTemplate } from '#constants/order_templates'
 
 export default class Company extends BaseModel {
@@ -62,6 +62,14 @@ export default class Company extends BaseModel {
 
     @hasMany(() => User)
     declare employees: HasMany<typeof User>
+
+    @manyToMany(() => User, {
+        pivotTable: 'company_b2b_partners',
+        pivotForeignKey: 'company_id',
+        pivotRelatedForeignKey: 'client_id',
+        pivotColumns: ['status']
+    })
+    declare b2bClients: ManyToMany<typeof User>
 
     @hasMany(() => Vehicle)
     declare vehicles: HasMany<typeof Vehicle>

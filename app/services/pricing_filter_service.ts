@@ -1,8 +1,10 @@
+import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
 import PricingFilter from '#models/pricing_filter'
 import User from '#models/user'
+import Stop from '#models/stop'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import type { OrderTemplate } from '#constants/order_templates'
 
@@ -17,7 +19,7 @@ import type { OrderTemplate } from '#constants/order_templates'
 
 // ── Types ──
 
-interface StopPriceInput {
+export interface StopPriceInput {
     distanceKm: number
     weightKg: number
     volumeM3?: number
@@ -26,6 +28,7 @@ interface StopPriceInput {
     isNight?: boolean
     prevStopDistanceKm?: number
     durationSeconds?: number
+    overrideAmount?: number
 }
 
 interface PriceBreakdown {
@@ -39,7 +42,9 @@ interface PriceBreakdown {
     proximityDiscount: number
     heavyLoadSurcharge: number
     lightLoadDiscount: number
-    total: number
+    calculatedAmount: number
+    finalAmount: number
+    isPriceOverridden: boolean
 }
 
 interface PriceMatrixEntry {
@@ -47,7 +52,8 @@ interface PriceMatrixEntry {
     filterName: string
     ownerType: 'COMPANY' | 'DRIVER' | 'DEFAULT'
     ownerId: string | null
-    total: number
+    calculatedAmount: number
+    finalAmount: number
     breakdown: PriceBreakdown
 }
 
@@ -110,6 +116,7 @@ const priceMatrixSchema = vine.object({
         isUrgent: vine.boolean().optional(),
         isNight: vine.boolean().optional(),
         prevStopDistanceKm: vine.number().min(0).optional(),
+        overrideAmount: vine.number().min(0).optional(),
     })).minLength(1),
     candidateIds: vine.array(vine.string()).optional(),
 })
@@ -298,8 +305,8 @@ class PricingFilterService {
 
     // ── Calculs ──
 
-    calculateStopPrice(filter: PricingFilter, input: StopPriceInput & { durationSeconds?: number }): PriceBreakdown {
-        const { distanceKm, weightKg, volumeM3 = 0, isFragile = false, isUrgent = false, isNight = false, prevStopDistanceKm, durationSeconds = 0 } = input
+    calculateStopPrice(filter: PricingFilter, input: StopPriceInput): PriceBreakdown {
+        const { distanceKm, weightKg, volumeM3 = 0, isFragile = false, isUrgent = false, isNight = false, prevStopDistanceKm, durationSeconds = 0, overrideAmount } = input
 
         const effectiveDistance = Math.max(distanceKm, filter.minDistance)
         const cappedDistance = filter.maxDistance ? Math.min(effectiveDistance, filter.maxDistance) : effectiveDistance
@@ -336,14 +343,23 @@ class PricingFilterService {
             lightLoadDiscount = Math.round(subtotal * filter.lightLoadDiscountPercent / 100)
         }
 
-        const total = Math.max(500, subtotal + fragileSurcharge + urgentSurcharge + nightSurcharge - proximityDiscount + heavyLoadSurcharge - lightLoadDiscount)
+        const calculatedAmount = Math.max(500, subtotal + fragileSurcharge + urgentSurcharge + nightSurcharge - proximityDiscount + heavyLoadSurcharge - lightLoadDiscount)
 
-        return { baseFee, distanceFee, weightFee, volumeFee, fragileSurcharge, urgentSurcharge, nightSurcharge, proximityDiscount, heavyLoadSurcharge, lightLoadDiscount, total }
+        let finalAmount = calculatedAmount
+        let isPriceOverridden = false
+
+        if (overrideAmount !== undefined && overrideAmount !== null) {
+            finalAmount = overrideAmount
+            isPriceOverridden = true
+        }
+
+        return { baseFee, distanceFee, weightFee, volumeFee, fragileSurcharge, urgentSurcharge, nightSurcharge, proximityDiscount, heavyLoadSurcharge, lightLoadDiscount, calculatedAmount, finalAmount, isPriceOverridden }
     }
 
-    calculateOrderPrice(filter: PricingFilter, stops: StopPriceInput[]): { total: number; stopBreakdowns: PriceBreakdown[] } {
+    calculateOrderPrice(filter: PricingFilter, stops: StopPriceInput[]): { calculatedAmount: number; finalAmount: number; stopBreakdowns: PriceBreakdown[] } {
         const stopBreakdowns: PriceBreakdown[] = []
-        let total = 0
+        let calculatedAmount = 0
+        let finalAmount = 0
 
         for (let i = 0; i < stops.length; i++) {
             const stop = { ...stops[i] }
@@ -352,10 +368,11 @@ class PricingFilterService {
             }
             const breakdown = this.calculateStopPrice(filter, stop)
             stopBreakdowns.push(breakdown)
-            total += breakdown.total
+            calculatedAmount += breakdown.calculatedAmount
+            finalAmount += breakdown.finalAmount
         }
 
-        return { total, stopBreakdowns }
+        return { calculatedAmount, finalAmount, stopBreakdowns }
     }
 
     async buildPriceMatrix(data: any, trx?: TransactionClientContract): Promise<PriceMatrixEntry[]> {
@@ -379,7 +396,7 @@ class PricingFilterService {
         const matrix: PriceMatrixEntry[] = []
 
         for (const filter of filters) {
-            const { total, stopBreakdowns } = this.calculateOrderPrice(filter, stops)
+            const { calculatedAmount, finalAmount, stopBreakdowns } = this.calculateOrderPrice(filter, stops)
 
             const aggregated: PriceBreakdown = {
                 baseFee: stopBreakdowns.reduce((s, b) => s + b.baseFee, 0),
@@ -392,7 +409,9 @@ class PricingFilterService {
                 proximityDiscount: stopBreakdowns.reduce((s, b) => s + b.proximityDiscount, 0),
                 heavyLoadSurcharge: stopBreakdowns.reduce((s, b) => s + b.heavyLoadSurcharge, 0),
                 lightLoadDiscount: stopBreakdowns.reduce((s, b) => s + b.lightLoadDiscount, 0),
-                total,
+                calculatedAmount,
+                finalAmount,
+                isPriceOverridden: stopBreakdowns.some(b => b.isPriceOverridden)
             }
 
             matrix.push({
@@ -400,14 +419,48 @@ class PricingFilterService {
                 filterName: filter.name,
                 ownerType: filter.companyId ? 'COMPANY' : filter.driverId ? 'DRIVER' : 'DEFAULT',
                 ownerId: filter.companyId || filter.driverId || null,
-                total,
+                calculatedAmount,
+                finalAmount,
                 breakdown: aggregated,
             })
         }
 
-        matrix.sort((a, b) => a.total - b.total)
+        matrix.sort((a, b) => a.finalAmount - b.finalAmount)
         logger.debug({ matrixSize: matrix.length }, '[PricingFilter] Price matrix built')
         return matrix
+    }
+
+    // ── Overrides ──
+
+    async calculatePriceWithOverride(stopId: string, manualAmount: number, trx?: TransactionClientContract): Promise<void> {
+        const stop = await Stop.query({ client: trx }).where('id', stopId).firstOrFail()
+
+        const metadata = stop.metadata || {}
+        metadata.price_override = {
+            amount: manualAmount,
+            overridden_at: DateTime.now().toISO(),
+            is_active: true
+        }
+
+        stop.metadata = metadata
+        await stop.useTransaction(trx as any).save()
+
+        logger.info({ stopId, manualAmount }, '[PricingFilter] Price override applied')
+    }
+
+    async restoreOriginalPrice(stopId: string, trx?: TransactionClientContract): Promise<void> {
+        const stop = await Stop.query({ client: trx }).where('id', stopId).firstOrFail()
+
+        const metadata = stop.metadata || {}
+        if (metadata.price_override) {
+            metadata.price_override.is_active = false
+            metadata.price_override.restored_at = DateTime.now().toISO()
+        }
+
+        stop.metadata = metadata
+        await stop.useTransaction(trx as any).save()
+
+        logger.info({ stopId }, '[PricingFilter] Original price restored')
     }
 
     // ── Private ──

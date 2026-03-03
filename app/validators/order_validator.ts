@@ -31,6 +31,13 @@ export const createOrderSchema = vine.object({
     ref_id: vine.string().trim().optional(),
     priority: vine.enum(['LOW', 'MEDIUM', 'HIGH', 'low', 'medium', 'high'] as const).transform((v) => v.toUpperCase() as 'LOW' | 'MEDIUM' | 'HIGH').optional(),
     metadata: vine.any().optional(),
+    pricing_data: vine.any().optional(),
+    priceOverrides: vine.record(vine.number()).optional(),
+    template: vine.enum(['COMMANDE', 'MISSION', 'VOYAGE', 'commande', 'mission', 'voyage'] as const).transform((v) => v.toUpperCase() as 'COMMANDE' | 'MISSION' | 'VOYAGE').optional(),
+    targetCompanyId: vine.string().trim().optional(),
+    target_driver_id: vine.string().trim().optional(),
+    targetDriverId: vine.string().trim().optional(),
+    vehicleId: vine.string().trim().optional(),
 })
 
 /**
@@ -60,7 +67,7 @@ export const addActionSchema = vine.object({
         name: vine.string().trim().minLength(1).maxLength(100).optional(),
         description: vine.string().trim().optional(),
         product_url: vine.string().trim().url().optional(),
-        packaging_type: vine.enum(['box', 'fluid'] as const).optional(),
+        packaging_type: vine.enum(['box', 'fluid', 'person'] as const).optional(),
         weight: vine.number().optional(), // No conversion, stored as is
         unitary_price: vine.number().optional(),
         dimensions: vine.object({
@@ -89,7 +96,7 @@ export const updateActionSchema = vine.object({
         name: vine.string().trim().minLength(1).maxLength(100),
         description: vine.string().trim().optional(),
         product_url: vine.string().trim().url().optional(),
-        packaging_type: vine.enum(['box', 'fluid'] as const).optional(),
+        packaging_type: vine.enum(['box', 'fluid', 'person'] as const).optional(),
         weight: vine.number().optional(), // No conversion, stored as is
         unitary_price: vine.number().optional(),
         dimensions: vine.object({
@@ -183,7 +190,7 @@ export const transitItemSchema = vine.object({
     name: vine.string().trim().minLength(1).maxLength(100).optional(),
     description: vine.string().trim().optional(),
     product_url: vine.string().trim().url().optional(),
-    packaging_type: vine.enum(['box', 'fluid', 'BOX', 'FLUID'] as const).transform((v) => v.toLowerCase() as 'box' | 'fluid').optional(),
+    packaging_type: vine.enum(['box', 'fluid', 'person', 'BOX', 'FLUID', 'PERSON'] as const).transform((v) => v.toLowerCase() as 'box' | 'fluid' | 'person').optional(),
     weight: vine.number().optional(), // No conversion
     unitary_price: vine.number().optional(),
     dimensions: vine.object({

@@ -2,9 +2,11 @@ import { DateTime } from 'luxon'
 import { BaseModel, beforeCreate, column, belongsTo, hasMany } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Order from '#models/order'
-import Product from '#models/product'
-import Action from '#models/action'
+import Step from '#models/step'
+import Booking from '#models/booking'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
+import Action from './action.js'
+import Product from './product.js'
 
 export default class TransitItem extends BaseModel {
     @column({ isPrimary: true })
@@ -45,17 +47,17 @@ export default class TransitItem extends BaseModel {
     declare weight: number | null
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : null,
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : null,
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare dimensions: any
 
     @column()
-    declare packagingType: 'box' | 'fluid'
+    declare packagingType: 'box' | 'fluid' | 'person'
 
     @column({
-        prepare: (v) => v ? JSON.stringify(v) : JSON.stringify({}),
-        consume: (v) => typeof v === 'string' ? JSON.parse(v) : v
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : v
     })
     declare metadata: any
 
@@ -76,6 +78,24 @@ export default class TransitItem extends BaseModel {
 
     @belongsTo(() => Order)
     declare order: BelongsTo<typeof Order>
+
+    @column()
+    declare bookingId: string | null
+
+    @belongsTo(() => Booking)
+    declare booking: BelongsTo<typeof Booking>
+
+    @column()
+    declare pickupStepId: string | null
+
+    @belongsTo(() => Step)
+    declare pickupStep: BelongsTo<typeof Step>
+
+    @column()
+    declare deliveryStepId: string | null
+
+    @belongsTo(() => Step)
+    declare deliveryStep: BelongsTo<typeof Step>
 
     @belongsTo(() => Product)
     declare product: BelongsTo<typeof Product>

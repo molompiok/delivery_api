@@ -14,13 +14,19 @@ import Stop from '#models/stop'
 import Action from '#models/action'
 import Step from '#models/step'
 import OrderLeg from '#models/order_leg'
-import { isValidCodeFormat } from '#utils/verification_code'
 import { MultipartFile } from '@adonisjs/core/bodyparser'
 import FileManager from '#services/file_manager'
 import File from '#models/file'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import OrderDraftService from '#services/order/order_draft_service'
 import { GeoCompressor } from '#utils/geo_compressor'
+import vine from '@vinejs/vine'
+
+const verifyCodeValidator = vine.compile(
+    vine.object({
+        code: vine.string().trim().minLength(6).maxLength(6),
+    })
+)
 
 @inject()
 export default class MissionService {
@@ -627,7 +633,7 @@ export default class MissionService {
             // Invalidate nav_trace cache
             await RedisService.clearOrderNavTrace(orderId)
 
-            return await Order.findOrFail(orderId)
+            return await Order.findOrFail(orderId, { client: effectiveTrx })
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()
             throw error
@@ -978,10 +984,8 @@ export default class MissionService {
     /**
      * Verify a pickup/delivery code on a leg.
      */
-    async verifyCode(orderId: string, code: string, trx?: TransactionClientContract) {
-        if (!isValidCodeFormat(code)) {
-            throw new Error('Invalid code format. Must be 6 digits.')
-        }
+    async verifyCode(orderId: string, rawCode: string, trx?: TransactionClientContract) {
+        const { code } = await verifyCodeValidator.validate({ code: rawCode })
 
         const effectiveTrx = trx || await db.transaction()
         try {

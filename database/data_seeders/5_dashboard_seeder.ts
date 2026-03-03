@@ -56,7 +56,7 @@ export default class DashboardSeeder extends BaseSeeder {
                     scheduleType: ScheduleType.WORK,
                     scheduleCategory: ScheduleCategory.WORK,
                     recurrenceType: RecurrenceType.WEEKLY,
-                    dayOfWeek: (i + 1) % 7, // Lun, Mar, Mer, Jeu
+                    daysOfWeek: [(i + 1) % 7], // Lun, Mar, Mer, Jeu
                     startTime: '08:00',
                     endTime: '17:00',
                     isActive: true,

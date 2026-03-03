@@ -83,10 +83,16 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @hasMany(() => Schedule)
   declare schedules: HasMany<typeof Schedule>
 
-
-
   @hasMany(() => ApiKey)
   declare apiKeys: HasMany<typeof ApiKey>
+
+  @manyToMany(() => Company, {
+    pivotTable: 'company_b2b_partners',
+    pivotForeignKey: 'client_id',
+    pivotRelatedForeignKey: 'company_id',
+    pivotColumns: ['status']
+  })
+  declare b2bPartnerships: ManyToMany<typeof Company>
 
   @manyToMany(() => Zone, {
     pivotTable: 'zone_drivers',

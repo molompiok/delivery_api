@@ -21,6 +21,8 @@ router
         router.post('/actions/:actionId/complete', [MissionsController, 'completeAction'])
         router.post('/actions/:actionId/freeze', [MissionsController, 'freezeAction'])
         router.post('/actions/:actionId/unfreeze', [MissionsController, 'unfreezeAction'])
+
+        router.post('/missions/interventions', [MissionsController, 'createIntervention'])
     })
     .prefix('/v1')
     .use(middleware.auth())

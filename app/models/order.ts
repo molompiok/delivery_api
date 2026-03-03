@@ -8,6 +8,9 @@ import Step from '#models/step'
 import Stop from '#models/stop'
 import Action from '#models/action'
 import TransitItem from '#models/transit_item'
+import Company from '#models/company'
+import Booking from '#models/booking'
+import PaymentIntent from '#models/payment_intent'
 import type { BelongsTo, HasOne, HasMany } from '@adonisjs/lucid/types/relations'
 import { hasMany } from '@adonisjs/lucid/orm'
 import type { PricingDetails, OrderMetadata } from '../types/logistics.js'
@@ -53,7 +56,7 @@ export default class Order extends BaseModel {
     declare assignmentAttemptCount: number
 
     @column()
-    declare status: 'DRAFT' | 'PENDING' | 'ACCEPTED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE'
+    declare status: 'DRAFT' | 'PENDING' | 'ACCEPTED' | 'DELIVERED' | 'FAILED' | 'CANCELLED' | 'NO_DRIVER_AVAILABLE' | 'PUBLISHED'
 
     @column()
     declare isComplex: boolean
@@ -63,6 +66,12 @@ export default class Order extends BaseModel {
 
     @column()
     declare template: OrderTemplate | null
+
+    @column()
+    declare isIntervention: boolean
+
+    @column()
+    declare initiatorId: string | null
 
     @column()
     declare isDeleted: boolean
@@ -117,6 +126,12 @@ export default class Order extends BaseModel {
     @belongsTo(() => Vehicle)
     declare vehicle: BelongsTo<typeof Vehicle>
 
+    @column()
+    declare companyId: string | null
+
+    @belongsTo(() => Company)
+    declare company: BelongsTo<typeof Company>
+
 
     @column()
     declare legId: string | null
@@ -135,6 +150,12 @@ export default class Order extends BaseModel {
 
     @hasMany(() => TransitItem)
     declare transitItems: HasMany<typeof TransitItem>
+
+    @hasMany(() => Booking)
+    declare bookings: HasMany<typeof Booking>
+
+    @hasMany(() => PaymentIntent)
+    declare paymentIntents: HasMany<typeof PaymentIntent>
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

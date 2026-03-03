@@ -61,10 +61,19 @@ export default defineConfig({
   |
   */
   preloads: [
-    () => import('./start/routes.js'),
-    () => import('./start/kernel.js'),
+    {
+      file: () => import('./start/routes.js'),
+      environment: ['web']
+    },
+    {
+      file: () => import('./start/kernel.js'),
+      environment: ['web']
+    },
     () => import('./start/init.js'),
-    () => import('./start/ws.js'),
+    {
+      file: () => import('./start/ws.js'),
+      environment: ['web']
+    },
     () => import('./start/events.js')
   ],
 

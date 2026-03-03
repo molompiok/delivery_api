@@ -3,9 +3,8 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
 import Order from '#models/order'
-import OrderPayment from '#models/order_payment'
+import PaymentIntent from '#models/payment_intent'
 import PaymentPolicy from '#models/payment_policy'
-import StopPayment from '#models/stop_payment'
 import CodCollection from '#models/cod_collection'
 import User from '#models/user'
 import paymentPolicyService from '#services/payment_policy_service'
@@ -24,17 +23,6 @@ import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 // ── Vine Schemas ──
 
-const initiateSchema = vine.object({
-    orderId: vine.string(),
-    totalAmount: vine.number().min(0),
-    driverId: vine.string().optional(),
-    companyId: vine.string().optional(),
-    clientWalletId: vine.string().optional(),
-    driverWalletId: vine.string().optional(),
-    companyWalletId: vine.string().optional(),
-    platformWalletId: vine.string().optional(),
-    template: vine.string().optional(),
-})
 
 export interface PaymentSplits {
     platformAmount: number
@@ -69,65 +57,155 @@ const SUBLYMUS_COMMISSION_PERCENT = 1
 const WAVE_FEE_PERCENT = 1
 
 class OrderPaymentService {
-    // ... (findById and getByOrder unchanged)
-    async initiate(user: User, data: any, trx?: TransactionClientContract): Promise<OrderPayment> {
-        const validated = await vine.validate({ schema: initiateSchema, data })
+    async findById(id: string, user?: User, trx?: TransactionClientContract): Promise<PaymentIntent> {
+        const query = PaymentIntent.query({ client: trx }).where('id', id)
+        const intent = await query.firstOrFail()
+
+        // Authorization check if needed
+        if (user && intent.payerId !== user.id) {
+            const companyId = user.currentCompanyManaged || user.companyId
+            if (!companyId) throw new Error('Not authorized to view this payment intent')
+        }
+        return intent
+    }
+
+    async getByOrder(orderId: string, trx?: TransactionClientContract): Promise<PaymentIntent[]> {
+        return PaymentIntent.query({ client: trx }).where('orderId', orderId)
+    }
+
+
+    // ── Generate Payment Intents ──
+
+    async generateIntentsForOrder(order: Order, trx?: TransactionClientContract): Promise<PaymentIntent[]> {
         const effectiveTrx = trx || await db.transaction()
-
         try {
-            // Vérifier que l'order appartient à l'user
-            const order = await Order.query({ client: effectiveTrx })
-                .where('id', validated.orderId)
-                .firstOrFail()
-
-            if (order.clientId !== user.id) {
-                const companyId = user.currentCompanyManaged || user.companyId
-                if (!companyId) throw new Error('Not authorized to initiate payment for this order')
+            // Mission/Intervention flows are intentionally non-billable in this refactor.
+            if (order.template === 'MISSION') {
+                if (!trx) await effectiveTrx.commit()
+                logger.info({ orderId: order.id, template: order.template }, '[PaymentIntent] Skipped for mission order')
+                return []
             }
 
-            // Résoudre la politique applicable
+            await (order as any).load('stops')
+            if (order.template === 'VOYAGE') {
+                await (order as any).load('bookings', (bookingQuery: any) => {
+                    bookingQuery.preload('transitItems')
+                })
+            }
+
             const policy = await paymentPolicyService.resolve(
-                validated.driverId, validated.companyId, validated.template, effectiveTrx
+                order.driverId, order.companyId, order.template, effectiveTrx
             )
 
-            const splits = this.calculateSplits(validated.totalAmount, policy, validated.companyId)
+            const intents: PaymentIntent[] = []
 
-            const orderPayment = await OrderPayment.create({
-                orderId: validated.orderId,
-                paymentPolicyId: policy?.id || null,
-                totalAmount: validated.totalAmount,
-                driverAmount: splits.driverAmount,
-                companyAmount: splits.companyAmount,
-                platformAmount: splits.platformAmount,
-                clientWalletId: validated.clientWalletId || null,
-                driverWalletId: validated.driverWalletId || null,
-                companyWalletId: validated.companyWalletId || null,
-                platformWalletId: validated.platformWalletId || null,
-                paymentStatus: 'PENDING',
-                paidAmount: 0,
-                remainingAmount: totalAmount,
-                codAmount: null,
-                codStatus: 'NONE',
-            }, { client: effectiveTrx })
+            if (order.template === 'VOYAGE') {
+                // Pour VOYAGE: un intent par réservation (idempotent par booking_id)
+                const bookingIds = (order.bookings || []).map((b: any) => b.id).filter(Boolean)
+                const existingRows = bookingIds.length
+                    ? await PaymentIntent.query({ client: effectiveTrx })
+                        .where('orderId', order.id)
+                        .whereIn('bookingId', bookingIds)
+                        .whereNotNull('bookingId')
+                        .select('bookingId')
+                    : []
 
-            // Si PROGRESSIVE, créer un StopPayment par stop
-            if (policy?.clientPaymentTrigger === 'PROGRESSIVE') {
-                await this.createStopPayments(orderPayment, effectiveTrx)
+                const existingBookingIntentIds = new Set<string>(
+                    existingRows.map((row: any) => String(row.bookingId))
+                )
+
+                for (const booking of order.bookings) {
+                    if (existingBookingIntentIds.has(String(booking.id))) {
+                        continue
+                    }
+
+                    const transitItems = booking.transitItems || []
+                    const amount = transitItems.reduce((sum: number, item: any) => sum + (item.unitaryPrice || 0), 0)
+
+                    const splits = this.calculateSplits({ amount, bookingId: booking.id, calculatedAmount: amount }, policy, order.companyId)
+
+                    const intent = await PaymentIntent.create({
+                        orderId: order.id,
+                        bookingId: booking.id,
+                        payerId: booking.clientId,
+                        amount: amount,
+                        calculatedAmount: amount, // simplify for now
+                        isPriceOverridden: false,
+                        paymentMethod: 'WAVE', // default ?
+                        status: 'PENDING',
+                        platformFee: splits.platformAmount, // Using platform cut for fee
+                        waveFee: splits.waveFee,
+                        companyAmount: splits.companyAmount,
+                        driverAmount: splits.driverAmount,
+                    }, { client: effectiveTrx })
+                    intents.push(intent)
+                    existingBookingIntentIds.add(String(booking.id))
+                }
+
+            } else {
+                // Pour COMMANDE: Payeur = Client
+                const pricingData = order.pricingData as any
+                const totalAmount = pricingData?.clientFee || 0
+                const calculatedAmount = pricingData?.calculatedAmount || totalAmount
+                const isPriceOverridden = pricingData?.isPriceOverridden || false
+
+                if (policy?.clientPaymentTrigger === 'PROGRESSIVE') {
+                    // Paiement progressif : un intent par stop (livraison)
+                    const stops = order.stops.sort((a, b) => (a.executionOrder ?? 0) - (b.executionOrder ?? 0))
+                    // Ensure we don't divide by 0
+                    if (stops.length > 0) {
+                        const amountPerStop = Math.floor(totalAmount / stops.length)
+                        const calculatedAmountPerStop = Math.floor(calculatedAmount / stops.length)
+                        const remainder = totalAmount - (amountPerStop * stops.length)
+
+                        for (let i = 0; i < stops.length; i++) {
+                            const amnt = i === stops.length - 1 ? amountPerStop + remainder : amountPerStop
+                            const calcAmnt = i === stops.length - 1 ? calculatedAmountPerStop + (calculatedAmount - (calculatedAmountPerStop * stops.length)) : calculatedAmountPerStop
+
+                            const splits = this.calculateSplits({ amount: amnt, calculatedAmount: calcAmnt }, policy, order.companyId)
+
+                            const intent = await PaymentIntent.create({
+                                orderId: order.id,
+                                stopId: stops[i].id,
+                                payerId: order.clientId,
+                                amount: amnt,
+                                calculatedAmount: calcAmnt,
+                                isPriceOverridden,
+                                paymentMethod: 'WAVE',
+                                status: 'PENDING',
+                                platformFee: splits.platformAmount,
+                                waveFee: splits.waveFee,
+                                companyAmount: splits.companyAmount,
+                                driverAmount: splits.driverAmount,
+                            }, { client: effectiveTrx })
+                            intents.push(intent)
+                        }
+                    }
+                } else {
+                    // Paiement unique pour toute la commande
+                    const splits = this.calculateSplits({ amount: totalAmount, calculatedAmount }, policy, order.companyId)
+
+                    const intent = await PaymentIntent.create({
+                        orderId: order.id,
+                        payerId: order.clientId,
+                        amount: totalAmount,
+                        calculatedAmount,
+                        isPriceOverridden,
+                        paymentMethod: 'WAVE',
+                        status: 'PENDING',
+                        platformFee: splits.platformAmount,
+                        waveFee: splits.waveFee,
+                        companyAmount: splits.companyAmount,
+                        driverAmount: splits.driverAmount,
+                    }, { client: effectiveTrx })
+                    intents.push(intent)
+                }
             }
 
             if (!trx) await effectiveTrx.commit()
 
-            logger.info({
-                orderPaymentId: orderPayment.id,
-                orderId: validated.orderId,
-                totalAmount,
-                driverAmount: orderPayment.driverAmount,
-                platformAmount,
-                companyAmount,
-                trigger: policy?.clientPaymentTrigger,
-            }, '[OrderPayment] Initiated')
-
-            return orderPayment
+            logger.info({ orderId: order.id, count: intents.length }, '[PaymentIntent] Generated for order')
+            return intents
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()
             throw error
@@ -141,73 +219,81 @@ class OrderPaymentService {
         const effectiveTrx = trx || await db.transaction()
 
         try {
-            const payment = await OrderPayment.query({ client: effectiveTrx })
+            const intent = await (PaymentIntent as any).query({ client: effectiveTrx })
                 .where('id', id)
+                .preload('order', (q: any) => {
+                    q.preload('driver')
+                    q.preload('company')
+                })
                 .forUpdate()
                 .firstOrFail()
 
-            // Construire les splits pour wave-api
+            // Fetch wallets dynamically from related entities
+            const driverWalletId = (intent as any).order?.driver?.walletId
+            const companyWalletId = (intent as any).order?.company?.walletId
+            const platformWalletId = process.env.WAVE_PLATFORM_WALLET_ID
+
             const splits = []
 
-            if (payment.driverWalletId && payment.driverAmount > 0) {
+            if (driverWalletId && intent.driverAmount > 0) {
                 splits.push({
-                    wallet_id: payment.driverWalletId,
-                    amount: payment.driverAmount,
+                    wallet_id: driverWalletId,
+                    amount: intent.driverAmount,
                     category: 'DRIVER_PAYMENT',
-                    label: `Rémunération livraison ${payment.orderId}`,
+                    label: `Rémunération livraison ${intent.orderId}`,
                     release_delay_hours: 0,
                 })
             }
 
-            if (payment.companyWalletId && payment.companyAmount > 0) {
+            if (companyWalletId && intent.companyAmount > 0) {
                 splits.push({
-                    wallet_id: payment.companyWalletId,
-                    amount: payment.companyAmount,
+                    wallet_id: companyWalletId,
+                    amount: intent.companyAmount,
                     category: 'COMPANY_COMMISSION',
-                    label: `Commission entreprise ${payment.orderId}`,
+                    label: `Commission entreprise ${intent.orderId}`,
                     release_delay_hours: 0,
                 })
             }
 
-            if (payment.platformWalletId && payment.platformAmount > 0) {
+            if (platformWalletId && intent.platformFee > 0) {
                 splits.push({
-                    wallet_id: payment.platformWalletId,
-                    amount: payment.platformAmount,
+                    wallet_id: platformWalletId,
+                    amount: intent.platformFee,
                     category: 'PLATFORM_COMMISSION',
-                    label: `Commission plateforme ${payment.orderId}`,
+                    label: `Commission plateforme ${intent.orderId}`,
                     release_delay_hours: 0,
                 })
             }
 
-            if (splits.length === 0) {
+            if (splits.length === 0 && intent.amount > 0) {
                 throw new Error('No wallet splits configured')
             }
 
             try {
-                const intent = await walletBridge.createPaymentIntent({
-                    amount: payment.totalAmount,
-                    externalReference: `order_${payment.orderId}`,
-                    description: `Paiement commande ${payment.orderId}`,
+                const waveIntent = await walletBridge.createPaymentIntent({
+                    amount: intent.amount,
+                    externalReference: `${intent.id}`,
+                    description: `Paiement commande ${intent.orderId}`,
                     successUrl: validated.successUrl,
                     errorUrl: validated.errorUrl,
                     splits,
                 })
 
-                payment.paymentIntentId = intent.payment_intent_id
-                payment.paymentStatus = 'AUTHORIZED'
-                await payment.useTransaction(effectiveTrx).save()
+                intent.externalId = waveIntent.payment_intent_id
+
+                await intent.useTransaction(effectiveTrx).save()
 
                 if (!trx) await effectiveTrx.commit()
 
                 logger.info({
-                    orderPaymentId: payment.id,
-                    intentId: intent.payment_intent_id,
-                }, '[OrderPayment] Authorized')
+                    intentId: intent.id,
+                    externalId: intent.externalId,
+                }, '[PaymentIntent] Authorized')
 
-                return { checkoutUrl: intent.wave_checkout_url || undefined }
+                return { checkoutUrl: waveIntent.wave_checkout_url || undefined }
             } catch (error) {
-                payment.paymentStatus = 'FAILED'
-                await payment.useTransaction(effectiveTrx).save()
+                intent.status = 'FAILED'
+                await intent.useTransaction(effectiveTrx).save()
                 if (!trx) await effectiveTrx.commit()
                 throw error
             }
@@ -223,50 +309,40 @@ class OrderPaymentService {
         const effectiveTrx = trx || await db.transaction()
 
         try {
-            const stopPayment = await StopPayment.query({ client: effectiveTrx })
+            const intent = await (PaymentIntent as any).query({ client: effectiveTrx })
                 .where('stop_id', stopId)
                 .where('status', 'PENDING')
+                .preload('order', (q: any) => q.preload('driver'))
                 .first()
 
-            if (!stopPayment) {
+            if (!intent) {
                 if (!trx) await effectiveTrx.commit()
                 return
             }
 
-            const orderPayment = await OrderPayment.query({ client: effectiveTrx })
-                .where('id', stopPayment.orderPaymentId)
-                .forUpdate()
-                .firstOrFail()
-
             try {
-                if (orderPayment.driverWalletId && stopPayment.amount > 0) {
+                const driverWalletId = (intent as any).order?.driver?.walletId
+                if (driverWalletId && intent.driverAmount > 0) {
                     await walletBridge.releaseFunds({
-                        wallet_id: orderPayment.driverWalletId,
-                        amount: stopPayment.amount,
+                        wallet_id: driverWalletId,
+                        amount: intent.driverAmount,
                         label: `Release stop ${stopId}`,
                         external_reference: `stop_${stopId}`,
                     })
                 }
 
-                stopPayment.status = 'PAID'
-                stopPayment.paidAt = DateTime.now()
-                await stopPayment.useTransaction(effectiveTrx).save()
-
-                orderPayment.paidAmount += stopPayment.amount
-                orderPayment.remainingAmount -= stopPayment.amount
-                orderPayment.paymentStatus = orderPayment.remainingAmount <= 0 ? 'COMPLETED' : 'PARTIAL'
-                await orderPayment.useTransaction(effectiveTrx).save()
+                intent.status = 'COMPLETED'
+                await intent.useTransaction(effectiveTrx).save()
 
                 if (!trx) await effectiveTrx.commit()
 
                 logger.info({
                     stopId,
-                    amount: stopPayment.amount,
-                    remaining: orderPayment.remainingAmount,
-                }, '[OrderPayment] Stop payment released')
+                    amount: intent.amount,
+                }, '[PaymentIntent] Stop payment released')
             } catch (error) {
-                stopPayment.status = 'FAILED'
-                await stopPayment.useTransaction(effectiveTrx).save()
+                intent.status = 'FAILED'
+                await intent.useTransaction(effectiveTrx).save()
                 if (!trx) await effectiveTrx.commit()
                 throw error
             }
@@ -279,23 +355,20 @@ class OrderPaymentService {
     // ── Order delivered ──
 
     async onOrderDelivered(orderId: string, trx?: TransactionClientContract): Promise<void> {
-        const orderPayment = await OrderPayment.query({ client: trx })
+        const intents = await (PaymentIntent as any).query({ client: trx })
             .where('order_id', orderId)
-            .first()
+            .whereNot('status', 'COMPLETED')
 
-        if (!orderPayment) return
-        if (orderPayment.paymentStatus === 'COMPLETED') return
-
-        orderPayment.paymentStatus = 'COMPLETED'
-        orderPayment.paidAmount = orderPayment.totalAmount
-        orderPayment.remainingAmount = 0
-        if (trx) {
-            await orderPayment.useTransaction(trx).save()
-        } else {
-            await orderPayment.save()
+        for (const intent of intents) {
+            intent.status = 'COMPLETED'
+            if (trx) {
+                await intent.useTransaction(trx).save()
+            } else {
+                await intent.save()
+            }
         }
 
-        logger.info({ orderId, orderPaymentId: orderPayment.id }, '[OrderPayment] Order delivered - payment completed')
+        logger.info({ orderId, count: intents.length }, '[PaymentIntent] Order delivered - payment completed')
     }
 
     // ── COD ──
@@ -305,25 +378,25 @@ class OrderPaymentService {
         const effectiveTrx = trx || await db.transaction()
 
         try {
-            const orderPayment = await OrderPayment.query({ client: effectiveTrx })
+            const intent = await (PaymentIntent as any).query({ client: effectiveTrx })
                 .where('id', id)
+                .preload('order', (q: any) => q.preload('driver'))
                 .forUpdate()
                 .firstOrFail()
 
-            // Vérifier que l'user est bien le driver de cette commande
-            const order = await Order.query({ client: effectiveTrx }).where('id', orderPayment.orderId).firstOrFail()
-            if (order.driverId !== user.id) {
+            if ((intent as any).order.driverId !== user.id) {
                 throw new Error('Only the assigned driver can handle COD')
             }
 
-            // Déterminer le mode de règlement
             let settlementMode: SettlementMode = 'IMMEDIATE'
             let deferredReason: string | null = null
             let status: CodCollectionStatus = 'COLLECTED'
 
-            if (orderPayment.driverWalletId) {
+            const driverWalletId = (intent as any).order?.driver?.walletId
+
+            if (driverWalletId) {
                 try {
-                    const balance = await walletBridge.getBalance(orderPayment.driverWalletId)
+                    const balance = await walletBridge.getBalance(driverWalletId)
                     if (balance.available_balance < validated.collectedAmount) {
                         settlementMode = 'DEFERRED'
                         deferredReason = 'Solde insuffisant pour débit immédiat'
@@ -337,8 +410,8 @@ class OrderPaymentService {
             }
 
             const codCollection = await CodCollection.create({
-                orderPaymentId: id,
-                orderId: orderPayment.orderId,
+                paymentIntentId: id,
+                orderId: intent.orderId,
                 driverId: user.id,
                 stopId: validated.stopId || null,
                 expectedAmount: validated.expectedAmount,
@@ -354,15 +427,14 @@ class OrderPaymentService {
                 notes: validated.notes || null,
             }, { client: effectiveTrx })
 
-            // Si IMMEDIATE, débiter le wallet du driver maintenant
-            if (settlementMode === 'IMMEDIATE' && orderPayment.driverWalletId) {
+            if (settlementMode === 'IMMEDIATE' && driverWalletId) {
                 try {
-                    await this.settleCodFromDriverWallet(orderPayment, codCollection)
-                    codCollection.status = 'SETTLED' as any
+                    await this.settleCodFromDriverWallet(intent, codCollection, driverWalletId)
+                    codCollection.status = 'SETTLED'
                     codCollection.settledAt = DateTime.now()
                     await codCollection.useTransaction(effectiveTrx).save()
                 } catch (error) {
-                    logger.error({ error, codId: codCollection.id }, '[OrderPayment] Failed to settle COD immediately')
+                    logger.error({ error, codId: codCollection.id }, '[PaymentIntent] Failed to settle COD immediately')
                     codCollection.settlementMode = 'DEFERRED'
                     codCollection.deferredReason = 'Débit wallet échoué'
                     codCollection.status = 'COD_DEFERRED'
@@ -370,11 +442,8 @@ class OrderPaymentService {
                 }
             }
 
-            // Mettre à jour le statut COD de l'OrderPayment
-            orderPayment.codAmount = validated.collectedAmount
-            orderPayment.codStatus = codCollection.status === ('SETTLED' as any) ? 'DEPOSITED' : 'COLLECTED'
-            orderPayment.paymentStatus = codCollection.status === ('SETTLED' as any) ? 'COD_COLLECTED' : 'COD_DEFERRED'
-            await orderPayment.useTransaction(effectiveTrx).save()
+            intent.status = codCollection.status === 'SETTLED' ? 'COMPLETED' : 'PENDING'
+            await intent.useTransaction(effectiveTrx).save()
 
             if (!trx) await effectiveTrx.commit()
 
@@ -382,7 +451,7 @@ class OrderPaymentService {
                 codId: codCollection.id,
                 settlementMode,
                 amount: validated.collectedAmount,
-            }, '[OrderPayment] COD handled')
+            }, '[PaymentIntent] COD handled')
 
             return codCollection
         } catch (error) {
@@ -398,26 +467,29 @@ class OrderPaymentService {
         const effectiveTrx = trx || await db.transaction()
 
         try {
-            const payment = await OrderPayment.query({ client: effectiveTrx })
+            const intent = await (PaymentIntent as any).query({ client: effectiveTrx })
                 .where('id', id)
+                .preload('order', (q: any) => q.preload('client'))
                 .forUpdate()
                 .firstOrFail()
 
-            if (payment.clientWalletId && payment.paidAmount > 0) {
+            const clientWalletId = (intent as any).order?.client?.walletId
+
+            if (clientWalletId && intent.amount > 0) {
                 await walletBridge.refund({
-                    wallet_id: payment.clientWalletId,
-                    amount: payment.paidAmount,
-                    reason: validated.reason || `Remboursement commande ${payment.orderId}`,
-                    external_reference: `refund_${payment.orderId}`,
+                    wallet_id: clientWalletId,
+                    amount: intent.amount,
+                    reason: validated.reason || `Remboursement commande ${intent.orderId}`,
+                    external_reference: `refund_${intent.orderId}`,
                 })
             }
 
-            payment.paymentStatus = 'REFUNDED'
-            await payment.useTransaction(effectiveTrx).save()
+            intent.status = 'REFUNDED'
+            await intent.useTransaction(effectiveTrx).save()
 
             if (!trx) await effectiveTrx.commit()
 
-            logger.info({ orderPaymentId: id, amount: payment.paidAmount }, '[OrderPayment] Refunded')
+            logger.info({ paymentIntentId: id, amount: intent.amount }, '[PaymentIntent] Refunded')
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()
             throw error
@@ -427,9 +499,9 @@ class OrderPaymentService {
     // ── Settle deferred COD (batch/cron) ──
 
     async settlePendingCod(): Promise<{ settled: number; failed: number; total: number }> {
-        const deferred = await CodCollection.query()
+        const deferred = await (CodCollection as any).query()
             .where('status', 'COD_DEFERRED')
-            .preload('orderPayment')
+            .preload('paymentIntent', (q: any) => q.preload('order', (o: any) => o.preload('driver')))
             .exec()
 
         let settled = 0
@@ -437,94 +509,72 @@ class OrderPaymentService {
 
         for (const cod of deferred) {
             try {
-                await this.settleCodFromDriverWallet(cod.orderPayment, cod)
+                const driverWalletId = cod.paymentIntent?.order?.driver?.walletId
+                if (!driverWalletId) throw new Error('Driver wallet missing')
+
+                await this.settleCodFromDriverWallet(cod.paymentIntent, cod, driverWalletId)
                 cod.status = 'SETTLED'
                 cod.settledAt = DateTime.now()
                 await cod.save()
 
-                cod.orderPayment.codStatus = 'DEPOSITED'
-                cod.orderPayment.paymentStatus = 'COD_COLLECTED'
-                await cod.orderPayment.save()
+                cod.paymentIntent.status = 'COMPLETED'
+                await cod.paymentIntent.save()
 
                 settled++
             } catch (error) {
-                logger.error({ codId: cod.id, error }, '[OrderPayment] Failed to settle deferred COD')
+                logger.error({ codId: cod.id, error }, '[PaymentIntent] Failed to settle deferred COD')
                 failed++
             }
         }
 
-        logger.info({ settled, failed, total: deferred.length }, '[OrderPayment] Deferred COD settlement batch')
+        logger.info({ settled, failed, total: deferred.length }, '[PaymentIntent] Deferred COD settlement batch')
         return { settled, failed, total: deferred.length }
     }
 
     // ── Private ──
 
-    private async createStopPayments(orderPayment: OrderPayment, trx?: TransactionClientContract): Promise<void> {
-        const order = await Order.query({ client: trx })
-            .where('id', orderPayment.orderId)
-            .preload('stops')
-            .firstOrFail()
+    private async settleCodFromDriverWallet(intent: PaymentIntent, cod: CodCollection, driverWalletId: string): Promise<void> {
+        const platformWalletId = process.env.WAVE_PLATFORM_WALLET_ID
 
-        const stops = order.stops.sort((a, b) => (a.executionOrder ?? 0) - (b.executionOrder ?? 0))
-
-        if (stops.length === 0) return
-
-        const amountPerStop = Math.floor(orderPayment.totalAmount / stops.length)
-        const remainder = orderPayment.totalAmount - (amountPerStop * stops.length)
-
-        for (let i = 0; i < stops.length; i++) {
-            const amount = i === stops.length - 1 ? amountPerStop + remainder : amountPerStop
-
-            await StopPayment.create({
-                orderPaymentId: orderPayment.id,
-                stopId: stops[i].id,
-                amount,
-                status: 'PENDING',
-            }, { client: trx })
-        }
-
-        logger.info({
-            orderPaymentId: orderPayment.id,
-            stopsCount: stops.length,
-        }, '[OrderPayment] StopPayments created')
-    }
-
-    private async settleCodFromDriverWallet(orderPayment: OrderPayment, cod: CodCollection): Promise<void> {
-        if (!orderPayment.driverWalletId || !orderPayment.platformWalletId) return
+        if (!driverWalletId || !platformWalletId) return
 
         const splits = []
+        await (intent as any).load('order', (q: any) => q.preload('company'))
+        const companyWalletId = (intent as any).order?.company?.walletId
 
-        if (orderPayment.platformWalletId && orderPayment.platformAmount > 0) {
+        if (platformWalletId && intent.platformFee > 0) {
             splits.push({
-                wallet_id: orderPayment.platformWalletId,
-                amount: orderPayment.platformAmount,
+                wallet_id: platformWalletId,
+                amount: intent.platformFee,
                 category: 'COD_SETTLEMENT',
-                label: `Règlement COD - commission plateforme ${orderPayment.orderId}`,
+                label: `Règlement COD - commission plateforme ${intent.orderId}`,
             })
         }
 
-        if (orderPayment.companyWalletId && orderPayment.companyAmount > 0) {
+        if (companyWalletId && intent.companyAmount > 0) {
             splits.push({
-                wallet_id: orderPayment.companyWalletId,
-                amount: orderPayment.companyAmount,
+                wallet_id: companyWalletId,
+                amount: intent.companyAmount,
                 category: 'COD_SETTLEMENT',
-                label: `Règlement COD - commission entreprise ${orderPayment.orderId}`,
+                label: `Règlement COD - commission entreprise ${intent.orderId}`,
             })
         }
 
         if (splits.length > 0) {
             const totalToTransfer = splits.reduce((s, sp) => s + sp.amount, 0)
             await walletBridge.createInternalTransfer({
-                payer_wallet_id: orderPayment.driverWalletId,
+                payer_wallet_id: driverWalletId,
                 amount: totalToTransfer,
-                description: `Règlement COD commande ${orderPayment.orderId}`,
+                description: `Règlement COD commande ${intent.orderId}`,
                 external_reference: `cod_${cod.id}`,
                 splits,
             })
         }
     }
 
-    calculateSplits(totalAmount: number, policy: PaymentPolicy | null, companyId?: string | null): PaymentSplits {
+    calculateSplits(intent: { amount: number, calculatedAmount?: number, bookingId?: string | null }, policy: PaymentPolicy | null, companyId?: string | null): PaymentSplits {
+        const totalAmount = intent.amount
+
         // 1. Déterminer les parts cibles (en %)
         let platformTargetPercent = 0
         if (!policy?.platformCommissionExempt) {
@@ -532,15 +582,23 @@ class OrderPaymentService {
         }
         const companyTargetPercent = policy?.companyCommissionPercent ?? 0
 
-        // 2. Calculer les montants bruts (avant frais Wave)
-        const platformGross = (platformTargetPercent > 0 || policy?.platformCommissionFixed)
-            ? Math.round(totalAmount * platformTargetPercent / 100) + (policy?.platformCommissionFixed ?? 0)
-            : 0
-        const companyGross = companyId ? Math.round(totalAmount * companyTargetPercent / 100) + (policy?.companyCommissionFixed ?? 0) : 0
+        // 2. Ticket Markup (Specific for VOYAGE Bookings)
+        let ticketMarkupAmount = 0
+        if (intent.bookingId && policy && policy.ticketMarkupPercent) {
+            ticketMarkupAmount = Math.round((intent.calculatedAmount || totalAmount) * policy.ticketMarkupPercent / 100)
+        }
 
-        // 3. Appliquer la réduction de 1% (frais Wave) au prorata sur chaque acteur
+        // 3. Calculer les montants bruts (avant frais Wave)
+        const platformGross = (platformTargetPercent > 0 || policy?.platformCommissionFixed)
+            ? Math.round((intent.calculatedAmount || totalAmount) * platformTargetPercent / 100) + (policy?.platformCommissionFixed ?? 0)
+            : 0
+        const totalPlatformGross = platformGross + ticketMarkupAmount
+
+        const companyGross = companyId ? Math.round((intent.calculatedAmount || totalAmount) * companyTargetPercent / 100) + (policy?.companyCommissionFixed ?? 0) : 0
+
+        // 4. Appliquer la réduction de 1% (frais Wave) au prorata sur chaque acteur
         const waveFactor = (1 - WAVE_FEE_PERCENT / 100)
-        const platformAmount = Math.round(platformGross * waveFactor)
+        const platformAmount = Math.round(totalPlatformGross * waveFactor)
         const companyAmount = Math.round(companyGross * waveFactor)
 
         const totalNet = Math.round(totalAmount * waveFactor)

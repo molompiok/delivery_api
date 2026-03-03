@@ -31,6 +31,11 @@ const IMPORTER = (filePath: string) => {
   return import(filePath)
 }
 
+process.on('unhandledRejection', (reason) => {
+  console.error('RAW UNHANDLED REJECTION:', reason)
+  process.exit(1)
+})
+
 new Ignitor(APP_ROOT, { importer: IMPORTER })
   .tap((app) => {
     app.booting(async () => {
@@ -43,5 +48,11 @@ new Ignitor(APP_ROOT, { importer: IMPORTER })
   .handle(process.argv.splice(2))
   .catch((error) => {
     process.exitCode = 1
-    prettyPrintError(error)
+    console.error('RAW UNCAUGHT ERROR:', error?.message)
+    console.error(error?.stack)
+    try {
+      prettyPrintError(error)
+    } catch (e) {
+      console.error('Error within prettyPrintError', e)
+    }
   })

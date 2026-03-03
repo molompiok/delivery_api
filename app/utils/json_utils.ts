@@ -1,4 +1,5 @@
-import { BaseModel } from '@adonisjs/lucid/orm'
+
+
 
 /**
  * Updates a specific field within a JSON column of a Lucid model.
@@ -17,7 +18,7 @@ import { BaseModel } from '@adonisjs/lucid/orm'
  * // Overwrite entire metadata
  * await updateMetadataField(order, 'metadata', { new: 'full_object' }, '')
  */
-export async function updateMetadataField<T extends BaseModel>(
+export async function updateMetadataField<T extends Record<string, any>>(
     model: T,
     column: keyof T,
     value: any,
