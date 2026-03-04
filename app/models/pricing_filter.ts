@@ -32,6 +32,15 @@ export default class PricingFilter extends BaseModel {
     @column()
     declare template: OrderTemplate | null
 
+    @column()
+    declare zoneMatrixEnabled: boolean
+
+    @column({
+        prepare: (v: any) => v ? JSON.stringify(v) : JSON.stringify({}),
+        consume: (v: any) => typeof v === 'string' ? JSON.parse(v) : (v || {})
+    })
+    declare zoneMatrix: any
+
     // --- Composantes du prix ---
 
     @column()

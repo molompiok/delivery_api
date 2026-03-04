@@ -130,6 +130,35 @@ class WalletBridgeService {
         }
     }
 
+    /**
+     * Map delivery-api categories to wave-api supported enums
+     */
+    private mapCategory(category?: string): string {
+        if (!category) return 'ADJUSTMENT'
+
+        const mapping: Record<string, string> = {
+            'TRANSFER': 'ADJUSTMENT',
+            'SALARY': 'SERVICE_PAYMENT',
+            'DRIVER_PAYMENT': 'SERVICE_PAYMENT',
+            'COMPANY_COMMISSION': 'COMMISSION',
+            'PLATFORM_COMMISSION': 'COMMISSION',
+            'COD_SETTLEMENT': 'ADJUSTMENT',
+            'RELEASE': 'ADJUSTMENT',
+            'SUBSCRIPTION_FEE': 'SUBSCRIPTION',
+            // Default mappings if they match wave-api exactly
+            'ORDER_PAYMENT': 'ORDER_PAYMENT',
+            'SERVICE_PAYMENT': 'SERVICE_PAYMENT',
+            'COMMISSION': 'COMMISSION',
+            'ADJUSTMENT': 'ADJUSTMENT',
+            'SUBSCRIPTION': 'SUBSCRIPTION',
+            'DEPOSIT': 'DEPOSIT',
+            'PAYOUT': 'PAYOUT',
+            'REFUND': 'REFUND',
+        }
+
+        return mapping[category.toUpperCase()] || 'ADJUSTMENT'
+    }
+
     private async request<T>(method: string, path: string, body?: any): Promise<T> {
         const url = `${this.config.baseUrl}/v1${path}`
         const maxRetries = 3
@@ -235,7 +264,10 @@ class WalletBridgeService {
             description: params.description,
             success_url: params.successUrl,
             error_url: params.errorUrl,
-            splits: params.splits,
+            splits: params.splits.map(s => ({
+                ...s,
+                category: this.mapCategory(s.category)
+            })),
         })
         return res.data
     }
@@ -253,7 +285,10 @@ class WalletBridgeService {
             currency: payload.currency || 'XOF',
             description: payload.description,
             external_reference: payload.external_reference,
-            splits: payload.splits,
+            splits: payload.splits.map(s => ({
+                ...s,
+                category: this.mapCategory(s.category)
+            })),
         })
         return res.data
     }
@@ -266,7 +301,7 @@ class WalletBridgeService {
             from_wallet_id: payload.from_wallet_id,
             to_wallet_id: payload.to_wallet_id,
             amount: payload.amount,
-            category: payload.category || 'TRANSFER',
+            category: this.mapCategory(payload.category || 'TRANSFER'),
             label: payload.label || 'Transfert interne',
             external_reference: payload.external_reference,
         })
@@ -279,7 +314,7 @@ class WalletBridgeService {
         return this.request('POST', '/transactions/release', {
             wallet_id: payload.wallet_id,
             amount: payload.amount,
-            category: payload.category || 'RELEASE',
+            category: this.mapCategory(payload.category || 'RELEASE'),
             label: payload.label || 'Libération de fonds',
             external_reference: payload.external_reference,
         })

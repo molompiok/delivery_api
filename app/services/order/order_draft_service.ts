@@ -8,10 +8,13 @@ import Stop from '#models/stop'
 import Action from '#models/action'
 import ActionProof from '#models/action_proof'
 import OrderLeg from '#models/order_leg'
+import PricingFilter from '#models/pricing_filter'
+import Zone from '#models/zone'
 import GeoService from '#services/geo_service'
 import PricingFilterService, { StopPriceInput } from '#services/pricing_filter_service'
 import PaymentPolicyService from '#services/payment_policy_service'
 import OrderPaymentService from '#services/order_payment_service'
+import subscriptionService from '#services/subscription_service'
 import { SimplePackageInfo } from '#services/pricing_service'
 import OrderStatusUpdated from '#events/order_status_updated'
 import DispatchService from '#services/dispatch_service'
@@ -60,6 +63,32 @@ export default class OrderDraftService {
                 `E_ACTIVITY_TEMPLATE_FORBIDDEN: company ${company.id} activityType=COMMANDE cannot create template=${normalizedTemplate} in ${context} mode. Allowed template: COMMANDE.`
             )
         }
+    }
+
+    private async assertSubscriptionAccessForCompany(
+        companyId: string | null,
+        trx: TransactionClientContract,
+        context: string,
+        preloadedCompany?: Company | null
+    ) {
+        if (!companyId) return
+        const company =
+            preloadedCompany ||
+            await Company.query({ client: trx })
+                .where('id', companyId)
+                .select('id', 'settings')
+                .first()
+
+        const rawSettings = (company as any)?.settings
+        const settings =
+            typeof rawSettings === 'string'
+                ? (() => {
+                    try { return JSON.parse(rawSettings) } catch { return {} }
+                })()
+                : (rawSettings || {})
+        const graceDaysRaw = Number(settings?.subscriptionGraceDays ?? 7)
+        const graceDays = Number.isFinite(graceDaysRaw) ? Math.max(0, Math.floor(graceDaysRaw)) : 7
+        await subscriptionService.assertCompanyCanConsume(companyId, trx, { graceDays, context })
     }
 
     /**
@@ -154,6 +183,265 @@ export default class OrderDraftService {
             logger.error({ driverId, err: error }, 'Error fetching driver start location')
         }
         return undefined
+    }
+
+    private toNumberOrZero(value: any): number {
+        const parsed = Number(value)
+        return Number.isFinite(parsed) ? parsed : 0
+    }
+
+    private getStopCoordinates(stop: any): { lat: number, lng: number } | null {
+        const lat = Number(stop?.address?.lat)
+        const lng = Number(stop?.address?.lng)
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            return { lat, lng }
+        }
+
+        if (Array.isArray(stop?.coordinates) && stop.coordinates.length === 2) {
+            const lngCoord = Number(stop.coordinates[0])
+            const latCoord = Number(stop.coordinates[1])
+            if (Number.isFinite(latCoord) && Number.isFinite(lngCoord)) {
+                return { lat: latCoord, lng: lngCoord }
+            }
+        }
+
+        return null
+    }
+
+    private getTransitItemVolumeM3(transitItem: any): number {
+        if (!transitItem) return 0
+        const dimensions = transitItem.dimensions || transitItem.dimension || {}
+        const explicitM3 = Number(dimensions.volume_m3 ?? dimensions.volumeM3)
+        if (Number.isFinite(explicitM3) && explicitM3 > 0) return explicitM3
+
+        const liters = Number(dimensions.volume_l ?? dimensions.volumeL)
+        if (Number.isFinite(liters) && liters > 0) return liters / 1000
+
+        const w = Number(dimensions.width_cm ?? dimensions.widthCm)
+        const h = Number(dimensions.height_cm ?? dimensions.heightCm)
+        const d = Number(dimensions.depth_cm ?? dimensions.depthCm)
+        if ([w, h, d].every((n) => Number.isFinite(n) && n > 0)) {
+            return (w * h * d) / 1_000_000
+        }
+        return 0
+    }
+
+    private getDeliveryLoadForStop(stop: any): { weightKg: number, volumeM3: number, isFragile: boolean } {
+        const actions: any[] = Array.isArray(stop?.actions) ? stop.actions : []
+        let weightKg = 0
+        let volumeM3 = 0
+        let isFragile = false
+
+        for (const action of actions) {
+            if (String(action?.type || '').toUpperCase() !== 'DELIVERY') continue
+
+            const quantity = Math.max(0, this.toNumberOrZero(action?.quantity) || 0)
+            const multiplier = quantity > 0 ? quantity : 1
+            const transitItem = action?.transitItem || action?.transit_item || null
+
+            const unitWeight = this.toNumberOrZero(transitItem?.weight)
+            const unitVolume = this.getTransitItemVolumeM3(transitItem)
+            weightKg += unitWeight * multiplier
+            volumeM3 += unitVolume * multiplier
+
+            const metadata = transitItem?.metadata || {}
+            const requirements = Array.isArray(metadata?.requirements) ? metadata.requirements : []
+            const hasFragileReq = requirements.some((r: any) => String(r).toLowerCase() === 'fragile')
+            if (metadata?.fragile === true || hasFragileReq) {
+                isFragile = true
+            }
+        }
+
+        return { weightKg, volumeM3, isFragile }
+    }
+
+    private haversineDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+        const toRad = (deg: number) => (deg * Math.PI) / 180
+        const r = 6371
+        const dLat = toRad(lat2 - lat1)
+        const dLng = toRad(lng2 - lng1)
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return r * c
+    }
+
+    private isPointInPolygon(lat: number, lng: number, paths: Array<{ lat: number, lng: number }>): boolean {
+        if (!Array.isArray(paths) || paths.length < 3) return false
+
+        let inside = false
+        const x = lng
+        const y = lat
+
+        for (let i = 0, j = paths.length - 1; i < paths.length; j = i++) {
+            const xi = Number(paths[i]?.lng)
+            const yi = Number(paths[i]?.lat)
+            const xj = Number(paths[j]?.lng)
+            const yj = Number(paths[j]?.lat)
+            if (![xi, yi, xj, yj].every(Number.isFinite)) continue
+
+            const intersects = ((yi > y) !== (yj > y))
+                && (x < (xj - xi) * (y - yi) / ((yj - yi) || Number.EPSILON) + xi)
+            if (intersects) inside = !inside
+        }
+
+        return inside
+    }
+
+    private zoneContainsPoint(zone: Zone, lat: number, lng: number): boolean {
+        const type = String(zone.type || '').toLowerCase()
+        const geometry = zone.geometry || {}
+
+        if (type === 'circle') {
+            const centerLat = Number(geometry?.center?.lat)
+            const centerLng = Number(geometry?.center?.lng)
+            const radiusKm = Number(geometry?.radiusKm)
+            if (![centerLat, centerLng, radiusKm].every(Number.isFinite)) return false
+            return this.haversineDistanceKm(lat, lng, centerLat, centerLng) <= radiusKm
+        }
+
+        if (type === 'rectangle') {
+            const north = Number(geometry?.bounds?.north)
+            const south = Number(geometry?.bounds?.south)
+            const east = Number(geometry?.bounds?.east)
+            const west = Number(geometry?.bounds?.west)
+            if (![north, south, east, west].every(Number.isFinite)) return false
+            return lat <= north && lat >= south && lng <= east && lng >= west
+        }
+
+        if (type === 'polygon') {
+            const paths = Array.isArray(geometry?.paths) ? geometry.paths : []
+            return this.isPointInPolygon(lat, lng, paths)
+        }
+
+        return false
+    }
+
+    private extractZoneMatrixPairs(zoneMatrix: any): Array<{ fromZoneId: string, toZoneId: string, basePrice: number, bidirectional: boolean }> {
+        const pairs = Array.isArray(zoneMatrix?.pairs) ? zoneMatrix.pairs : []
+        const normalized: Array<{ fromZoneId: string, toZoneId: string, basePrice: number, bidirectional: boolean }> = []
+        const seen = new Set<string>()
+
+        for (const pair of pairs) {
+            const fromZoneId = String(pair?.fromZoneId || '').trim()
+            const toZoneId = String(pair?.toZoneId || '').trim()
+            const basePrice = Number(pair?.basePrice)
+            const bidirectional = pair?.bidirectional === true
+            if (!fromZoneId || !toZoneId || !Number.isFinite(basePrice) || basePrice < 0) continue
+
+            const key = `${fromZoneId}->${toZoneId}`
+            if (seen.has(key)) continue
+            seen.add(key)
+            normalized.push({ fromZoneId, toZoneId, basePrice: Math.round(basePrice), bidirectional })
+        }
+
+        return normalized
+    }
+
+    private resolveZoneMatrixPair(
+        pairs: Array<{ fromZoneId: string, toZoneId: string, basePrice: number, bidirectional: boolean }>,
+        fromZoneId: string,
+        toZoneId: string
+    ): { basePrice: number, matrixPairKey: string } | null {
+        const exact = pairs.find((p) => p.fromZoneId === fromZoneId && p.toZoneId === toZoneId)
+        if (exact) {
+            return { basePrice: exact.basePrice, matrixPairKey: `${exact.fromZoneId}->${exact.toZoneId}` }
+        }
+
+        const reverse = pairs.find((p) => p.fromZoneId === toZoneId && p.toZoneId === fromZoneId && p.bidirectional)
+        if (reverse) {
+            return { basePrice: reverse.basePrice, matrixPairKey: `${reverse.fromZoneId}->${reverse.toZoneId}:BIDIRECTIONAL` }
+        }
+
+        return null
+    }
+
+    private resolveZoneForPoint(
+        zonesById: Map<string, Zone>,
+        orderedZoneIds: string[],
+        point: { lat: number, lng: number } | null
+    ): string | null {
+        if (!point) return null
+        for (const zoneId of orderedZoneIds) {
+            const zone = zonesById.get(zoneId)
+            if (!zone) continue
+            if (this.zoneContainsPoint(zone, point.lat, point.lng)) return zoneId
+        }
+        return null
+    }
+
+    private async buildStopPriceInputs(
+        orderTemplate: string | null | undefined,
+        filter: PricingFilter,
+        stops: any[],
+        routeLegs: any[] | undefined,
+        trx?: TransactionClientContract
+    ): Promise<StopPriceInput[]> {
+        const normalizedTemplate = String(orderTemplate || '').toUpperCase()
+        const stopPriceInputs: StopPriceInput[] = []
+
+        let orderedZoneIds: string[] = []
+        let zonesById = new Map<string, Zone>()
+        let zonePairs: Array<{ fromZoneId: string, toZoneId: string, basePrice: number, bidirectional: boolean }> = []
+
+        if (normalizedTemplate === 'COMMANDE' && filter.zoneMatrixEnabled) {
+            zonePairs = this.extractZoneMatrixPairs(filter.zoneMatrix)
+            if (zonePairs.length > 0) {
+                orderedZoneIds = Array.from(new Set(zonePairs.flatMap((p) => [p.fromZoneId, p.toZoneId])))
+                const zones = await Zone.query({ client: trx })
+                    .whereIn('id', orderedZoneIds)
+                    .where('is_active', true)
+                zonesById = new Map(zones.map((z) => [z.id, z]))
+            }
+        }
+
+        for (let index = 0; index < stops.length; index++) {
+            const stop = stops[index]
+            const { weightKg, volumeM3, isFragile } = this.getDeliveryLoadForStop(stop)
+            const routeLeg = index > 0 ? routeLegs?.[index] : null
+            const distanceKm = index > 0 ? this.toNumberOrZero(routeLeg?.distance_meters) / 1000 : 0
+            const durationSeconds = index > 0 ? this.toNumberOrZero(routeLeg?.duration_seconds) : 0
+            const stopMeta = stop?.metadata || {}
+            const hasManualOverride = stopMeta?.price_override?.is_active === true
+
+            const input: StopPriceInput = {
+                template: normalizedTemplate,
+                distanceKm,
+                durationSeconds,
+                prevStopDistanceKm: distanceKm,
+                weightKg,
+                volumeM3,
+                isFragile,
+                overrideAmount: hasManualOverride ? this.toNumberOrZero(stopMeta.price_override.amount) : undefined,
+            }
+
+            if (normalizedTemplate === 'COMMANDE' && index === 0) {
+                input.overrideAmount = 0
+            }
+
+            if (normalizedTemplate === 'COMMANDE' && index > 0 && orderedZoneIds.length > 0 && zonePairs.length > 0) {
+                const fromPoint = this.getStopCoordinates(stops[index - 1])
+                const toPoint = this.getStopCoordinates(stop)
+                const fromZoneId = this.resolveZoneForPoint(zonesById, orderedZoneIds, fromPoint)
+                const toZoneId = this.resolveZoneForPoint(zonesById, orderedZoneIds, toPoint)
+
+                if (fromZoneId && toZoneId) {
+                    const pair = this.resolveZoneMatrixPair(zonePairs, fromZoneId, toZoneId)
+                    if (pair) {
+                        input.matrixBaseFee = pair.basePrice
+                        input.matchedFromZoneId = fromZoneId
+                        input.matchedToZoneId = toZoneId
+                        input.matrixPairKey = pair.matrixPairKey
+                    }
+                }
+            }
+
+            stopPriceInputs.push(input)
+        }
+
+        return stopPriceInputs
     }
 
     /**
@@ -287,6 +575,14 @@ export default class OrderDraftService {
                     : assignmentMode === 'INTERNAL'
                         ? (company?.id || null)
                         : (targetCompanyIdResolved || null)
+
+            const billingCompany = assignmentMode === 'INTERNAL' ? company : targetCompanyResolved
+            await this.assertSubscriptionAccessForCompany(
+                resolvedCompanyId,
+                effectiveTrx,
+                `initiate:${assignmentMode}:${template}`,
+                billingCompany
+            )
 
             const normalizedRefId =
                 explicitRefId || (assignmentMode === 'TARGET' ? (targetDriverIdResolved || targetCompanyIdResolved || null) : null)
@@ -818,29 +1114,28 @@ export default class OrderDraftService {
         // }))
 
         // Resolver le filtre de prix applicable
-        const filter = await PricingFilterService.resolve(order.driverId, order.clientId, order.template, trx)
+        const filter = await PricingFilterService.resolve(order.driverId, order.companyId, order.template, trx)
         if (!filter) throw new Error('Aucun filtre de prix trouvé pour cette commande')
 
-        const stopPriceInputs: StopPriceInput[] = []
-        let currentLegIdx = 0
-        virtualState.steps.forEach((step: any) => {
-            step.stops.forEach((stop: any) => {
-                const overrideAmount = stop.metadata?.price_override?.is_active ? stop.metadata.price_override.amount : undefined
-                stopPriceInputs.push({
-                    distanceKm: (routeDetails.legs[currentLegIdx]?.distance_meters || 0) / 1000,
-                    durationSeconds: routeDetails.legs[currentLegIdx]?.duration_seconds || 0,
-                    weightKg: 0, // À raffiner si on veut le poids par stop
-                    overrideAmount
-                })
-                currentLegIdx++
-            })
-        })
+        const orderedStops = virtualState.steps.flatMap((step: any) => step.stops || [])
+        const stopPriceInputs: StopPriceInput[] = await this.buildStopPriceInputs(
+            order.template,
+            filter,
+            orderedStops,
+            routeDetails.legs || [],
+            trx
+        )
 
         const { calculatedAmount, finalAmount, stopBreakdowns } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
 
         // Résoudre la part chauffeur via la policy et le moteur de split
-        const policy = await PaymentPolicyService.resolve(order.driverId, order.clientId, order.template, trx)
-        const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId)
+        const policy = await PaymentPolicyService.resolve(order.driverId, order.companyId, order.template, trx)
+        const subscriptionRates = await subscriptionService.resolveRatesForOrder(order, trx)
+        const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId, {
+            template: order.template,
+            commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
+            ticketFeePercent: subscriptionRates.ticketFeePercent,
+        })
         const driverRemuneration = splits.driverAmount
 
         const pricing = {
@@ -876,6 +1171,12 @@ export default class OrderDraftService {
             if (!order) {
                 throw new Error(`Order not found [ID: ${orderId}] for client [ID: ${clientId}]`)
             }
+
+            await this.assertSubscriptionAccessForCompany(
+                order.companyId,
+                effectiveTrx,
+                `submit:${order.assignmentMode}:${order.template || 'COMMANDE'}`
+            )
 
             if (order.status !== 'DRAFT') {
                 throw new Error('Only draft orders can be submitted')
@@ -1468,32 +1769,27 @@ export default class OrderDraftService {
         })) || []
 
         // Resolver le filtre de prix applicable
-        const filter = await PricingFilterService.resolve(order.driverId, order.clientId, order.template, effectiveTrx)
+        const filter = await PricingFilterService.resolve(order.driverId, order.companyId, order.template, effectiveTrx)
         if (filter) {
             // Preserve manually overridden price if one exists (order-level)
             const existingPricingData = order.pricingData as any
             const orderOverrideAmount = existingPricingData?.isPriceOverridden ? existingPricingData.clientFee : undefined
 
             const allStops = order.steps.flatMap((s: any) => s.stops || [])
-            const stopPriceInputs: StopPriceInput[] = []
+            let stopPriceInputs: StopPriceInput[] = []
 
-            if (allStops.length > 0 && order.leg) {
-                // If we have stops and leg info, calculate per-stop
-                for (const stop of allStops) {
-                    const stopMeta = stop.metadata || {}
-                    const routeInfo = stopMeta.route_info || {}
-                    const overrideAmount = stopMeta.price_override?.is_active ? stopMeta.price_override.amount : undefined
-
-                    stopPriceInputs.push({
-                        distanceKm: (routeInfo.distance_from_start || 0) / 1000,
-                        durationSeconds: routeInfo.arrival_offset || 0,
-                        weightKg: 0, // refinement possible here
-                        overrideAmount
-                    })
-                }
+            if (allStops.length > 0 && routeDetails?.legs) {
+                stopPriceInputs = await this.buildStopPriceInputs(
+                    order.template,
+                    filter,
+                    allStops,
+                    routeDetails.legs || [],
+                    effectiveTrx
+                )
             } else {
                 // Fallback to order-level summary
                 stopPriceInputs.push({
+                    template: order.template,
                     distanceKm: (order.totalDistanceMeters || 0) / 1000,
                     durationSeconds: order.totalDurationSeconds || 0,
                     weightKg: pricingPackages.reduce((acc, p) => acc + (p.dimensions?.weight || 0), 0) / 1000,
@@ -1504,8 +1800,13 @@ export default class OrderDraftService {
             const { calculatedAmount, finalAmount, stopBreakdowns } = PricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
 
             // Résoudre la part chauffeur via la policy et le moteur de split
-            const policy = await PaymentPolicyService.resolve(order.driverId, order.clientId, order.template, effectiveTrx)
-            const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId)
+            const policy = await PaymentPolicyService.resolve(order.driverId, order.companyId, order.template, effectiveTrx)
+            const subscriptionRates = await subscriptionService.resolveRatesForOrder(order, effectiveTrx)
+            const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId, {
+                template: order.template,
+                commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
+                ticketFeePercent: subscriptionRates.ticketFeePercent,
+            })
             const driverRemuneration = splits.driverAmount
 
             order.pricingData = {

@@ -799,6 +799,11 @@ export default class MissionService {
             if (newStatus !== order.status) {
                 order.status = newStatus as any
 
+                // Immutable business timestamp used for subscription billing periods.
+                if (newStatus === 'DELIVERED' && !order.deliveredAt) {
+                    order.deliveredAt = DateTime.now()
+                }
+
                 // HISTORY
                 order.statusHistory = [
                     ...(order.statusHistory || []),

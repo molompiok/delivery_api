@@ -3,6 +3,7 @@ import { middleware } from '#start/kernel'
 
 const DriverController = () => import('#controllers/driver_controller')
 const CompanyController = () => import('#controllers/company_controller')
+const SubscriptionController = () => import('#controllers/subscription_controller')
 const DebugController = () => import('#controllers/debug_controller')
 const TestUserController = () => import('#controllers/test_user_controller')
 
@@ -30,6 +31,10 @@ router.group(() => {
     router.post('/company', [CompanyController, 'createCompany'])
     router.get('/company/me', [CompanyController, 'getMyCompany'])
     router.put('/company/me', [CompanyController, 'updateCompany'])
+    router.get('/company/subscription/effective', [SubscriptionController, 'myEffective'])
+    router.get('/company/subscription/invoices', [SubscriptionController, 'myInvoices'])
+    router.get('/company/subscription/usage', [SubscriptionController, 'myUsage'])
+    router.post('/company/subscription/change-plan', [SubscriptionController, 'changeMyPlan'])
     router.post('/company/documents/upload', [CompanyController, 'uploadCompanyDoc'])
     router.post('/company/drivers/invite', [CompanyController, 'invite'])
     router.get('/company/drivers', [CompanyController, 'listDrivers'])

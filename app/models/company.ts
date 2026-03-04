@@ -1,9 +1,11 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, hasMany, belongsTo, manyToMany } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, hasMany, belongsTo, manyToMany, hasOne } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
 import Vehicle from '#models/vehicle'
-import type { HasMany, BelongsTo, ManyToMany } from '@adonisjs/lucid/types/relations'
+import CompanySubscriptionOverride from '#models/company_subscription_override'
+import SubscriptionInvoice from '#models/subscription_invoice'
+import type { HasMany, BelongsTo, ManyToMany, HasOne } from '@adonisjs/lucid/types/relations'
 import type { OrderTemplate } from '#constants/order_templates'
 
 export default class Company extends BaseModel {
@@ -73,6 +75,12 @@ export default class Company extends BaseModel {
 
     @hasMany(() => Vehicle)
     declare vehicles: HasMany<typeof Vehicle>
+
+    @hasOne(() => CompanySubscriptionOverride)
+    declare subscriptionOverride: HasOne<typeof CompanySubscriptionOverride>
+
+    @hasMany(() => SubscriptionInvoice)
+    declare subscriptionInvoices: HasMany<typeof SubscriptionInvoice>
 
     @column()
     declare walletId: string | null

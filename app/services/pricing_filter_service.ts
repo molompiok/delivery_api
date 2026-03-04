@@ -29,6 +29,11 @@ export interface StopPriceInput {
     prevStopDistanceKm?: number
     durationSeconds?: number
     overrideAmount?: number
+    template?: OrderTemplate | null
+    matrixBaseFee?: number
+    matchedFromZoneId?: string
+    matchedToZoneId?: string
+    matrixPairKey?: string
 }
 
 interface PriceBreakdown {
@@ -45,6 +50,11 @@ interface PriceBreakdown {
     calculatedAmount: number
     finalAmount: number
     isPriceOverridden: boolean
+    pricingMode?: 'ZONE_MATRIX' | 'KM_TIME'
+    matrixBaseFee?: number
+    matchedFromZoneId?: string
+    matchedToZoneId?: string
+    matrixPairKey?: string
 }
 
 interface PriceMatrixEntry {
@@ -55,6 +65,17 @@ interface PriceMatrixEntry {
     calculatedAmount: number
     finalAmount: number
     breakdown: PriceBreakdown
+}
+
+interface ZoneMatrixPair {
+    fromZoneId: string
+    toZoneId: string
+    basePrice: number
+    bidirectional?: boolean
+}
+
+interface ZoneMatrixConfig {
+    pairs: ZoneMatrixPair[]
 }
 
 // ── Vine Schemas ──
@@ -81,6 +102,15 @@ const createFilterSchema = vine.object({
     heavyLoadSurchargePercent: vine.number().min(0).max(100).optional(),
     lightLoadDiscountThresholdKg: vine.number().min(0).optional(),
     lightLoadDiscountPercent: vine.number().min(0).max(100).optional(),
+    zoneMatrixEnabled: vine.boolean().optional(),
+    zoneMatrix: vine.object({
+        pairs: vine.array(vine.object({
+            fromZoneId: vine.string().trim(),
+            toZoneId: vine.string().trim(),
+            basePrice: vine.number().min(0),
+            bidirectional: vine.boolean().optional(),
+        })).optional(),
+    }).optional(),
     isActive: vine.boolean().optional(),
 })
 
@@ -104,6 +134,15 @@ const updateFilterSchema = vine.object({
     heavyLoadSurchargePercent: vine.number().min(0).max(100).optional(),
     lightLoadDiscountThresholdKg: vine.number().min(0).optional(),
     lightLoadDiscountPercent: vine.number().min(0).max(100).optional(),
+    zoneMatrixEnabled: vine.boolean().optional(),
+    zoneMatrix: vine.object({
+        pairs: vine.array(vine.object({
+            fromZoneId: vine.string().trim(),
+            toZoneId: vine.string().trim(),
+            basePrice: vine.number().min(0),
+            bidirectional: vine.boolean().optional(),
+        })).optional(),
+    }).optional(),
     isActive: vine.boolean().optional(),
 })
 
@@ -181,6 +220,36 @@ class PricingFilterService {
         return filter
     }
 
+    private normalizeZoneMatrix(raw: any): ZoneMatrixConfig {
+        const sourcePairs = Array.isArray(raw?.pairs) ? raw.pairs : []
+        const normalizedPairs: ZoneMatrixPair[] = []
+        const seen = new Set<string>()
+
+        for (const pair of sourcePairs) {
+            const fromZoneId = String(pair?.fromZoneId || '').trim()
+            const toZoneId = String(pair?.toZoneId || '').trim()
+            const basePrice = Number(pair?.basePrice)
+            const bidirectional = pair?.bidirectional === true
+
+            if (!fromZoneId || !toZoneId || !Number.isFinite(basePrice) || basePrice < 0) {
+                continue
+            }
+
+            const key = `${fromZoneId}->${toZoneId}`
+            if (seen.has(key)) continue
+            seen.add(key)
+
+            normalizedPairs.push({
+                fromZoneId,
+                toZoneId,
+                basePrice: Math.round(basePrice),
+                bidirectional,
+            })
+        }
+
+        return { pairs: normalizedPairs }
+    }
+
     // ── CRUD ──
 
     async create(user: User, data: any, trx?: TransactionClientContract): Promise<PricingFilter> {
@@ -217,6 +286,8 @@ class PricingFilterService {
                 driverId: validated.driverId || null,
                 name: validated.name,
                 template: validated.template || null,
+                zoneMatrixEnabled: validated.zoneMatrixEnabled ?? false,
+                zoneMatrix: this.normalizeZoneMatrix(validated.zoneMatrix),
                 baseFee: validated.baseFee ?? 500,
                 perKmRate: validated.perKmRate ?? 100,
                 minDistance: validated.minDistance ?? 1,
@@ -265,7 +336,11 @@ class PricingFilterService {
                 await this.ensureExclusivity(filter.companyId, filter.driverId, validated.template || filter.template, effectiveTrx)
             }
 
-            filter.merge(validated as any)
+            const payload = { ...validated } as any
+            if (validated.zoneMatrix !== undefined) {
+                payload.zoneMatrix = this.normalizeZoneMatrix(validated.zoneMatrix)
+            }
+            filter.merge(payload)
             await filter.useTransaction(effectiveTrx).save()
 
             if (!trx) await effectiveTrx.commit()
@@ -306,17 +381,35 @@ class PricingFilterService {
     // ── Calculs ──
 
     calculateStopPrice(filter: PricingFilter, input: StopPriceInput): PriceBreakdown {
-        const { distanceKm, weightKg, volumeM3 = 0, isFragile = false, isUrgent = false, isNight = false, prevStopDistanceKm, durationSeconds = 0, overrideAmount } = input
+        const {
+            distanceKm,
+            weightKg,
+            volumeM3 = 0,
+            isFragile = false,
+            isUrgent = false,
+            isNight = false,
+            prevStopDistanceKm,
+            durationSeconds = 0,
+            overrideAmount,
+            template,
+            matrixBaseFee,
+            matchedFromZoneId,
+            matchedToZoneId,
+            matrixPairKey,
+        } = input
+
+        const normalizedTemplate = String(template || filter.template || '').toUpperCase()
+        const hasMatrixBaseFee = normalizedTemplate === 'COMMANDE' && Number.isFinite(matrixBaseFee)
 
         const effectiveDistance = Math.max(distanceKm, filter.minDistance)
         const cappedDistance = filter.maxDistance ? Math.min(effectiveDistance, filter.maxDistance) : effectiveDistance
 
-        const baseFee = filter.baseFee
-        const distanceFee = Math.round(cappedDistance * filter.perKmRate)
+        const baseFee = hasMatrixBaseFee ? Math.round(matrixBaseFee as number) : filter.baseFee
+        const distanceFee = hasMatrixBaseFee ? 0 : Math.round(cappedDistance * filter.perKmRate)
 
-        // Ajout de la durée
+        // Ajout de la durée (désactivé en mode matrix)
         const durationMinutes = durationSeconds / 60
-        const durationFee = Math.round(durationMinutes * (filter.perMinuteRate || 0))
+        const durationFee = hasMatrixBaseFee ? 0 : Math.round(durationMinutes * (filter.perMinuteRate || 0))
 
         const chargeableWeight = Math.max(0, weightKg - filter.freeWeightKg)
         const weightFee = Math.round(chargeableWeight * filter.perKgRate)
@@ -329,7 +422,7 @@ class PricingFilterService {
         const nightSurcharge = isNight ? Math.round(subtotal * (filter.nightMultiplier - 1)) : 0
 
         let proximityDiscount = 0
-        if (prevStopDistanceKm !== undefined && prevStopDistanceKm <= filter.proximityThresholdKm) {
+        if (!hasMatrixBaseFee && prevStopDistanceKm !== undefined && prevStopDistanceKm <= filter.proximityThresholdKm) {
             proximityDiscount = Math.round(subtotal * filter.proximityDiscountPercent / 100)
         }
 
@@ -343,7 +436,10 @@ class PricingFilterService {
             lightLoadDiscount = Math.round(subtotal * filter.lightLoadDiscountPercent / 100)
         }
 
-        const calculatedAmount = Math.max(500, subtotal + fragileSurcharge + urgentSurcharge + nightSurcharge - proximityDiscount + heavyLoadSurcharge - lightLoadDiscount)
+        const rawAmount = subtotal + fragileSurcharge + urgentSurcharge + nightSurcharge - proximityDiscount + heavyLoadSurcharge - lightLoadDiscount
+        const calculatedAmount = hasMatrixBaseFee
+            ? Math.max(0, Math.round(rawAmount))
+            : Math.max(500, Math.round(rawAmount))
 
         let finalAmount = calculatedAmount
         let isPriceOverridden = false
@@ -353,7 +449,26 @@ class PricingFilterService {
             isPriceOverridden = true
         }
 
-        return { baseFee, distanceFee, weightFee, volumeFee, fragileSurcharge, urgentSurcharge, nightSurcharge, proximityDiscount, heavyLoadSurcharge, lightLoadDiscount, calculatedAmount, finalAmount, isPriceOverridden }
+        return {
+            baseFee,
+            distanceFee,
+            weightFee,
+            volumeFee,
+            fragileSurcharge,
+            urgentSurcharge,
+            nightSurcharge,
+            proximityDiscount,
+            heavyLoadSurcharge,
+            lightLoadDiscount,
+            calculatedAmount,
+            finalAmount,
+            isPriceOverridden,
+            pricingMode: hasMatrixBaseFee ? 'ZONE_MATRIX' : 'KM_TIME',
+            matrixBaseFee: hasMatrixBaseFee ? baseFee : undefined,
+            matchedFromZoneId: hasMatrixBaseFee ? matchedFromZoneId : undefined,
+            matchedToZoneId: hasMatrixBaseFee ? matchedToZoneId : undefined,
+            matrixPairKey: hasMatrixBaseFee ? matrixPairKey : undefined,
+        }
     }
 
     calculateOrderPrice(filter: PricingFilter, stops: StopPriceInput[]): { calculatedAmount: number; finalAmount: number; stopBreakdowns: PriceBreakdown[] } {

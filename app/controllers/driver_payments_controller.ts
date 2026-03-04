@@ -83,6 +83,46 @@ export default class DriverPaymentsController {
                 }
             }
 
+            // 3. Wallet de l'entreprise gérée (si l'utilisateur est un manager)
+            const activeCompanyId = user.currentCompanyManaged || user.companyId
+            if (activeCompanyId) {
+                // Vérifier si ce wallet n'est pas déjà dans la liste (si le manager est aussi driver)
+                const alreadyAdded = wallets.find(w => w.id && (w.wallet_type === 'COMPANY' && w.id === activeCompanyId))
+
+                if (!alreadyAdded) {
+                    try {
+                        const Company = (await import('#models/company')).default
+                        const company = await Company.find(activeCompanyId)
+
+                        if (company && company.walletId) {
+                            console.log(`[DriverPayments] Fetching managed company wallet ${company.walletId}`)
+                            const walletData = await walletBridgeService.getWallet(company.walletId) as any
+                            const transformed = {
+                                ...walletData,
+                                name: company.name,
+                                owner_name: company.name,
+                                ownerName: company.name,
+                                label: company.name,
+                                balance_available: walletData.balance_available ?? walletData.balanceAvailable,
+                                balance_accounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                                balanceAvailable: walletData.balance_available ?? walletData.balanceAvailable,
+                                balanceAccounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                                wallet_type: 'COMPANY',
+                                walletType: 'COMPANY',
+                                isPersonal: false,
+                                isManaged: true,
+                                img: company.logo,
+                                image_url: company.logo,
+                                photo: company.logo
+                            }
+                            wallets.push(transformed)
+                        }
+                    } catch (e) {
+                        console.error(`Failed to fetch managed company wallet for company ${activeCompanyId}`, e)
+                    }
+                }
+            }
+
             return response.ok(wallets)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -171,12 +211,11 @@ export default class DriverPaymentsController {
             console.log(`[DriverPayments] Deposit - Success`, result)
 
             // Enrichissement pour compatibilité frontend (tout-terrain)
-            // Le frontend cherche result['checkout_url'] directement à la racine
             const waveUrl = result.data.wave_checkout_url || result.data.waveCheckoutUrl || result.data.paymentUrl
 
             const enrichedResult = {
                 ...result,
-                checkout_url: waveUrl, // Pour le frontend Flutter
+                checkout_url: waveUrl,
                 checkoutUrl: waveUrl,
                 data: {
                     ...result.data,
@@ -293,12 +332,63 @@ export default class DriverPaymentsController {
                 console.log(`[DriverPayments] Stats returned for wallet ${walletId}`)
                 return response.ok(stats)
             } else {
-                // Pour les stats globales, wave-api /stats utilise le ManagerId.
-                // Ici, c'est plus complexe car le driver n'est pas un Manager au sens wave-api.
-                // On pourrait agréger les stats de tous ses wallets.
-                // Pour simplifier on va juste interdire le global sans walletId pour l'instant ou renvoyer une erreur explicite.
                 return response.badRequest({ message: 'walletId is required for driver stats' })
             }
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Liste les cibles potentielles pour un transfert (Drivers + Managers de l'entreprise)
+     */
+    public async listTransferTargets({ auth, response }: HttpContext) {
+        try {
+            const user = auth.user as User
+            const activeCompanyId = user.currentCompanyManaged || user.companyId
+            if (!activeCompanyId) {
+                return response.ok([])
+            }
+
+            const targets: any[] = []
+
+            // 1. Les Drivers de l'entreprise
+            const driverRelations = await CompanyDriverSetting.query()
+                .where('companyId', activeCompanyId)
+                .whereIn('status', ['ACCEPTED', 'ACCESS_ACCEPTED'])
+                .preload('driver')
+
+            for (const rel of driverRelations) {
+                if (rel.driver?.walletId && rel.driver.id !== user.id) {
+                    targets.push({
+                        id: rel.driver.walletId,
+                        label: rel.driver.fullName,
+                        type: 'DRIVER',
+                        phone: rel.driver.phone,
+                        ownerName: rel.driver.fullName
+                    })
+                }
+            }
+
+            // 2. Les autres Managers de l'entreprise
+            const managers = await User.query()
+                .where('companyId', activeCompanyId)
+                .where('isDriver', false)
+                .whereNot('id', user.id)
+
+            for (const manager of managers) {
+                if (manager.walletId) {
+                    targets.push({
+                        id: manager.walletId,
+                        label: manager.fullName,
+                        type: 'MANAGER',
+                        phone: manager.phone,
+                        ownerName: manager.fullName
+                    })
+                }
+            }
+
+            return response.ok(targets)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }
@@ -311,6 +401,7 @@ export default class DriverPaymentsController {
         const ids: string[] = []
         if (user.walletId) ids.push(user.walletId)
 
+        // 1. Wallets des boites où il est driver
         const relations = await CompanyDriverSetting.query()
             .where('driverId', user.id)
             .whereIn('status', ['ACCEPTED', 'ACCESS_ACCEPTED'])
@@ -319,6 +410,16 @@ export default class DriverPaymentsController {
         relations.forEach(r => {
             if (r.walletId) ids.push(r.walletId)
         })
+
+        // 2. Wallets des boites qu'il gère (Owner ou Manager)
+        const activeCompanyId = user.currentCompanyManaged || user.companyId
+        if (activeCompanyId) {
+            const Company = (await import('#models/company')).default
+            const company = await Company.find(activeCompanyId)
+            if (company && company.walletId && !ids.includes(company.walletId)) {
+                ids.push(company.walletId)
+            }
+        }
 
         return ids
     }

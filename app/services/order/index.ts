@@ -14,6 +14,7 @@ import OrderDraftService from './order_draft_service.js'
 import LogisticsService from '../logistics_service.js'
 import GeoService from '../geo_service.js'
 import PricingService from '../pricing_service.js'
+import subscriptionService from '#services/subscription_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import PayloadMapper from './payload_mapper.js'
 import OrderStructureChanged from '#events/order_structure_changed'
@@ -867,6 +868,13 @@ export default class OrderService {
 
             if (order.status !== 'DRAFT' && order.status !== 'PENDING') {
                 throw new Error(`Cannot publish order in status: ${order.status}`)
+            }
+
+            if (order.companyId) {
+                await subscriptionService.assertCompanyCanConsume(order.companyId, effectiveTrx, {
+                    graceDays: 7,
+                    context: `publish:${order.template || 'COMMANDE'}`,
+                })
             }
 
             order.status = 'PUBLISHED'

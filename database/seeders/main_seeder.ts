@@ -14,6 +14,7 @@ export default class IndexSeeder extends BaseSeeder {
 
         // 1. Platform setup
         await this.seed(await import('#database/data_seeders/admin_seeder'))
+        await this.seed(await import('#database/data_seeders/1_subscription_plans_seeder'))
         await this.seed(await import('#database/data_seeders/2_companies_seeder'))
 
         // 2. Users and drivers
@@ -31,6 +32,7 @@ export default class IndexSeeder extends BaseSeeder {
         console.log('📊 Summary:')
         console.log('  - 10 Sublymus zones (global)')
         console.log('  - 2 Admins')
+        console.log('  - 3 Subscription plans (COMMANDE/VOYAGE/MISSION)')
         console.log('  - 2 Companies (1 verified, 1 pending)')
         console.log('  - 8 Drivers (various statuses)')
         console.log('  - 7+ Company/Driver zones')
@@ -40,4 +42,3 @@ export default class IndexSeeder extends BaseSeeder {
         console.log('\n')
     }
 }
-

@@ -8,6 +8,7 @@ import PaymentPolicy from '#models/payment_policy'
 import CodCollection from '#models/cod_collection'
 import User from '#models/user'
 import paymentPolicyService from '#services/payment_policy_service'
+import subscriptionService from '#services/subscription_service'
 import walletBridge from '#services/wallet_bridge_service'
 import type { CodCollectionStatus, SettlementMode } from '#models/cod_collection'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
@@ -53,7 +54,8 @@ const refundSchema = vine.object({
 })
 
 // Constantes de commission
-const SUBLYMUS_COMMISSION_PERCENT = 1
+const DEFAULT_COMMANDE_COMMISSION_PERCENT = 1
+const DEFAULT_TICKET_FEE_PERCENT = 0
 const WAVE_FEE_PERCENT = 1
 
 class OrderPaymentService {
@@ -96,6 +98,7 @@ class OrderPaymentService {
             const policy = await paymentPolicyService.resolve(
                 order.driverId, order.companyId, order.template, effectiveTrx
             )
+            const subscriptionRates = await subscriptionService.resolveRatesForOrder(order, effectiveTrx)
 
             const intents: PaymentIntent[] = []
 
@@ -122,7 +125,16 @@ class OrderPaymentService {
                     const transitItems = booking.transitItems || []
                     const amount = transitItems.reduce((sum: number, item: any) => sum + (item.unitaryPrice || 0), 0)
 
-                    const splits = this.calculateSplits({ amount, bookingId: booking.id, calculatedAmount: amount }, policy, order.companyId)
+                    const splits = this.calculateSplits(
+                        { amount, bookingId: booking.id, calculatedAmount: amount },
+                        policy,
+                        order.companyId,
+                        {
+                            template: order.template,
+                            commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
+                            ticketFeePercent: subscriptionRates.ticketFeePercent,
+                        }
+                    )
 
                     const intent = await PaymentIntent.create({
                         orderId: order.id,
@@ -162,7 +174,16 @@ class OrderPaymentService {
                             const amnt = i === stops.length - 1 ? amountPerStop + remainder : amountPerStop
                             const calcAmnt = i === stops.length - 1 ? calculatedAmountPerStop + (calculatedAmount - (calculatedAmountPerStop * stops.length)) : calculatedAmountPerStop
 
-                            const splits = this.calculateSplits({ amount: amnt, calculatedAmount: calcAmnt }, policy, order.companyId)
+                            const splits = this.calculateSplits(
+                                { amount: amnt, calculatedAmount: calcAmnt },
+                                policy,
+                                order.companyId,
+                                {
+                                    template: order.template,
+                                    commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
+                                    ticketFeePercent: subscriptionRates.ticketFeePercent,
+                                }
+                            )
 
                             const intent = await PaymentIntent.create({
                                 orderId: order.id,
@@ -183,7 +204,16 @@ class OrderPaymentService {
                     }
                 } else {
                     // Paiement unique pour toute la commande
-                    const splits = this.calculateSplits({ amount: totalAmount, calculatedAmount }, policy, order.companyId)
+                    const splits = this.calculateSplits(
+                        { amount: totalAmount, calculatedAmount },
+                        policy,
+                        order.companyId,
+                        {
+                            template: order.template,
+                            commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
+                            ticketFeePercent: subscriptionRates.ticketFeePercent,
+                        }
+                    )
 
                     const intent = await PaymentIntent.create({
                         orderId: order.id,
@@ -572,13 +602,28 @@ class OrderPaymentService {
         }
     }
 
-    calculateSplits(intent: { amount: number, calculatedAmount?: number, bookingId?: string | null }, policy: PaymentPolicy | null, companyId?: string | null): PaymentSplits {
+    calculateSplits(
+        intent: { amount: number, calculatedAmount?: number, bookingId?: string | null },
+        policy: PaymentPolicy | null,
+        companyId?: string | null,
+        rates?: {
+            template?: string | null
+            commandeCommissionPercent?: number
+            ticketFeePercent?: number
+        }
+    ): PaymentSplits {
         const totalAmount = intent.amount
 
         // 1. Déterminer les parts cibles (en %)
+        const template = String(rates?.template || '').toUpperCase()
+        const dynamicCommandePercent = rates?.commandeCommissionPercent ?? DEFAULT_COMMANDE_COMMISSION_PERCENT
+        const dynamicTicketPercent = rates?.ticketFeePercent ?? DEFAULT_TICKET_FEE_PERCENT
+        const dynamicPercent =
+            template === 'COMMANDE' ? dynamicCommandePercent : template === 'VOYAGE' && intent.bookingId ? dynamicTicketPercent : 0
+
         let platformTargetPercent = 0
         if (!policy?.platformCommissionExempt) {
-            platformTargetPercent = (policy?.platformCommissionPercent ?? 5) + SUBLYMUS_COMMISSION_PERCENT
+            platformTargetPercent = (policy?.platformCommissionPercent ?? 5) + dynamicPercent
         }
         const companyTargetPercent = policy?.companyCommissionPercent ?? 0
 

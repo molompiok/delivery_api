@@ -27,10 +27,16 @@ export default class SubscriptionPlan extends BaseModel {
   declare ticketFeePercent: number
 
   @column()
+  declare taxPercent: number
+
+  @column()
   declare currency: string
 
   @column()
   declare isActive: boolean
+
+  @column()
+  declare allowNewCompanies: boolean
 
   @column({
     prepare: (value: any) => (value ? JSON.stringify(value) : JSON.stringify({})),

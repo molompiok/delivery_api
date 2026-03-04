@@ -18,7 +18,7 @@ export default class CompanyB2BsController {
         const mapped = company.b2bClients.map(client => ({
             id: client.id,
             email: client.email,
-            name: client.name,
+            name: client.fullName,
             status: client.$extras.pivot_status,
             partneredAt: client.$extras.pivot_created_at
         }))

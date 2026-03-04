@@ -40,7 +40,7 @@ export default class CompanyController {
     public async updateCompany({ auth, request, response }: HttpContext) {
         try {
             const user = auth.user!
-            const data = request.only(['name', 'registreCommerce', 'logo', 'description'])
+            const data = request.only(['name', 'registreCommerce', 'logo', 'description', 'activityType', 'defaultTemplate'])
             const company = await this.companyService.update(user, data)
             return response.ok(company)
         } catch (error: any) {

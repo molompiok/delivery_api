@@ -16,6 +16,8 @@ export default class extends BaseSchema {
       table.integer('base_amount').nullable()
       table.float('commande_commission_percent').nullable()
       table.float('ticket_fee_percent').nullable()
+      table.float('tax_percent').nullable()
+      table.string('currency').nullable()
       table.boolean('is_active').notNullable().defaultTo(true)
       table.jsonb('metadata').notNullable().defaultTo('{}')
       table.timestamp('created_at').notNullable()

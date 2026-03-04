@@ -11,6 +11,7 @@ router.group(() => {
         router.post('/deposit', [DriverPaymentsController, 'deposit'])
         router.post('/payout', [DriverPaymentsController, 'payout'])
         router.post('/transfer', [DriverPaymentsController, 'transfer'])
+        router.get('/transfer-targets', [DriverPaymentsController, 'listTransferTargets'])
         router.get('/stats', [DriverPaymentsController, 'stats'])
     }).prefix('/payments')
 

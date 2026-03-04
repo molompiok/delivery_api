@@ -120,6 +120,9 @@ export default class Order extends BaseModel {
     @column.dateTime()
     declare etaDelivery: DateTime | null
 
+    @column.dateTime()
+    declare deliveredAt: DateTime | null
+
     @belongsTo(() => User, { foreignKey: 'clientId' })
     declare client: BelongsTo<typeof User>
 

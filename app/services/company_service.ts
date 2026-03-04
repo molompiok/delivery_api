@@ -3,12 +3,22 @@ import db from '@adonisjs/lucid/services/db'
 import Company from '#models/company'
 import CompanyDriverSetting from '#models/company_driver_setting'
 import SmsService from '#services/sms_service'
+import subscriptionService from '#services/subscription_service'
 import { DateTime } from 'luxon'
 import { inject } from '@adonisjs/core'
 import { OrderTemplate } from '#constants/order_templates'
 
 @inject()
 export default class CompanyService {
+    private normalizeTemplate(value: string | null | undefined, field: 'activityType' | 'defaultTemplate'): OrderTemplate {
+        const normalized = String(value || '').trim().toUpperCase()
+        if (!['COMMANDE', 'VOYAGE', 'MISSION'].includes(normalized)) {
+            throw new Error(
+                `E_INVALID_${field.toUpperCase()}: "${value}" is not supported. Allowed values: COMMANDE, VOYAGE, MISSION`
+            )
+        }
+        return normalized as OrderTemplate
+    }
     /**
      * Create a company
      */
@@ -17,11 +27,15 @@ export default class CompanyService {
             throw new Error('User already owns a company')
         }
 
+        const activityType = this.normalizeTemplate(data.activityType, 'activityType')
+        await subscriptionService.ensurePlanCanBeAssignedToCompany(activityType)
+
         const company = await Company.create({
             ...data,
+            activityType,
             ownerId: user.id,
             // Par défaut, le template d'usage est le même que l'identité métier à la création
-            defaultTemplate: data.activityType
+            defaultTemplate: activityType
         })
 
         user.companyId = company.id
@@ -34,14 +48,52 @@ export default class CompanyService {
     /**
      * Update company
      */
-    async update(user: User, data: { name?: string, registreCommerce?: string, logo?: string, description?: string }) {
+    async update(
+        user: User,
+        data: {
+            name?: string
+            registreCommerce?: string
+            logo?: string
+            description?: string
+            activityType?: string
+            defaultTemplate?: string
+        }
+    ) {
         const activeCompanyId = user.currentCompanyManaged || user.companyId
         if (!activeCompanyId) {
             throw new Error('User does not own a company')
         }
 
         const company = await Company.findOrFail(activeCompanyId)
-        company.merge(data)
+        const patch: any = {
+            name: data.name,
+            registreCommerce: data.registreCommerce,
+            logo: data.logo,
+            description: data.description,
+        }
+
+        if (data.activityType !== undefined) {
+            const nextActivityType = this.normalizeTemplate(data.activityType, 'activityType')
+            await subscriptionService.ensurePlanCanBeAssignedToCompany(nextActivityType)
+            patch.activityType = nextActivityType
+            if (data.defaultTemplate === undefined) {
+                patch.defaultTemplate = nextActivityType
+            }
+        }
+
+        if (data.defaultTemplate !== undefined) {
+            patch.defaultTemplate = this.normalizeTemplate(data.defaultTemplate, 'defaultTemplate')
+        }
+
+        const nextActivityType = (patch.activityType || company.activityType || '').toUpperCase()
+        const nextDefaultTemplate = (patch.defaultTemplate || company.defaultTemplate || '').toUpperCase()
+        if (nextActivityType === 'COMMANDE' && nextDefaultTemplate && nextDefaultTemplate !== 'COMMANDE') {
+            throw new Error(
+                `E_ACTIVITY_DEFAULT_TEMPLATE_FORBIDDEN: company activityType=COMMANDE cannot set defaultTemplate=${nextDefaultTemplate}. Allowed defaultTemplate: COMMANDE.`
+            )
+        }
+
+        company.merge(patch)
         await company.save()
 
         return company

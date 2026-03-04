@@ -19,12 +19,16 @@ export default class extends BaseSchema {
       table.integer('base_amount').notNullable().defaultTo(0)
       table.float('commande_commission_percent').notNullable().defaultTo(0)
       table.float('ticket_fee_percent').notNullable().defaultTo(0)
+      table.float('tax_percent').notNullable().defaultTo(0)
+      table.string('currency').notNullable().defaultTo('XOF')
 
       table.float('commande_usage_amount').notNullable().defaultTo(0)
       table.float('ticket_usage_amount').notNullable().defaultTo(0)
       table.integer('commande_commission_amount').notNullable().defaultTo(0)
       table.integer('ticket_fee_amount').notNullable().defaultTo(0)
       table.integer('total_amount').notNullable().defaultTo(0)
+      table.integer('tax_amount').notNullable().defaultTo(0)
+      table.integer('total_amount_with_tax').notNullable().defaultTo(0)
 
       table.string('status').notNullable().defaultTo('ISSUED')
       table.timestamp('issued_at').nullable()
