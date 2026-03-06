@@ -44,7 +44,7 @@ ENV PORT=4001
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
 
-HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=20s --timeout=5s --start-period=45s --retries=3 \
   CMD wget --quiet --spider http://0.0.0.0:${PORT:-4001}/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

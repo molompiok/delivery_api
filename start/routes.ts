@@ -29,6 +29,10 @@ router.get('/', async () => {
   return { status: 'ok', service: 'Sublymus Delivery API', version: '1.0.0' }
 })
 
+router.get('/health', async () => {
+  return { status: 'ok', service: 'Sublymus Delivery API', version: '1.0.0' }
+})
+
 const DriverController = () => import('#controllers/driver_controller')
 router.get('/v1/drivers/locations', [DriverController, 'getAllDriversLocations'])
 router.get('/v1/driver/:id/location', [DriverController, 'getDriverLocation'])
