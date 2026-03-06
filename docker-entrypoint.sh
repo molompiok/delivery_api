@@ -23,12 +23,9 @@ echo "[delivery_api Entrypoint] DB: ${DB_HOST}:${DB_PORT:-5432}/${DB_DATABASE}"
 echo "[delivery_api Entrypoint] Redis: ${REDIS_HOST}:${REDIS_PORT:-6379}"
 
 # Exécuter les migrations AdonisJS
+# Note: || true car les tables peuvent exister avec d'anciens noms de migration
 echo "[delivery_api Entrypoint] Exécution des migrations..."
-if node ace migration:run --force; then
-    echo "[delivery_api Entrypoint] Migrations OK."
-else
-    echo "[delivery_api Entrypoint] WARN: Migrations avec des avertissements (tables existantes ?). Démarrage quand même..."
-fi
+node ace migration:run --force || echo "[delivery_api Entrypoint] WARN: Migration partielle (tables existantes). Démarrage quand même..."
 
 # Lancer la commande principale (CMD du Dockerfile ou override Swarm)
 echo "[delivery_api Entrypoint] Démarrage: $@"
