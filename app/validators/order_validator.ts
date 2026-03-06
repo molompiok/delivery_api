@@ -200,5 +200,8 @@ export const transitItemSchema = vine.object({
         volume_l: vine.number().optional(),
     }).optional(),
     requirements: vine.array(vine.enum(['froid', 'fragile', 'dangerous', 'sec', 'FROID', 'FRAGILE', 'DANGEROUS', 'SEC'] as const).transform((v) => v.toLowerCase() as any)).optional(),
+    client_name: vine.string().trim().nullable().optional(),
+    client_phone: vine.string().trim().nullable().optional(),
+    client_reference: vine.string().trim().nullable().optional(),
     metadata: vine.any().optional(),
 })

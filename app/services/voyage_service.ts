@@ -5,10 +5,16 @@ export default class VoyageService {
     /**
      * Lists all published voyages.
      */
-    async listPublished(trx?: TransactionClientContract) {
-        return Order.query({ client: trx })
+    async listPublished(companyId?: string, trx?: TransactionClientContract) {
+        const query = Order.query({ client: trx })
             .where('template', 'VOYAGE')
             .where('status', 'PUBLISHED')
+
+        if (companyId) {
+            query.where('companyId', companyId)
+        }
+
+        return query
             .preload('steps', (q) => q.orderBy('sequence', 'asc')
                 .preload('stops', (sq) => sq.orderBy('execution_order', 'asc').orderBy('display_order', 'asc')
                     .preload('address')
@@ -46,7 +52,9 @@ export default class VoyageService {
             .firstOrFail()
 
         let totalCapacity = 0
-        if (order.vehicle?.metadata?.seatDisposition) {
+        if (order.metadata?.seatMap) {
+            totalCapacity = Object.keys(order.metadata.seatMap).length
+        } else if (order.vehicle?.metadata?.seatDisposition) {
             totalCapacity = order.vehicle.metadata.seatDisposition.length
         } else if (order.vehicle?.capacity) {
             totalCapacity = order.vehicle.capacity
@@ -94,11 +102,31 @@ export default class VoyageService {
         const reservedSeats = Array.from(new Set(reservedSeatsArray))
         const reservedCount = reservedSeats.length
 
+        // Generate seats list
+        const seatMap = order.metadata?.seatMap || {}
+        let seats: any[] = []
+
+        if (Object.keys(seatMap).length > 0) {
+            seats = Object.entries(seatMap).map(([id, meta]: [string, any]) => ({
+                id,
+                number: meta.number || id.replace('seat_', ''),
+                ...meta,
+            }))
+        } else if (order.vehicle?.metadata?.seatDisposition) {
+            seats = order.vehicle.metadata.seatDisposition
+        } else {
+            seats = Array.from({ length: totalCapacity }, (_, i) => ({
+                id: `seat_${i + 1}`,
+                number: `${i + 1}`,
+            }))
+        }
+
         return {
             totalCapacity,
             reservedCount,
             availableCount: Math.max(0, totalCapacity - reservedCount),
-            reservedSeats
+            reservedSeats,
+            seats,
         }
     }
 }

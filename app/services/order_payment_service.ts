@@ -12,6 +12,8 @@ import subscriptionService from '#services/subscription_service'
 import walletBridge from '#services/wallet_bridge_service'
 import type { CodCollectionStatus, SettlementMode } from '#models/cod_collection'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import RedisLock from '#utils/redis_lock'
+import VoyageService from '#services/voyage_service'
 
 /**
  * OrderPaymentService
@@ -73,6 +75,28 @@ class OrderPaymentService {
 
     async getByOrder(orderId: string, trx?: TransactionClientContract): Promise<PaymentIntent[]> {
         return PaymentIntent.query({ client: trx }).where('orderId', orderId)
+    }
+
+    async search(params: { orderId?: string, bookingId?: string, stopId?: string }, trx?: TransactionClientContract): Promise<PaymentIntent[]> {
+        const query = PaymentIntent.query({ client: trx })
+
+        if (params.orderId) {
+            // General filter: could be orderId OR bookingId (common in test clients)
+            query.where((q) => {
+                q.where('orderId', params.orderId!)
+                    .orWhere('bookingId', params.orderId!)
+            })
+        }
+
+        if (params.bookingId) {
+            query.where('bookingId', params.bookingId)
+        }
+
+        if (params.stopId) {
+            query.where('stopId', params.stopId)
+        }
+
+        return query.orderBy('created_at', 'desc')
     }
 
 
@@ -251,84 +275,167 @@ class OrderPaymentService {
         try {
             const intent = await (PaymentIntent as any).query({ client: effectiveTrx })
                 .where('id', id)
+                .preload('booking')
                 .preload('order', (q: any) => {
                     q.preload('driver')
                     q.preload('company')
+                    q.preload('bookings', (bq: any) => bq.where('status', 'CONFIRMED'))
                 })
                 .forUpdate()
                 .firstOrFail()
+
+            // --- PRE-PAYMENT VALIDATIONS (Segment Aware & Concurrent Safe) ---
+            const order = intent.order
+            if (order && order.template === 'VOYAGE') {
+                const voyageService = new VoyageService()
+
+                // 1. Check Voyage Status
+                if (order.status !== 'PUBLISHED') {
+                    throw new Error('E_VOYAGE_NOT_AVAILABLE: Ce voyage n\'est plus disponible (déjà parti ou annulé).')
+                }
+
+                // 2. Check Seat Availability with Redis Lock
+                if (intent.bookingId) {
+                    await RedisLock.runWithLock(`voyage:${order.id}:seats`, async () => {
+                        const currentBooking = intent.booking
+                        if (!currentBooking) return
+
+                        // Precise segment availability check
+                        const availability = await voyageService.getSeats(
+                            order.id,
+                            currentBooking.pickupStopId || undefined,
+                            currentBooking.dropoffStopId || undefined,
+                            effectiveTrx
+                        )
+
+                        const requestedSeats = currentBooking.seatsReserved || []
+                        const alreadyTaken = requestedSeats.filter((s: string) => availability.reservedSeats.includes(s))
+
+                        if (alreadyTaken.length > 0) {
+                            throw new Error(`E_SEATS_ALREADY_TAKEN: Les places suivantes sont déjà réservées sur ce trajet : ${alreadyTaken.join(', ')}`)
+                        }
+                    })
+                }
+            }
+            // ------------------------------------------------------------------
 
             // Fetch wallets dynamically from related entities
             const driverWalletId = (intent as any).order?.driver?.walletId
             const companyWalletId = (intent as any).order?.company?.walletId
             const platformWalletId = process.env.WAVE_PLATFORM_WALLET_ID
 
-            const splits = []
+            const splits: any[] = []
 
-            if (driverWalletId && intent.driverAmount > 0) {
+            // Fallback hierarchy logic for splits
+            const driverAmount = intent.driverAmount || 0
+            const companyAmount = intent.companyAmount || 0
+            const platformFee = intent.platformFee || 0
+
+            // Distribution buckets
+            let finalDriverAmount = 0
+            let finalCompanyAmount = 0
+            let finalPlatformAmount = platformFee
+
+            // 1. Handle Driver Amount
+            if (driverWalletId) {
+                finalDriverAmount = driverAmount
+            } else if (companyWalletId) {
+                finalCompanyAmount += driverAmount
+            } else {
+                finalPlatformAmount += driverAmount
+            }
+
+            // 2. Handle Company Amount
+            if (companyWalletId) {
+                finalCompanyAmount += companyAmount
+            } else {
+                finalPlatformAmount += companyAmount
+            }
+
+            // Build Splits
+            if (finalDriverAmount > 0 && driverWalletId) {
                 splits.push({
                     wallet_id: driverWalletId,
-                    amount: intent.driverAmount,
+                    amount: finalDriverAmount,
                     category: 'DRIVER_PAYMENT',
                     label: `Rémunération livraison ${intent.orderId}`,
                     release_delay_hours: 0,
                 })
             }
 
-            if (companyWalletId && intent.companyAmount > 0) {
+            if (finalCompanyAmount > 0 && companyWalletId) {
                 splits.push({
                     wallet_id: companyWalletId,
-                    amount: intent.companyAmount,
+                    amount: finalCompanyAmount,
                     category: 'COMPANY_COMMISSION',
                     label: `Commission entreprise ${intent.orderId}`,
                     release_delay_hours: 0,
                 })
             }
 
-            if (platformWalletId && intent.platformFee > 0) {
+            if (finalPlatformAmount > 0 && platformWalletId) {
                 splits.push({
                     wallet_id: platformWalletId,
-                    amount: intent.platformFee,
+                    amount: finalPlatformAmount,
                     category: 'PLATFORM_COMMISSION',
-                    label: `Commission plateforme ${intent.orderId}`,
+                    label: `Commission/Reliquat plateforme ${intent.orderId}`,
                     release_delay_hours: 0,
                 })
+            }
+
+            // Final safety check to ensure total sum matches Wave expectation
+            const totalSplit = splits.reduce((sum, s) => sum + s.amount, 0)
+            if (totalSplit !== intent.amount) {
+                const diff = intent.amount - totalSplit
+                if (diff > 0 && platformWalletId) {
+                    const ps = splits.find(s => s.wallet_id === platformWalletId)
+                    if (ps) ps.amount += diff
+                    else splits.push({ wallet_id: platformWalletId, amount: diff, category: 'PLATFORM_COMMISSION', label: 'Ajustement plateforme' })
+                } else if (diff !== 0) {
+                    throw new Error(`Split sum mismatch: expected ${intent.amount}, got ${totalSplit}`)
+                }
             }
 
             if (splits.length === 0 && intent.amount > 0) {
                 throw new Error('No wallet splits configured')
             }
 
-            try {
-                const waveIntent = await walletBridge.createPaymentIntent({
-                    amount: intent.amount,
-                    externalReference: `${intent.id}`,
-                    description: `Paiement commande ${intent.orderId}`,
-                    successUrl: validated.successUrl,
-                    errorUrl: validated.errorUrl,
-                    splits,
-                })
+            const waveIntent = await walletBridge.createPaymentIntent({
+                amount: intent.amount,
+                externalReference: `${intent.id}`,
+                description: `Paiement commande ${intent.orderId}`,
+                successUrl: validated.successUrl,
+                errorUrl: validated.errorUrl,
+                splits,
+            })
 
-                intent.externalId = waveIntent.payment_intent_id
+            intent.externalId = waveIntent.payment_intent_id
+            await intent.useTransaction(effectiveTrx).save()
 
-                await intent.useTransaction(effectiveTrx).save()
+            if (!trx) await effectiveTrx.commit()
 
-                if (!trx) await effectiveTrx.commit()
+            logger.info({
+                intentId: intent.id,
+                externalId: intent.externalId,
+            }, '[PaymentIntent] Authorized')
 
-                logger.info({
-                    intentId: intent.id,
-                    externalId: intent.externalId,
-                }, '[PaymentIntent] Authorized')
+            return { checkoutUrl: waveIntent.wave_checkout_url || undefined }
 
-                return { checkoutUrl: waveIntent.wave_checkout_url || undefined }
-            } catch (error) {
-                intent.status = 'FAILED'
-                await intent.useTransaction(effectiveTrx).save()
-                if (!trx) await effectiveTrx.commit()
-                throw error
-            }
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()
+
+            // Try to mark as FAILED in a SEPARATE transaction if the main one failed
+            try {
+                const failTrx = await db.transaction()
+                const failIntent = await PaymentIntent.find(id, { client: failTrx })
+                if (failIntent) {
+                    failIntent.status = 'FAILED'
+                    await failIntent.useTransaction(failTrx).save()
+                    await failTrx.commit()
+                }
+            } catch (failErr) {
+                logger.error({ failErr, id }, '[PaymentIntent] Failed to mark as FAILED')
+            }
             throw error
         }
     }
@@ -380,6 +487,99 @@ class OrderPaymentService {
             if (!trx) await effectiveTrx.rollback()
             throw error
         }
+    }
+
+    // ── Payment Status Synchronization ──
+
+    /**
+     * Synchronise le statut d'un PaymentIntent avec les actions métier associées.
+     * Appelé par le worker de synchro ou un éventuel webhook.
+     */
+    async syncIntentStatus(intentId: string, status: 'COMPLETED' | 'FAILED', trx?: TransactionClientContract): Promise<void> {
+        const effectiveTrx = trx || await db.transaction()
+        try {
+            const intent = await PaymentIntent.query({ client: effectiveTrx })
+                .where('id', intentId)
+                .forUpdate()
+                .firstOrFail()
+
+            if (intent.status === status) {
+                if (!trx) await effectiveTrx.commit()
+                return
+            }
+
+            intent.status = status
+            await intent.useTransaction(effectiveTrx).save()
+
+            if (status === 'COMPLETED') {
+                // Bonus actions specifically for Bookings
+                if (intent.bookingId) {
+                    const voyageService = new VoyageService()
+                    const booking = await (await import('#models/booking')).default.query({ client: effectiveTrx })
+                        .where('id', intent.bookingId)
+                        .first()
+
+                    if (booking) {
+                        // FINAL SAFETY CHECK: Redis Lock & Segment Availability
+                        await RedisLock.runWithLock(`voyage:${booking.orderId}:seats`, async () => {
+                            const availability = await voyageService.getSeats(
+                                booking.orderId,
+                                booking.pickupStopId || undefined,
+                                booking.dropoffStopId || undefined,
+                                effectiveTrx
+                            )
+
+                            const requestedSeats = booking.seatsReserved || []
+                            // Check if CONFIRMED bookings now occupy these seats
+                            // (But we must ignore our own booking if it was already somehow in PENDING with seats)
+                            // Actually VoyageService.getSeats already includes CONFIRMED + PENDING.
+                            // To be absolutely safe, we check if seats are in availability.reservedSeats
+                            // and if those reservations belong to CONFIRMED bookings other than ours.
+
+                            const conflict = requestedSeats.filter((s: string) => availability.reservedSeats.includes(s))
+                            if (conflict.length > 0) {
+                                // Double check if it's REALLY a confirmed conflict
+                                const conflictingConfirmed = await (await import('#models/booking')).default.query({ client: effectiveTrx })
+                                    .where('order_id', booking.orderId)
+                                    .where('status', 'CONFIRMED')
+                                    .whereNot('id', booking.id)
+
+                                const takenByConfirmed = conflictingConfirmed.flatMap((b: any) => b.seatsReserved || [])
+                                const realStolen = requestedSeats.filter((s: string) => takenByConfirmed.includes(s))
+
+                                if (realStolen.length > 0) {
+                                    throw new Error(`E_FINAL_SEATS_CONFLICT: Désolé, les places ${realStolen.join(', ')} ont été confirmées par un autre paiement entre-temps.`)
+                                }
+                            }
+
+                            booking.status = 'CONFIRMED'
+                            await booking.useTransaction(effectiveTrx).save()
+                            logger.info({ bookingId: booking.id, intentId }, '[PaymentIntent] Booking confirmed after successful payment')
+
+                            // Emit event for real-time UI/Notifications
+                            // TODO: Event.emit('payment:received', { bookingId: booking.id, amount: intent.amount })
+                        })
+                    }
+                }
+            }
+
+            if (!trx) await effectiveTrx.commit()
+            logger.info({ intentId, status }, '[PaymentIntent] Status synchronized')
+        } catch (error) {
+            if (!trx) await effectiveTrx.rollback()
+            throw error
+        }
+    }
+
+    /**
+     * Récupère les intents en attente qui ont été initiés auprès de Wave.
+     */
+    async getPendingExternalIntents(limit = 20): Promise<PaymentIntent[]> {
+        return PaymentIntent.query()
+            .where('status', 'PENDING')
+            .whereNotNull('externalId')
+            .orderBy('created_at', 'asc')
+            .limit(limit)
     }
 
     // ── Order delivered ──

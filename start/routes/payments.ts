@@ -26,6 +26,7 @@ router.group(() => {
     router.post('/pricing-filters/price-matrix', [PricingFiltersController, 'priceMatrix'])
 
     // ── Order Payments ──
+    router.get('/order-payments', [OrderPaymentsController, 'index'])
     router.get('/order-payments/:id', [OrderPaymentsController, 'show'])
     router.post('/order-payments/initiate', [OrderPaymentsController, 'initiate'])
     router.post('/order-payments/:id/authorize', [OrderPaymentsController, 'authorize'])

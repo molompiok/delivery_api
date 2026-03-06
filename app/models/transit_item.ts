@@ -62,6 +62,15 @@ export default class TransitItem extends BaseModel {
     declare metadata: any
 
     @column()
+    declare clientName: string | null
+
+    @column()
+    declare clientPhone: string | null
+
+    @column()
+    declare clientReference: string | null
+
+    @column()
     declare originalId: string | null
 
     @column()

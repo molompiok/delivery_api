@@ -172,8 +172,13 @@ export default class OrdersController {
     async show({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const { include } = request.qs()
-            const includeArray = include ? include.split(',') : []
+            const includeArg = request.input('include')
+            let includeArray: string[] = []
+            if (Array.isArray(includeArg)) {
+                includeArray = includeArg
+            } else if (typeof includeArg === 'string') {
+                includeArray = includeArg.split(',')
+            }
 
             logger.info({ orderId: params.id, userId: user.id, include: includeArray }, '[ORDERS_CONTROLLER] Show order')
 

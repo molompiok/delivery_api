@@ -1,11 +1,32 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import CompanyService from '#services/company_service'
 import ShiftService from '#services/shift_service'
+import Company from '#models/company'
 import { inject } from '@adonisjs/core'
 
 @inject()
 export default class CompanyController {
     constructor(protected companyService: CompanyService) { }
+
+    /**
+     * Public search for companies (for client order creation with TARGET mode)
+     */
+    public async searchPublic({ request, response }: HttpContext) {
+        try {
+            const q = request.input('q', '').trim()
+            if (q.length < 2) {
+                return response.ok([])
+            }
+            const companies = await Company.query()
+                .where('verificationStatus', 'VERIFIED')
+                .where('name', 'ILIKE', `%${q}%`)
+                .select('id', 'name', 'activityType', 'logo')
+                .limit(10)
+            return response.ok(companies)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
 
     /**
      * Create a new company

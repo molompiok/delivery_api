@@ -5,6 +5,19 @@ import Order from '#models/order'
 export default class OrderPaymentsController {
 
     /**
+     * List order payments based on filters
+     */
+    public async index({ request, response }: HttpContext) {
+        try {
+            const filters = request.qs()
+            const payments = await orderPaymentService.search(filters)
+            return response.ok(payments)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
      * Show an order payment with stop payments and COD details
      */
     public async show({ auth, params, response }: HttpContext) {

@@ -352,7 +352,7 @@ export default class TestVoyageWorkflow extends BaseCommand {
   private async httpGetVoyages(voyageService: VoyageService, trx: TransactionClientContract) {
     // HTTP GET /v1/voyages
     this.logger.info('[HTTP] GET /v1/voyages')
-    const voyages = await voyageService.listPublished(trx)
+    const voyages = await voyageService.listPublished(undefined, trx)
     this.logger.info(`[HTTP] 200 /v1/voyages | count=${voyages.length}`)
     return voyages
   }

@@ -36,6 +36,9 @@ export default class TransitItemService {
                 weight: validatedData.weight ?? null,
                 dimensions: validatedData.dimensions,
                 unitaryPrice: validatedData.unitary_price,
+                clientName: validatedData.client_name,
+                clientPhone: validatedData.client_phone,
+                clientReference: validatedData.client_reference,
                 metadata: validatedData.metadata || {},
                 isPendingChange: !isDraft,
             }, { client: effectiveTrx })
@@ -93,6 +96,9 @@ export default class TransitItemService {
                         weight: ti.weight,
                         dimensions: ti.dimensions,
                         unitaryPrice: ti.unitaryPrice,
+                        clientName: ti.clientName,
+                        clientPhone: ti.clientPhone,
+                        clientReference: ti.clientReference,
                         metadata: ti.metadata,
                         originalId: ti.id,
                         isPendingChange: true
@@ -106,6 +112,9 @@ export default class TransitItemService {
             if (validatedData.packaging_type !== undefined) targetTi.packagingType = validatedData.packaging_type
             if (validatedData.weight !== undefined) targetTi.weight = validatedData.weight
             if (validatedData.unitary_price !== undefined) targetTi.unitaryPrice = validatedData.unitary_price
+            if (validatedData.client_name !== undefined) targetTi.clientName = validatedData.client_name
+            if (validatedData.client_phone !== undefined) targetTi.clientPhone = validatedData.client_phone
+            if (validatedData.client_reference !== undefined) targetTi.clientReference = validatedData.client_reference
 
             if (validatedData.dimensions !== undefined) {
                 targetTi.dimensions = {
@@ -179,6 +188,9 @@ export default class TransitItemService {
                     weight: itemData.weight ?? null,
                     dimensions: itemData.dimensions,
                     unitaryPrice: itemData.unitary_price,
+                    clientName: itemData.client_name,
+                    clientPhone: itemData.client_phone,
+                    clientReference: itemData.client_reference,
                     metadata: itemData.metadata || {}
                 }, { client: trx })
             }

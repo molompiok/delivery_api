@@ -26,7 +26,6 @@ import ActionService from './action_service.js'
 import TransitItem from '#models/transit_item'
 import User from '#models/user'
 import Company from '#models/company'
-import VroomService from '../vroom_service.js'
 import OrToolsService, { OrToolsStop, OrToolsAction } from '../optimizer/or_tools_service.js'
 import redis from '@adonisjs/redis/services/main'
 import wsService from '#services/ws_service'
@@ -49,7 +48,6 @@ export default class OrderDraftService {
     constructor(
         protected dispatchService: DispatchService,
         protected actionService: ActionService,
-        protected vroomService: VroomService,
         protected orToolsService: OrToolsService
     ) { }
 
@@ -140,7 +138,7 @@ export default class OrderDraftService {
                 display_order: stop.displayOrder,
                 status: stop.status,
                 arrival: arrival,
-                arrival_time: this.vroomService.formatSecondsToHm(arrival),
+                arrival_time: this.formatSecondsToHm(arrival),
                 duration: arrival,
                 distance: dist
             }
@@ -667,6 +665,7 @@ export default class OrderDraftService {
                 )
             )
             .preload('transitItems')
+            .preload('bookings', (q) => q.preload('client').preload('transitItems').preload('pickupStop').preload('dropoffStop'))
 
         if (options.withRoute || options.include?.includes('leg')) {
             logger.debug({ orderId }, '[ORDER_DRAFT] Including heavy leg relationship')
@@ -2031,7 +2030,7 @@ export default class OrderDraftService {
                 execution_order: i,
                 display_order: p.displayOrder,
                 arrival: cumulativeDuration,
-                arrival_time: this.vroomService.formatSecondsToHm(cumulativeDuration),
+                arrival_time: this.formatSecondsToHm(cumulativeDuration),
                 duration: cumulativeDuration,
                 distance: cumulativeDistance
             }
@@ -2046,5 +2045,18 @@ export default class OrderDraftService {
             stops: stops,
             raw: result
         }
+    }
+
+    private formatSecondsToHm(totalSeconds: number): string {
+        const hours = Math.floor(totalSeconds / 3600)
+        const minutes = Math.floor((totalSeconds % 3600) / 60)
+        const seconds = totalSeconds % 60
+
+        const parts = []
+        if (hours > 0) parts.push(`${hours}h`)
+        if (minutes > 0) parts.push(`${minutes}min`)
+        if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`)
+
+        return `{ ${parts.join(' , ')} }`
     }
 }

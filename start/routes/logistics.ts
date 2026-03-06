@@ -13,6 +13,13 @@ const VoyagesController = () => import('#controllers/voyages_controller')
 const BookingsController = () => import('#controllers/bookings_controller')
 const CompanyB2BsController = () => import('#controllers/company_b_2_bs_controller')
 
+const CompanyController = () => import('#controllers/company_controller')
+
+// --- PUBLIC COMPANY SEARCH ---
+router.group(() => {
+    router.get('/companies/search', [CompanyController, 'searchPublic'])
+}).prefix('/v1')
+
 // --- PUBLIC VOYAGE ROUTES ---
 router.group(() => {
     router.get('/voyages', [VoyagesController, 'index'])
@@ -45,6 +52,7 @@ router.group(() => {
     router.post('/orders/:id/recalculate', [OrdersController, 'recalculate'])
 
     // Bookings
+    router.get('/bookings', [BookingsController, 'index'])
     router.post('/voyages/:id/bookings', [BookingsController, 'store'])
 
     // Granular Order Management

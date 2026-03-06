@@ -166,13 +166,12 @@ class WalletBridgeService {
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                logger.debug({ method, url, body, attempt }, '[WalletBridge] Request')
+                logger.info({ method, url, attempt }, '[WalletBridge] Requesting')
 
                 const response = await fetch(url, {
                     method,
                     headers: this.headers,
                     body: body ? JSON.stringify(body) : undefined,
-                    keepalive: true,
                 })
 
                 const data = await response.json() as any
@@ -270,6 +269,43 @@ class WalletBridgeService {
             })),
         })
         return res.data
+    }
+
+    /**
+     * Vérifier si un paiement a été reçu dans le ledger du manager (Platform)
+     */
+    async checkPaymentStatus(params: { externalId: string, internalId: string }): Promise<'COMPLETED' | 'PENDING'> {
+        const platformWalletId = env.get('WAVE_PLATFORM_WALLET_ID')
+        if (!platformWalletId) {
+            logger.warn('[WalletBridge] WAVE_PLATFORM_WALLET_ID not configured, cannot check payment status')
+            return 'PENDING'
+        }
+
+        try {
+            const data = await this.getMultiLedgers({
+                walletIds: [platformWalletId],
+                limit: 50
+            })
+
+            const entries = data.data || []
+            logger.debug({ count: entries.length, params }, '[WalletBridge] Checking ledger entries')
+
+            const found = entries.find((l: any) => {
+                const extRef = l.externalReference || l.external_reference
+                const piId = l.metadata?.payment_intent_id || l.payment_intent_id
+
+                return piId === params.externalId || extRef === params.internalId
+            })
+
+            if (found) {
+                logger.info({ id: found.id, params }, '[WalletBridge] Payment found in ledger')
+            }
+
+            return found ? 'COMPLETED' : 'PENDING'
+        } catch (error) {
+            logger.error({ error, ...params }, '[WalletBridge] Failed to check payment status')
+            return 'PENDING'
+        }
     }
 
     // ─── TRANSFERTS INTERNES (WALLET → WALLET) ────────────

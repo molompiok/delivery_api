@@ -23,4 +23,20 @@ export default class BookingsController {
             return response.badRequest({ message: error.message })
         }
     }
+
+    /**
+     * List bookings for the authenticated client.
+     */
+    async index({ response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const bookings = await this.bookingService.listClientBookings(user.id)
+
+            return response.ok({
+                data: bookings.map(b => b.serialize())
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
 }

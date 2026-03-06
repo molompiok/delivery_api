@@ -248,4 +248,16 @@ export default class BookingService {
             throw error
         }
     }
+
+    /**
+     * Lists all bookings for a specific client, preloaded with voyage details.
+     */
+    async listClientBookings(clientId: string) {
+        return Booking.query()
+            .where('clientId', clientId)
+            .preload('transitItems')
+            .preload('pickupStop', (q: any) => q.preload('address'))
+            .preload('dropoffStop', (q: any) => q.preload('address'))
+            .orderBy('createdAt', 'desc')
+    }
 }

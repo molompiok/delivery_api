@@ -9,9 +9,10 @@ export default class VoyagesController {
     /**
      * List all published voyages.
      */
-    async index({ response }: HttpContext) {
+    async index({ request, response }: HttpContext) {
         try {
-            const voyages = await this.voyageService.listPublished()
+            const companyId = request.input('companyId')
+            const voyages = await this.voyageService.listPublished(companyId)
             return response.ok(voyages.map(v => v.serialize()))
         } catch (error: any) {
             return response.badRequest({ message: error.message })
