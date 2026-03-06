@@ -34,7 +34,7 @@ export default class extends BaseSchema {
             table.timestamp('updated_at').nullable()
 
             // Index
-            table.index(['order_payment_id'])
+            table.index(['payment_intent_id'])
             table.index(['order_id'])
             table.index(['driver_id'])
             table.index(['status'])
