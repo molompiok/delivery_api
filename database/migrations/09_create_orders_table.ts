@@ -11,6 +11,12 @@ export default class extends BaseSchema {
             table.string('vehicle_id').nullable().references('id').inTable('vehicles').onDelete('SET NULL')
 
             table.string('ref_id').nullable()
+            table.string('template').nullable().defaultTo('COMMANDE')
+            table.string('initiator_id').nullable()
+            table.string('leg_id').nullable()
+            table.string('company_id').nullable().references('id').inTable('companies').onDelete('CASCADE')
+            table.boolean('is_intervention').defaultTo(false)
+
             table.string('assignment_mode').defaultTo('GLOBAL')
             table.string('offered_driver_id').nullable().references('id').inTable('users').onDelete('SET NULL')
             table.timestamp('offer_expires_at').nullable()
@@ -20,6 +26,7 @@ export default class extends BaseSchema {
             table.string('status').notNullable().defaultTo('PENDING')
 
             table.boolean('is_complex').defaultTo(false)
+            table.boolean('has_pending_changes').defaultTo(false)
             table.string('logic_pattern').nullable()
             table.boolean('is_deleted').defaultTo(false)
 
@@ -33,6 +40,8 @@ export default class extends BaseSchema {
 
             table.timestamp('eta_pickup').nullable()
             table.timestamp('eta_delivery').nullable()
+
+            table.timestamp('delivered_at').nullable()
 
             table.timestamp('created_at').notNullable()
             table.timestamp('updated_at').nullable()

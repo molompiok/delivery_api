@@ -4,17 +4,12 @@ import { middleware } from '#start/kernel'
 const DriverController = () => import('#controllers/driver_controller')
 const CompanyController = () => import('#controllers/company_controller')
 const SubscriptionController = () => import('#controllers/subscription_controller')
+const DashboardController = () => import('#controllers/dashboard_controller')
 const DebugController = () => import('#controllers/debug_controller')
-const TestUserController = () => import('#controllers/test_user_controller')
 
 router.group(() => {
     router.get('/debug/files', [DebugController, 'listFiles'])
     router.get('/debug/filedata', [DebugController, 'listFileData'])
-
-    // Test Integrated File System
-    router.get('/test-users/:id', [TestUserController, 'show'])
-    router.post('/test-users', [TestUserController, 'store'])
-    router.put('/test-users/:id', [TestUserController, 'update'])
 
     // Driver Routes
     router.post('/driver/register', [DriverController, 'registerAsDriver'])
@@ -28,8 +23,10 @@ router.group(() => {
     router.post('/driver/invitations/:invitationId/reject', [DriverController, 'rejectRequest'])
 
     // Company Routes
+    router.get('/company/dashboard/stats', [DashboardController, 'getStats'])
     router.post('/company', [CompanyController, 'createCompany'])
     router.get('/company/me', [CompanyController, 'getMyCompany'])
+    router.put('/company', [CompanyController, 'updateCompany'])
     router.put('/company/me', [CompanyController, 'updateCompany'])
     router.get('/company/subscription/effective', [SubscriptionController, 'myEffective'])
     router.get('/company/subscription/invoices', [SubscriptionController, 'myInvoices'])
@@ -39,6 +36,7 @@ router.group(() => {
     router.post('/company/drivers/invite', [CompanyController, 'invite'])
     router.get('/company/drivers', [CompanyController, 'listDrivers'])
     router.get('/company/drivers/:driverId', [CompanyController, 'getDriver'])
+    router.get('/company/drivers/:driverId/stats', [CompanyController, 'getDriverStats'])
     router.delete('/company/drivers/:driverId', [CompanyController, 'remove'])
     router.get('/company/requirements', [CompanyController, 'getRequirements'])
     router.post('/company/requirements', [CompanyController, 'updateRequirements'])

@@ -1,11 +1,16 @@
+import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
 import db from '@adonisjs/lucid/services/db'
 import Company from '#models/company'
 import CompanyDriverSetting from '#models/company_driver_setting'
 import SmsService from '#services/sms_service'
+import NotificationService from '#services/notification_service'
+import WalletProvisioningService from '#services/wallet_provisioning_service'
+import DriverRelationNotifyService from '#services/driver_relation_notify_service'
 import subscriptionService from '#services/subscription_service'
 import { DateTime } from 'luxon'
 import { inject } from '@adonisjs/core'
+import env from '#start/env'
 import { OrderTemplate } from '#constants/order_templates'
 
 @inject()
@@ -22,7 +27,7 @@ export default class CompanyService {
     /**
      * Create a company
      */
-    async create(user: User, data: { name: string, activityType: OrderTemplate, registreCommerce?: string, logo?: string, description?: string }) {
+    async create(ctx: HttpContext, user: User, data: { name: string, activityType: OrderTemplate, registreCommerce?: string, logo?: string, description?: string }) {
         if (user.companyId) {
             throw new Error('User already owns a company')
         }
@@ -42,6 +47,31 @@ export default class CompanyService {
         user.currentCompanyManaged = company.id
         await user.save()
 
+        // Best effort wallet provisioning
+        await WalletProvisioningService.ensureUserWallet(user)
+        await WalletProvisioningService.ensureCompanyWallet(company)
+
+        // Sync Logo if multipart request
+        const FileManager = (await import('#services/file_manager')).default
+        const manager = new FileManager(company, 'Company')
+        await manager.sync(ctx, {
+            column: 'logo',
+            isPublic: true,
+            config: {
+                allowedExt: ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+                maxSize: '2MB',
+                maxFiles: 1,
+            },
+        })
+
+        // Update primary logoPath column with the actual filename after sync
+        const paths = await FileManager.getPathsFor('Company', company.id, 'logo')
+        if (paths.length > 0) {
+            company.logoPath = paths[0]
+            await company.save()
+        }
+
+        await company.loadFiles()
         return company
     }
 
@@ -49,6 +79,7 @@ export default class CompanyService {
      * Update company
      */
     async update(
+        ctx: HttpContext,
         user: User,
         data: {
             name?: string
@@ -68,25 +99,31 @@ export default class CompanyService {
         const patch: any = {
             name: data.name,
             registreCommerce: data.registreCommerce,
-            logo: data.logo,
             description: data.description,
+        }
+
+        if (typeof data.logo === 'string') {
+            company.logoPath = data.logo
+        } else if (company.logoPath && company.logoPath.startsWith('{')) {
+            // Fix corrupted data from previous failed attempts
+            company.logoPath = null
         }
 
         if (data.activityType !== undefined) {
             const nextActivityType = this.normalizeTemplate(data.activityType, 'activityType')
             await subscriptionService.ensurePlanCanBeAssignedToCompany(nextActivityType)
-            patch.activityType = nextActivityType
+            company.activityType = nextActivityType
             if (data.defaultTemplate === undefined) {
-                patch.defaultTemplate = nextActivityType
+                company.defaultTemplate = nextActivityType
             }
         }
 
         if (data.defaultTemplate !== undefined) {
-            patch.defaultTemplate = this.normalizeTemplate(data.defaultTemplate, 'defaultTemplate')
+            company.defaultTemplate = this.normalizeTemplate(data.defaultTemplate, 'defaultTemplate')
         }
 
-        const nextActivityType = (patch.activityType || company.activityType || '').toUpperCase()
-        const nextDefaultTemplate = (patch.defaultTemplate || company.defaultTemplate || '').toUpperCase()
+        const nextActivityType = (company.activityType || '').toUpperCase()
+        const nextDefaultTemplate = (company.defaultTemplate || '').toUpperCase()
         if (nextActivityType === 'COMMANDE' && nextDefaultTemplate && nextDefaultTemplate !== 'COMMANDE') {
             throw new Error(
                 `E_ACTIVITY_DEFAULT_TEMPLATE_FORBIDDEN: company activityType=COMMANDE cannot set defaultTemplate=${nextDefaultTemplate}. Allowed defaultTemplate: COMMANDE.`
@@ -96,6 +133,32 @@ export default class CompanyService {
         company.merge(patch)
         await company.save()
 
+        // Sync Logo if multipart request
+        if (user && user.id) {
+            const FileManager = (await import('#services/file_manager')).default
+            const manager = new FileManager(company, 'Company')
+            await manager.sync(ctx, {
+                column: 'logo',
+                isPublic: true,
+                config: {
+                    allowedExt: ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+                    maxSize: '2MB',
+                    maxFiles: 1,
+                },
+            })
+
+            // Update primary logoPath column with the actual filename after sync
+            const paths = await FileManager.getPathsFor('Company', company.id, 'logo')
+            if (paths.length > 0) {
+                company.logoPath = paths[0]
+                await company.save()
+            } else if (ctx.request.input('logo_delete')) {
+                company.logoPath = null
+                await company.save()
+            }
+        }
+
+        await company.loadFiles()
         return company
     }
 
@@ -105,7 +168,9 @@ export default class CompanyService {
     async getCompanyDetails(user: User) {
         const activeCompanyId = user.currentCompanyManaged || user.companyId
         if (!activeCompanyId) throw new Error('User does not belong to a company')
-        return await Company.findOrFail(activeCompanyId)
+        const company = await Company.findOrFail(activeCompanyId)
+        await company.loadFiles()
+        return company
     }
 
     /**
@@ -143,13 +208,43 @@ export default class CompanyService {
             // 3. Initialize documents from Company metadata requirements
             await this.syncRequiredDocsFromMetadata(user, driver.id, trx)
 
-            // 4. Send SMS notification
+            // 4. Send SMS notification with download URL
             const company = await Company.findOrFail(activeCompanyId, { client: trx })
             await trx.commit()
 
+            // Best effort wallet provisioning (new or legacy records)
+            await WalletProvisioningService.ensureUserWallet(driver, { entityType: 'DRIVER' })
+            await WalletProvisioningService.ensureCompanyWallet(company)
+            await WalletProvisioningService.ensureCompanyDriverWallet(relation.id)
+            await relation.refresh()
+
+            const downloadUrl = env.get('DRIVER_APP_DOWNLOAD_URL', 'http://delivery.sublymus.com/download/driver-app')
             await SmsService.send({
                 to: phone,
-                content: `Bonjour, l'entreprise ${company.name} souhaite accéder à vos documents sur Sublymus pour un recrutement. Connectez-vous pour accepter la demande.`
+                content: `Bonjour, l'entreprise ${company.name} souhaite vous recruter sur Sublymus. Téléchargez l'app : ${downloadUrl} puis connectez-vous pour accepter.`
+            })
+
+            // 5. Send push notification if driver already has the app
+            try {
+                await NotificationService.sendInvitationAlert(driver, company.name, 'PENDING_ACCESS')
+            } catch (pushError: any) {
+                console.warn(`[INVITE] Push notification failed for ${driver.id}:`, pushError.message)
+            }
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'INVITATION',
+                action: 'INVITE_SENT',
+                message: `${company.name} vous invite a rejoindre la flotte.`,
+                relationId: relation.id,
+                driverId: relation.driverId,
+                companyId: relation.companyId,
+                entity: {
+                    status: relation.status,
+                    companyName: company.name,
+                },
+                push: {
+                    enabled: false,
+                },
             })
 
             return relation
@@ -193,6 +288,23 @@ export default class CompanyService {
         companyDriver.status = 'REMOVED'
         await companyDriver.save()
 
+        await DriverRelationNotifyService.dispatch({
+            scope: 'ASSIGNMENT',
+            action: 'REMOVED_FROM_COMPANY',
+            message: 'Vous ne faites plus partie de cette flotte.',
+            relationId: companyDriver.id,
+            driverId: companyDriver.driverId,
+            companyId: companyDriver.companyId,
+            entity: {
+                status: companyDriver.status,
+            },
+            push: {
+                title: 'Acces retire',
+                body: 'Votre acces a cette entreprise a ete retire.',
+                type: 'DRIVER_REMOVED_FROM_COMPANY',
+            },
+        })
+
         return true
     }
 
@@ -225,7 +337,12 @@ export default class CompanyService {
             })
         }
 
-        return await query.orderBy('status', 'asc').orderBy('invitedAt', 'desc')
+        const drivers = await query.orderBy('status', 'asc').orderBy('invitedAt', 'desc')
+
+        // Load photos for all drivers in the list
+        await Promise.all(drivers.map((d) => d.driver.loadFiles()))
+
+        return drivers
     }
 
     /**
@@ -245,6 +362,10 @@ export default class CompanyService {
                 q.preload('zones')
             })
             .firstOrFail()
+
+        if (relation.driver) {
+            await relation.driver.loadFiles()
+        }
 
         const Vehicle = (await import('#models/vehicle')).default
         const vehicle = await Vehicle.findBy('assignedDriverId', driverId)
@@ -339,6 +460,25 @@ export default class CompanyService {
 
             if (!trx) await outerTrx.commit()
 
+            if (!trx) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'DOCUMENT',
+                    action: 'REQUIRED_DOCS_UPDATED',
+                    message: 'La liste des documents requis a ete mise a jour.',
+                    relationId: relation.id,
+                    driverId: relation.driverId,
+                    companyId: relation.companyId,
+                    entity: {
+                        requiredDocTypes: relation.requiredDocTypes || [],
+                    },
+                    push: {
+                        title: 'Documents requis modifies',
+                        body: 'La liste des documents demandes a ete mise a jour.',
+                        type: 'DRIVER_REQUIRED_DOCS_UPDATED',
+                    },
+                })
+            }
+
             return relation
         } catch (error) {
             if (!trx) await outerTrx.rollback()
@@ -396,7 +536,37 @@ export default class CompanyService {
             await doc.useTransaction(trx).save()
 
             await this.syncDocsStatus(doc.tableId, trx)
+            const relation = await CompanyDriverSetting.findOrFail(doc.tableId, { client: trx })
             await trx.commit()
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'DOCUMENT',
+                action: status === 'APPROVED' ? 'DOCUMENT_APPROVED' : 'DOCUMENT_REJECTED',
+                message:
+                    status === 'APPROVED'
+                        ? 'Un de vos documents a ete valide.'
+                        : 'Un de vos documents a ete rejete.',
+                relationId: relation.id,
+                driverId: relation.driverId,
+                companyId: relation.companyId,
+                entity: {
+                    documentId: doc.id,
+                    documentType: doc.documentType,
+                    status,
+                    comment: comment || null,
+                },
+                push: {
+                    title: status === 'APPROVED' ? 'Document valide' : 'Document refuse',
+                    body:
+                        status === 'APPROVED'
+                            ? 'Un document vient d etre valide par votre entreprise.'
+                            : 'Un document a ete refuse. Verifiez le commentaire.',
+                    type:
+                        status === 'APPROVED'
+                            ? 'DRIVER_DOCUMENT_APPROVED'
+                            : 'DRIVER_DOCUMENT_REJECTED',
+                },
+            })
 
             return doc
         } catch (error) {
@@ -445,6 +615,24 @@ export default class CompanyService {
                     content: `Félicitations ! Vos documents ont été validés par ${company.name}. Connectez-vous pour rejoindre officiellement la flotte.`
                 })
             }
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'INVITATION',
+                action: 'FLEET_INVITED',
+                message: `${company.name} vous invite a rejoindre officiellement la flotte.`,
+                relationId: relation.id,
+                driverId: relation.driverId,
+                companyId: relation.companyId,
+                entity: {
+                    status: relation.status,
+                    companyName: company.name,
+                },
+                push: {
+                    title: 'Invitation flotte',
+                    body: `${company.name} vous invite a rejoindre la flotte.`,
+                    type: 'DRIVER_FLEET_INVITATION',
+                },
+            })
             return relation
         } catch (error) {
             await trx.rollback()
@@ -508,6 +696,25 @@ export default class CompanyService {
 
             await this.syncDocsStatus(relation.id, trx)
             await trx.commit()
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'DOCUMENT',
+                action: 'DOCUMENT_UPLOADED_BY_COMPANY',
+                message: 'Un document a ete ajoute par l entreprise.',
+                relationId: relation.id,
+                driverId: relation.driverId,
+                companyId: relation.companyId,
+                entity: {
+                    documentId: doc.id,
+                    documentType: doc.documentType,
+                    status: doc.status,
+                },
+                push: {
+                    title: 'Nouveau document',
+                    body: 'Un document a ete ajoute sur votre dossier entreprise.',
+                    type: 'DRIVER_COMPANY_DOCUMENT_UPLOADED',
+                },
+            })
 
             return { file, document: doc }
         } catch (error) {
@@ -598,5 +805,63 @@ export default class CompanyService {
         await company.save()
 
         return company.metaData.documentRequirements
+    }
+
+    /**
+     * Get Driver Stats (Missions, Success Rate, Revenue, Excellence)
+     */
+    async getDriverStats(user: User, driverId: string) {
+        const activeCompanyId = user.currentCompanyManaged || user.companyId
+        if (!activeCompanyId) throw new Error('Company access required')
+
+        const Order = (await import('#models/order')).default
+        const Rating = (await import('#models/rating')).default
+
+        // 1. Total Missions
+        const totalResult = await Order.query()
+            .where('driverId', driverId)
+            .count('* as total')
+            .first()
+        const totalMissions = Number(totalResult?.$extras.total || 0)
+
+        // 2. Success Rate
+        const finishedOrders = await Order.query()
+            .where('driverId', driverId)
+            .whereIn('status', ['DELIVERED', 'FAILED', 'CANCELLED'])
+            .select('status')
+
+        const deliveredCount = finishedOrders.filter(o => o.status === 'DELIVERED').length
+        const successRate = finishedOrders.length > 0
+            ? (deliveredCount / finishedOrders.length) * 100
+            : 100
+
+        // 3. Monthly Revenue (Current Month)
+        const startOfMonth = DateTime.now().startOf('month')
+        const deliveredThisMonth = await Order.query()
+            .where('driverId', driverId)
+            .where('status', 'DELIVERED')
+            .where('deliveredAt', '>=', startOfMonth.toSQL()!)
+
+        let monthlyRevenue = 0
+        deliveredThisMonth.forEach(o => {
+            // Priority to driverRemuneration, fallback to calculatedAmount or 0
+            const amount = o.pricingData?.driverRemuneration || o.pricingData?.calculatedAmount || (o as any).pricingData?.amount || 0
+            monthlyRevenue += Number(amount)
+        })
+
+        // 4. Excellence Score
+        const ratingsResult = await Rating.query()
+            .where('toId', driverId)
+            .avg('score as avgScore')
+            .first()
+
+        const excellenceScore = Number(ratingsResult?.$extras.avgScore || 5.0)
+
+        return {
+            totalMissions,
+            successRate: Number(successRate.toFixed(1)),
+            monthlyRevenue,
+            excellenceScore: Number(excellenceScore.toFixed(2))
+        }
     }
 }

@@ -1,5 +1,7 @@
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
+import { isWaveLedgerCategory } from '#constants/wave_ledger_categories'
+import type { DeliveryLedgerCategory, WaveLedgerCategory } from '#constants/wave_ledger_categories'
 
 /**
  * WalletBridgeService
@@ -34,6 +36,11 @@ interface WalletResponse {
     isLocked: boolean
 }
 
+interface UpdateWalletPayload {
+    ownerName?: string
+    ownerWavePhone?: string
+}
+
 interface BalanceResponse {
     id: string
     balance: number
@@ -47,7 +54,7 @@ interface BalanceResponse {
 interface SplitConfig {
     wallet_id: string
     amount: number
-    category: string
+    category: DeliveryLedgerCategory
     label: string
     external_reference?: string
     release_delay_hours?: number
@@ -83,7 +90,7 @@ interface TransferPayload {
     from_wallet_id: string
     to_wallet_id: string
     amount: number
-    category?: string
+    category?: DeliveryLedgerCategory
     label?: string
     external_reference?: string
 }
@@ -91,7 +98,7 @@ interface TransferPayload {
 interface ReleasePayload {
     wallet_id: string
     amount: number
-    category?: string
+    category?: DeliveryLedgerCategory
     label?: string
     external_reference?: string
 }
@@ -109,6 +116,17 @@ interface StatsResponse {
     net: number
     transaction_count: number
     by_category?: Record<string, number>
+}
+
+interface PayoutEstimateResponse {
+    net_amount: number
+    fee_bps: number
+    estimated_fee: number
+    total_debit: number
+    wallet_id?: string
+    balance_available?: number
+    can_payout?: boolean
+    missing_amount?: number
 }
 
 class WalletBridgeService {
@@ -133,30 +151,37 @@ class WalletBridgeService {
     /**
      * Map delivery-api categories to wave-api supported enums
      */
-    private mapCategory(category?: string): string {
+    private mapCategory(category?: string): WaveLedgerCategory {
         if (!category) return 'ADJUSTMENT'
 
-        const mapping: Record<string, string> = {
-            'TRANSFER': 'ADJUSTMENT',
-            'SALARY': 'SERVICE_PAYMENT',
-            'DRIVER_PAYMENT': 'SERVICE_PAYMENT',
-            'COMPANY_COMMISSION': 'COMMISSION',
-            'PLATFORM_COMMISSION': 'COMMISSION',
-            'COD_SETTLEMENT': 'ADJUSTMENT',
-            'RELEASE': 'ADJUSTMENT',
-            'SUBSCRIPTION_FEE': 'SUBSCRIPTION',
-            // Default mappings if they match wave-api exactly
-            'ORDER_PAYMENT': 'ORDER_PAYMENT',
-            'SERVICE_PAYMENT': 'SERVICE_PAYMENT',
-            'COMMISSION': 'COMMISSION',
-            'ADJUSTMENT': 'ADJUSTMENT',
-            'SUBSCRIPTION': 'SUBSCRIPTION',
-            'DEPOSIT': 'DEPOSIT',
-            'PAYOUT': 'PAYOUT',
-            'REFUND': 'REFUND',
+        const normalized = category.toUpperCase()
+
+        const aliases: Record<string, WaveLedgerCategory> = {
+            ORDER_PAYMENT: 'ORDER_PAYMENT',
+            SERVICE_PAYMENT: 'SERVICE_PAYMENT',
+            COMMISSION: 'COMMISSION',
+            DEPOSIT: 'DEPOSIT',
+            PAYOUT: 'PAYOUT',
+            REFUND: 'REFUND',
+            ADJUSTMENT: 'ADJUSTMENT',
+            SUBSCRIPTION: 'SUBSCRIPTION',
+            TRANSFER: 'TRANSFER',
+            SALARY: 'SALARY',
+            DRIVER_PAYMENT: 'DRIVER_PAYMENT',
+            COMPANY_COMMISSION: 'COMPANY_COMMISSION',
+            PLATFORM_COMMISSION: 'PLATFORM_COMMISSION',
+            COD_SETTLEMENT: 'COD_SETTLEMENT',
+            RELEASE: 'RELEASE',
+            SUBSCRIPTION_FEE: 'SUBSCRIPTION_FEE',
         }
 
-        return mapping[category.toUpperCase()] || 'ADJUSTMENT'
+        const mapped = aliases[normalized] || normalized
+        if (isWaveLedgerCategory(mapped)) {
+            return mapped
+        }
+
+        logger.warn({ category }, '[WalletBridge] Unknown category mapped to ADJUSTMENT')
+        return 'ADJUSTMENT'
     }
 
     private async request<T>(method: string, path: string, body?: any): Promise<T> {
@@ -230,6 +255,16 @@ class WalletBridgeService {
      */
     async getWallet(walletId: string): Promise<WalletResponse> {
         return this.request<WalletResponse>('GET', `/wallets/${walletId}`)
+    }
+
+    /**
+     * Mettre à jour les métadonnées d'un wallet
+     */
+    async updateWallet(walletId: string, payload: UpdateWalletPayload): Promise<WalletResponse> {
+        return this.request<WalletResponse>('PATCH', `/wallets/${walletId}`, {
+            owner_name: payload.ownerName,
+            owner_wave_phone: payload.ownerWavePhone,
+        })
     }
 
     /**
@@ -377,7 +412,7 @@ class WalletBridgeService {
         walletIds: string[]
         startDate?: string
         endDate?: string
-        category?: string
+        category?: WaveLedgerCategory
         limit?: number
         page?: number
     }): Promise<any> {
@@ -414,6 +449,25 @@ class WalletBridgeService {
             label: params.label,
             source_system: 'DELIVERY',
         })
+    }
+
+    async estimatePayoutFee(params: { amount: number; walletId?: string }): Promise<PayoutEstimateResponse> {
+        const raw = await this.request<any>('POST', '/payouts/estimate', {
+            net_amount: params.amount,
+            ...(params.walletId ? { wallet_id: params.walletId } : {}),
+        })
+
+        const data = raw?.data || raw || {}
+        return {
+            net_amount: Number(data.net_amount || params.amount),
+            fee_bps: Number(data.fee_bps || 100),
+            estimated_fee: Number(data.estimated_fee || 0),
+            total_debit: Number(data.total_debit || params.amount),
+            wallet_id: data.wallet_id,
+            balance_available: data.balance_available !== undefined ? Number(data.balance_available) : undefined,
+            can_payout: data.can_payout !== undefined ? Boolean(data.can_payout) : undefined,
+            missing_amount: data.missing_amount !== undefined ? Number(data.missing_amount) : undefined,
+        }
     }
 
     // ─── STATISTIQUES ─────────────────────────────────────

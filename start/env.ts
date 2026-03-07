@@ -89,6 +89,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   FCM_DEFAULT_SOUND_ANDROID: Env.schema.string.optional(),
   FCM_OFFER_SOUND_IOS: Env.schema.string.optional(),
   FCM_DEFAULT_SOUND_IOS: Env.schema.string.optional(),
+  ENABLE_SMS_FALLBACK: Env.schema.boolean.optional(),
 
   /*
   |----------------------------------------------------------
@@ -98,4 +99,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   WAVE_API_URL: Env.schema.string.optional(),
   WAVE_API_KEY: Env.schema.string.optional(),
   WAVE_MANAGER_ID: Env.schema.string.optional(),
+  WAVE_TRANSMIT_ENABLED: Env.schema.boolean.optional(),
+  WAVE_TRANSMIT_BASE_URL: Env.schema.string.optional(),
+  WAVE_TRANSMIT_CHANNELS: Env.schema.string.optional(),
 })

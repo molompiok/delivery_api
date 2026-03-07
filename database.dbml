@@ -1,0 +1,242 @@
+// --- ENUMS ---
+
+Enum vehicle_owner_type {
+  User
+  Company
+}
+
+Enum vehicle_type {
+  MOTO
+  CAR_SEDAN
+  VAN
+  TRUCK
+  BICYCLE
+  CONTAINER_12M
+  TANKER_12M
+  BUS_DOUBLE
+}
+
+Enum order_status {
+  DRAFT
+  PENDING
+  ACCEPTED
+  DELIVERED
+  FAILED
+  CANCELLED
+  NO_DRIVER_AVAILABLE
+  PUBLISHED
+}
+
+Enum stop_status {
+  PENDING
+  ARRIVED
+  PARTIAL
+  COMPLETED
+  FAILED
+}
+
+Enum action_type {
+  PICKUP
+  DELIVERY
+  SERVICE
+}
+
+Enum action_status {
+  PENDING
+  ARRIVED
+  COMPLETED
+  FROZEN
+  FAILED
+  CANCELLED
+}
+
+// --- TABLES ---
+
+Table public.users {
+  id varchar [primary key]
+  full_name varchar
+  email varchar [unique]
+  phone varchar [unique]
+  password varchar
+  is_driver boolean [default: false]
+  is_admin boolean [default: false]
+  is_active boolean [default: true]
+  company_id varchar [ref: > public.companies.id]
+  current_company_managed varchar [ref: > public.companies.id]
+  fcm_token varchar
+  wallet_id varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.companies {
+  id varchar [primary key]
+  name varchar
+  owner_id varchar [ref: > public.users.id]
+  activity_type varchar
+  default_template varchar
+  registre_commerce varchar
+  logo varchar
+  description text
+  tax_id varchar
+  wallet_id varchar
+  verification_status varchar
+  settings jsonb
+  meta_data jsonb
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.vehicles {
+  id varchar [primary key]
+  owner_type vehicle_owner_type
+  owner_id varchar [ref: > public.users.id]
+  company_id varchar [ref: > public.companies.id]
+  assigned_driver_id varchar [ref: > public.users.id]
+  type vehicle_type
+  brand varchar
+  model varchar
+  plate varchar
+  year integer
+  color varchar
+  capacity integer
+  energy varchar
+  specs jsonb
+  verification_status varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.orders {
+  id varchar [primary key]
+  client_id varchar [ref: > public.users.id]
+  driver_id varchar [ref: > public.users.id]
+  vehicle_id varchar [ref: > public.vehicles.id]
+  company_id varchar [ref: > public.companies.id]
+  status order_status
+  priority varchar
+  assignment_mode varchar
+  is_complex boolean
+  template varchar
+  total_distance_meters integer
+  total_duration_seconds integer
+  pricing_data jsonb
+  route_geometry jsonb
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.order_legs {
+  id varchar [primary key]
+  order_id varchar [ref: - public.orders.id]
+  start_address_id varchar [ref: > public.addresses.id]
+  end_address_id varchar [ref: > public.addresses.id]
+  status varchar
+  duration_seconds integer
+  distance_meters integer
+  geometry jsonb
+  actual_path jsonb
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.steps {
+  id varchar [primary key]
+  order_id varchar [ref: > public.orders.id]
+  sequence integer
+  linked boolean
+  status varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.stops {
+  id varchar [primary key]
+  order_id varchar [ref: > public.orders.id]
+  step_id varchar [ref: > public.steps.id]
+  address_id varchar [ref: > public.addresses.id]
+  display_order integer
+  execution_order integer
+  status stop_status
+  arrival_time timestamp
+  completion_time timestamp
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.actions {
+  id varchar [primary key]
+  order_id varchar [ref: > public.orders.id]
+  stop_id varchar [ref: > public.stops.id]
+  transit_item_id varchar [ref: > public.transit_items.id]
+  type action_type
+  quantity integer
+  status action_status
+  service_time integer
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.transit_items {
+  id varchar [primary key]
+  order_id varchar [ref: > public.orders.id]
+  booking_id varchar [ref: > public.bookings.id]
+  product_id varchar [ref: > public.products.id]
+  pickup_step_id varchar [ref: > public.steps.id]
+  delivery_step_id varchar [ref: > public.steps.id]
+  name varchar
+  weight integer
+  dimensions jsonb
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.bookings {
+  id varchar [primary key]
+  order_id varchar [ref: > public.orders.id]
+  client_id varchar [ref: > public.users.id]
+  pickup_stop_id varchar [ref: > public.stops.id]
+  dropoff_stop_id varchar [ref: > public.stops.id]
+  status varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.addresses {
+  id varchar [primary key]
+  label varchar
+  formatted_address varchar
+  lat double
+  lng double
+  created_at timestamp
+}
+
+Table public.driver_settings {
+  id varchar [primary key]
+  user_id varchar [ref: - public.users.id]
+  current_company_id varchar [ref: > public.companies.id]
+  active_vehicle_id varchar [ref: > public.vehicles.id]
+  status varchar
+  current_lat double
+  current_lng double
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table public.products {
+  id varchar [primary key]
+  name varchar
+  created_at timestamp
+}
+
+Table public.payment_intents {
+  id varchar [primary key]
+  order_id varchar [ref: > public.orders.id]
+  booking_id varchar [ref: > public.bookings.id]
+  stop_id varchar [ref: > public.stops.id]
+  payer_id varchar [ref: > public.users.id]
+  amount integer
+  status varchar
+  payment_method varchar
+  created_at timestamp
+}

@@ -8,6 +8,7 @@ export default class extends BaseSchema {
             table.string('id').primary().notNullable()
             table.string('company_id').notNullable().references('id').inTable('companies').onDelete('CASCADE')
             table.string('driver_id').notNullable().references('id').inTable('users').onDelete('CASCADE')
+            table.string('wallet_id').nullable()
 
             table.string('status').notNullable().defaultTo('INVITED')
             table.timestamp('invited_at').nullable()

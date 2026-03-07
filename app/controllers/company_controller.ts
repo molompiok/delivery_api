@@ -31,14 +31,15 @@ export default class CompanyController {
     /**
      * Create a new company
      */
-    public async createCompany({ auth, request, response }: HttpContext) {
+    public async createCompany(ctx: HttpContext) {
         try {
+            const { auth, request, response } = ctx
             const user = auth.user!
             const data = request.only(['name', 'activityType', 'registreCommerce', 'logo', 'description'])
-            const company = await this.companyService.create(user, data)
+            const company = await this.companyService.create(ctx, user, data)
             return response.created(company)
         } catch (error: any) {
-            return response.badRequest({ message: error.message })
+            return ctx.response.badRequest({ message: error.message })
         }
     }
 
@@ -58,14 +59,15 @@ export default class CompanyController {
     /**
      * Update the authenticated user's company
      */
-    public async updateCompany({ auth, request, response }: HttpContext) {
+    public async updateCompany(ctx: HttpContext) {
         try {
+            const { auth, request, response } = ctx
             const user = auth.user!
             const data = request.only(['name', 'registreCommerce', 'logo', 'description', 'activityType', 'defaultTemplate'])
-            const company = await this.companyService.update(user, data)
+            const company = await this.companyService.update(ctx, user, data)
             return response.ok(company)
         } catch (error: any) {
-            return response.badRequest({ message: error.message })
+            return ctx.response.badRequest({ message: error.message })
         }
     }
 
@@ -244,6 +246,19 @@ export default class CompanyController {
             const { requirements } = request.only(['requirements'])
             const updated = await this.companyService.updateDocumentRequirements(user, requirements)
             return response.ok(updated)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Get driver statistics
+     */
+    public async getDriverStats({ auth, params, response }: HttpContext) {
+        try {
+            const user = auth.user!
+            const stats = await this.companyService.getDriverStats(user, params.driverId)
+            return response.ok(stats)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }

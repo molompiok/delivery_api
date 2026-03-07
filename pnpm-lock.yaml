@@ -29,6 +29,12 @@ importers:
       '@adonisjs/redis':
         specifier: ^9.2.0
         version: 9.2.0(@adonisjs/core@6.19.3(@adonisjs/assembler@7.8.2(typescript@5.8.3))(@vinejs/vine@4.3.0)(edge.js@6.4.0))
+      '@adonisjs/transmit':
+        specifier: ^2.0.2
+        version: 2.0.2(@adonisjs/core@6.19.3(@adonisjs/assembler@7.8.2(typescript@5.8.3))(@vinejs/vine@4.3.0)(edge.js@6.4.0))(ioredis@5.9.2)
+      '@adonisjs/transmit-client':
+        specifier: ^1.1.0
+        version: 1.1.0
       '@mapbox/polyline':
         specifier: ^1.2.1
         version: 1.2.1
@@ -41,6 +47,9 @@ importers:
       edge.js:
         specifier: ^6.4.0
         version: 6.4.0
+      eventsource:
+        specifier: ^4.1.0
+        version: 4.1.0
       firebase-admin:
         specifier: ^13.6.0
         version: 13.6.0
@@ -316,6 +325,16 @@ packages:
     resolution: {integrity: sha512-NnczRJusl0082GOjEFYwObW/yBGJtpfJFnkFCQdQ6eykgBHVNYaY6qstfob+l1bedetRj0hrDY6YfsWMkA0MCg==}
     engines: {node: '>=18.16.0'}
 
+  '@adonisjs/transmit-client@1.1.0':
+    resolution: {integrity: sha512-4U3DJ4V2X7S0Js04aX7P3SJOq+3RWmCLZep5aRsB1Eo3S9xgRAlWu5gLFrIM/XVRG3DKjvOckeeGNwPPxXhGEQ==}
+    engines: {node: '>=18.16.0'}
+
+  '@adonisjs/transmit@2.0.2':
+    resolution: {integrity: sha512-Oyh4S1773N1Ams9mmFM2pplLx8R0IdYwqSTBLRgeDWaR+cyWrL9ZQvF2q7GqIjNzZsXuDgMdPuLlNo+69zIZIg==}
+    engines: {node: '>=20.11.1'}
+    peerDependencies:
+      '@adonisjs/core': ^6.2.0
+
   '@adonisjs/tsconfig@1.4.1':
     resolution: {integrity: sha512-b7bHdnTaDRGfec4XVtpwsSEukZ549MgqOShScCd1b4xkMK8z1q/jb0Xs4iUL86oIDhty2y7k5vvA6aoQKPAvXQ==}
 
@@ -456,6 +475,19 @@ packages:
 
   '@borewit/text-codec@0.2.1':
     resolution: {integrity: sha512-k7vvKPbf7J2fZ5klGRD9AeKfUvojuZIQ3BT5u7Jfv+puwXkUBUT5PVyMDfJZpy30CBDXGMgw7fguK/lpOMBvgw==}
+
+  '@boringnode/bus@0.7.1':
+    resolution: {integrity: sha512-F74H1XxpX0MSP2xfDv5cTuP9OgC4HHG+K2w8kNRj/k104D/aBMC7mcEcntgIZMX8QgcRQsREToP5kPH5kZOO/Q==}
+    engines: {node: '>=20.6'}
+    peerDependencies:
+      ioredis: ^5.0.0
+    peerDependenciesMeta:
+      ioredis:
+        optional: true
+
+  '@boringnode/transmit@0.2.2':
+    resolution: {integrity: sha512-xIBg5PKqqgawNsXffq1P+BpRDjplfwOspwcFH5wfSN6uVcd5hYGC9lJpcXa1oL3wkQZimtiJhrTHhZZtgh2lqA==}
+    engines: {node: '>=20.11.1'}
 
   '@chevrotain/cst-dts-gen@11.1.0':
     resolution: {integrity: sha512-Sa/G9XD23V4StfHMeQNnXbFmj8CsYUBmf+L895/hKm0RFDhxAfHzV6e58NA8j5ninntT5yqMzBW8QEbYxLkNUw==}
@@ -1932,6 +1964,14 @@ packages:
     resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
     engines: {node: '>=6'}
 
+  eventsource-parser@3.0.6:
+    resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
+    engines: {node: '>=18.0.0'}
+
+  eventsource@4.1.0:
+    resolution: {integrity: sha512-2GuF51iuHX6A9xdTccMTsNb7VO0lHZihApxhvQzJB5A03DvHDd2FQepodbMaztPBmBcE/ox7o2gqaxGhYB9LhQ==}
+    engines: {node: '>=20.0.0'}
+
   execa@9.6.1:
     resolution: {integrity: sha512-9Be3ZoN4LmYR90tUoVu2te2BsbzHfhJyfEiAVfz7N5/zv+jduIfLrV2xdQXOHbaD6KgpGdO9PRPM1Y4Q9QkPkA==}
     engines: {node: ^18.19.0 || >=20.5.0}
@@ -2606,6 +2646,10 @@ packages:
   map-obj@4.3.0:
     resolution: {integrity: sha512-hdN1wVrZbb29eBGiGjJbeP8JbKjq1urkHJ/LIP/NY48MZ1QVXUsQBV1G1zvYFHn1XE06cwjBsOI2K3Ulnj1YXQ==}
     engines: {node: '>=8'}
+
+  matchit@1.1.0:
+    resolution: {integrity: sha512-+nGYoOlfHmxe5BW5tE0EMJppXEwdSf8uBA1GTZC7Q77kbT35+VKLYJMzVNWCHSsga1ps1tPYFtFyvxvKzWVmMA==}
+    engines: {node: '>=6'}
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -3983,6 +4027,15 @@ snapshots:
       '@poppinss/colors': 4.1.6
       string-width: 7.2.0
 
+  '@adonisjs/transmit-client@1.1.0': {}
+
+  '@adonisjs/transmit@2.0.2(@adonisjs/core@6.19.3(@adonisjs/assembler@7.8.2(typescript@5.8.3))(@vinejs/vine@4.3.0)(edge.js@6.4.0))(ioredis@5.9.2)':
+    dependencies:
+      '@adonisjs/core': 6.19.3(@adonisjs/assembler@7.8.2(typescript@5.8.3))(@vinejs/vine@4.3.0)(edge.js@6.4.0)
+      '@boringnode/transmit': 0.2.2(ioredis@5.9.2)
+    transitivePeerDependencies:
+      - ioredis
+
   '@adonisjs/tsconfig@1.4.1': {}
 
   '@antfu/install-pkg@0.4.1':
@@ -4374,6 +4427,23 @@ snapshots:
   '@babel/helper-validator-identifier@7.28.5': {}
 
   '@borewit/text-codec@0.2.1': {}
+
+  '@boringnode/bus@0.7.1(ioredis@5.9.2)':
+    dependencies:
+      '@paralleldrive/cuid2': 2.3.1
+      '@poppinss/utils': 6.10.1
+      object-hash: 3.0.0
+    optionalDependencies:
+      ioredis: 5.9.2
+
+  '@boringnode/transmit@0.2.2(ioredis@5.9.2)':
+    dependencies:
+      '@boringnode/bus': 0.7.1(ioredis@5.9.2)
+      '@poppinss/utils': 6.10.1
+      emittery: 1.2.0
+      matchit: 1.1.0
+    transitivePeerDependencies:
+      - ioredis
 
   '@chevrotain/cst-dts-gen@11.1.0':
     dependencies:
@@ -6014,6 +6084,12 @@ snapshots:
   event-target-shim@5.0.1:
     optional: true
 
+  eventsource-parser@3.0.6: {}
+
+  eventsource@4.1.0:
+    dependencies:
+      eventsource-parser: 3.0.6
+
   execa@9.6.1:
     dependencies:
       '@sindresorhus/merge-streams': 4.0.0
@@ -6714,6 +6790,10 @@ snapshots:
 
   map-obj@4.3.0: {}
 
+  matchit@1.1.0:
+    dependencies:
+      '@arr/every': 1.0.1
+
   math-intrinsics@1.1.0: {}
 
   media-typer@1.1.0: {}
@@ -6867,8 +6947,7 @@ snapshots:
 
   object-assign@4.1.1: {}
 
-  object-hash@3.0.0:
-    optional: true
+  object-hash@3.0.0: {}
 
   object-inspect@1.13.4: {}
 

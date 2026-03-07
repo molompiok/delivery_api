@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import vine from '@vinejs/vine'
 import AuthService from '#services/auth_service'
+import NotificationService from '#services/notification_service'
 import { inject } from '@adonisjs/core'
 
 const sendPhoneOtpValidator = vine.compile(
@@ -27,12 +28,21 @@ const updateProfileValidator = vine.compile(
     vine.object({
         fullName: vine.string().trim().minLength(2).optional(),
         email: vine.string().trim().email().optional(),
-    })
+        photos: vine.any().optional(),
+        addressPhotos: vine.any().optional(),
+    }).allowUnknownProperties()
 )
 
 const updateFcmTokenValidator = vine.compile(
     vine.object({
         fcm_token: vine.string().trim(),
+    })
+)
+
+const sendTestPushValidator = vine.compile(
+    vine.object({
+        title: vine.string().trim().minLength(2).maxLength(120).optional(),
+        body: vine.string().trim().minLength(2).maxLength(300).optional(),
     })
 )
 
@@ -142,23 +152,26 @@ export default class AuthController {
      * Get Current User Profile
      */
     public async me({ auth, response }: HttpContext) {
-        return response.ok(auth.user!)
+        const user = auth.user!
+        await user.loadFiles()
+        return response.ok(user.serialize())
     }
 
     /**
      * Update Current User Profile
      */
-    public async updateProfile({ auth, request, response }: HttpContext) {
+    public async updateProfile(ctx: HttpContext) {
         try {
+            const { auth, request, response } = ctx
             const user = auth.user!
             const data = await request.validateUsing(updateProfileValidator)
-            const updated = await this.authService.updateProfile(user, data)
+            const updated = await this.authService.updateProfile(ctx, user, data)
             return response.ok({
                 message: 'Profile updated successfully',
                 user: updated
             })
         } catch (error: any) {
-            return response.badRequest({ message: error.message })
+            return ctx.response.badRequest({ message: error.message })
         }
     }
 
@@ -172,6 +185,31 @@ export default class AuthController {
             user.fcmToken = fcm_token
             await user.save()
             return response.ok({ message: 'FCM Token updated successfully' })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Send a test push notification to the authenticated user
+     */
+    public async sendTestPush({ auth, request, response }: HttpContext) {
+        try {
+            const user = auth.user!
+            const { title, body } = await request.validateUsing(sendTestPushValidator)
+
+            await NotificationService.sendTestPush(user, {
+                title,
+                body,
+                data: { source: 'auth_test_route' },
+            })
+
+            return response.ok({
+                message: 'Test notification queued',
+                userId: user.id,
+                phone: user.phone,
+                hasFcmToken: Boolean(user.fcmToken),
+            })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
         }

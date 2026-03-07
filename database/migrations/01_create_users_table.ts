@@ -6,7 +6,7 @@ export default class extends BaseSchema {
     async up() {
         this.schema.createTable(this.tableName, (table) => {
             table.string('id').primary().notNullable()
-            table.string('full_name').notNullable()
+            table.string('full_name').nullable()
             table.string('email').nullable().unique()
             table.string('phone').nullable().unique().index()
             table.string('password').nullable()
@@ -24,6 +24,7 @@ export default class extends BaseSchema {
             table.string('current_company_managed').nullable() // References companies which we'll create next
 
             table.string('fcm_token').nullable().index()
+            table.string('wallet_id').nullable()
 
             table.timestamp('created_at').notNullable()
             table.timestamp('updated_at').nullable()

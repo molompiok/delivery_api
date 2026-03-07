@@ -2,10 +2,12 @@ import User from '#models/user'
 import db from '@adonisjs/lucid/services/db'
 import ApiKey from '#models/api_key'
 import AsyncConfirm, { AsyncConfirmType } from '#models/async_confirm'
+import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
 import hash from '@adonisjs/core/services/hash'
 import { generateId } from '../utils/id_generator.js'
 import { inject } from '@adonisjs/core'
+import WalletProvisioningService from '#services/wallet_provisioning_service'
 
 @inject()
 export default class AuthService {
@@ -136,9 +138,12 @@ export default class AuthService {
             confirm.userId = user.id
             await confirm.useTransaction(trx).save()
 
-            const token = await User.accessTokens.create(user)
-
             await trx.commit()
+
+            // Best effort: ensure personal wallet is attached
+            await WalletProvisioningService.ensureUserWallet(user)
+
+            const token = await User.accessTokens.create(user)
 
             return {
                 token: token.value!.release(),
@@ -147,6 +152,8 @@ export default class AuthService {
                     email: user.email,
                     phone: user.phone,
                     fullName: user.fullName,
+                    companyId: user.companyId,
+                    currentCompanyManaged: user.currentCompanyManaged,
                     isDriver: user.isDriver,
                     isAdmin: user.isAdmin,
                 }
@@ -175,8 +182,12 @@ export default class AuthService {
             user.lastLoginAt = DateTime.now()
             await user.useTransaction(trx).save()
 
-            const token = await User.accessTokens.create(user)
             await trx.commit()
+
+            // Best effort: ensure personal wallet is attached
+            await WalletProvisioningService.ensureUserWallet(user)
+
+            const token = await User.accessTokens.create(user)
 
             return {
                 token: token.value!.release(),
@@ -184,6 +195,8 @@ export default class AuthService {
                     id: user.id,
                     email: user.email,
                     fullName: user.fullName,
+                    companyId: user.companyId,
+                    currentCompanyManaged: user.currentCompanyManaged,
                     isDriver: user.isDriver,
                     isAdmin: user.isAdmin,
                 },
@@ -197,12 +210,38 @@ export default class AuthService {
     /**
      * Update User Profile
      */
-    async updateProfile(user: User, data: any) {
+    async updateProfile(ctx: HttpContext, user: User, data: any) {
         const trx = await db.transaction()
         try {
-            user.merge(data)
+            const { photos, addressPhotos, ...otherData } = data
+            user.merge(otherData)
             await user.useTransaction(trx).save()
+
+            const FileManager = (await import('#services/file_manager')).default
+            const manager = new FileManager(user, 'User')
+            await manager.sync(ctx, {
+                column: 'photos',
+                isPublic: true,
+                config: {
+                    allowedExt: ['jpg', 'jpeg', 'png', 'webp'],
+                    maxSize: '5MB',
+                    maxFiles: 1,
+                },
+            })
+
+            await manager.sync(ctx, {
+                column: 'address_photos',
+                isPublic: true,
+                config: {
+                    allowedExt: ['jpg', 'jpeg', 'png', 'webp'],
+                    maxSize: '5MB',
+                    maxFiles: 3,
+                },
+            })
+
             await trx.commit()
+            await WalletProvisioningService.syncUserWalletOwnerName(user)
+            await user.loadFiles()
             return user
         } catch (error) {
             await trx.rollback()

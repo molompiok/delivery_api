@@ -6,6 +6,8 @@ import DispatchService from '#services/dispatch_service'
 import { inject } from '@adonisjs/core'
 import RedisService from '#services/redis_service'
 import logger from '@adonisjs/core/services/logger'
+import User from '#models/user'
+import NotificationService from '#services/notification_service'
 
 export default class AssignmentWorker extends BaseCommand {
   static commandName = 'assignment:worker'
@@ -73,6 +75,12 @@ export default class AssignmentWorker extends BaseCommand {
       order.offeredDriverId = null
       order.offerExpiresAt = null
       await order.save()
+
+      // 3.1 Notifier le chauffeur de l'expiration de l'offre
+      const driver = await User.find(driverId)
+      if (driver) {
+        await NotificationService.sendMissionExpired(driver, { orderId: order.id })
+      }
 
       // 4. Déclencher le dispatch suivant
       await dispatchService.dispatch(order)

@@ -4,6 +4,7 @@ import { middleware } from '#start/kernel'
 const AdminController = () => import('#controllers/admin_controller')
 const VerificationController = () => import('#controllers/verification_controller')
 const SubscriptionAdminController = () => import('#controllers/subscription_admin_controller')
+const AdminNotificationsController = () => import('#controllers/admin_notifications_controller')
 
 router.group(() => {
     // Admin Routes
@@ -38,6 +39,9 @@ router.group(() => {
         router.post('/subscriptions/invoices/generate', [SubscriptionAdminController, 'generateInvoices'])
         router.post('/subscriptions/invoices/validate', [SubscriptionAdminController, 'validateInvoices'])
         router.post('/subscriptions/invoices/:invoiceId/mark-paid', [SubscriptionAdminController, 'markInvoicePaid'])
+
+        // Debug push notification
+        router.post('/notifications/test-push', [AdminNotificationsController, 'sendTestPush'])
     }).prefix('/admin').use(({ auth, response }, next) => {
         if (!auth.user?.isAdmin) {
             return response.forbidden({ message: 'Admin access required' })

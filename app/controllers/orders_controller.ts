@@ -142,6 +142,32 @@ export default class OrdersController {
     }
 
     /**
+     * Get order statistics for the dashboard.
+     */
+    async stats({ request, response, auth }: HttpContext) {
+        try {
+            const user = auth.getUserOrFail()
+            const {
+                withDailyCounts,
+                withCompletionRate,
+                withTemplates,
+                withInProgress
+            } = request.qs()
+
+            const requestedFields: string[] = []
+            if (withDailyCounts === 'true') requestedFields.push('dailyCounts')
+            if (withCompletionRate === 'true') requestedFields.push('completionRate')
+            if (withTemplates === 'true') requestedFields.push('templates')
+            if (withInProgress === 'true') requestedFields.push('inProgress')
+
+            const stats = await this.orderService.getOrderStats(user.id, requestedFields)
+            return response.ok(stats)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
      * List client orders.
      */
     async index({ request, response, auth }: HttpContext) {

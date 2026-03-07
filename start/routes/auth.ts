@@ -34,6 +34,7 @@ router.group(() => {
     router.get('/auth/me', [AuthController, 'me'])
     router.put('/auth/me', [AuthController, 'updateProfile'])
     router.put('/auth/fcm-token', [AuthController, 'updateFcmToken'])
+    router.post('/auth/test-push', [AuthController, 'sendTestPush'])
     router.patch('/profile', [AuthController, 'updateFcmToken']) // Compatibility with d_driver
 })
     .prefix('/v1')

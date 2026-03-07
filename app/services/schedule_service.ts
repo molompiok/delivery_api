@@ -3,6 +3,8 @@ import { DateTime } from 'luxon'
 import User from '#models/user'
 import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
+import CompanyDriverSetting from '#models/company_driver_setting'
+import DriverRelationNotifyService from '#services/driver_relation_notify_service'
 
 @inject()
 export default class ScheduleService {
@@ -108,12 +110,52 @@ export default class ScheduleService {
     async deleteSchedule(user: User, scheduleId: string) {
         const trx = await db.transaction()
         try {
-            const schedule = await Schedule.query({ client: trx }).where('id', scheduleId).forUpdate().firstOrFail()
+            const schedule = await Schedule.query({ client: trx })
+                .where('id', scheduleId)
+                .preload('assignedUsers', (q) => q.select('id'))
+                .forUpdate()
+                .firstOrFail()
             if (!await this.canEditSchedule(user, schedule.ownerType, schedule.ownerId)) {
                 throw new Error('Unauthorized to delete this schedule')
             }
+
+            const assignedUserIds = schedule.assignedUsers.map((u) => u.id)
+            const scheduleTitle = schedule.title || 'Horaire'
+            const companyId =
+                schedule.ownerType === 'Company'
+                    ? schedule.ownerId
+                    : (user.currentCompanyManaged || user.companyId || null)
+
+            const relations = (companyId && assignedUserIds.length > 0)
+                ? await CompanyDriverSetting.query({ client: trx })
+                    .where('companyId', companyId)
+                    .whereIn('driverId', assignedUserIds)
+                : []
+            const relationMap = new Map(relations.map((r) => [r.driverId, r.id]))
+
             await schedule.useTransaction(trx).delete()
             await trx.commit()
+
+            for (const driverId of assignedUserIds) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'SCHEDULE',
+                    action: 'SCHEDULE_UNASSIGNED',
+                    message: `Horaire supprime: ${scheduleTitle}.`,
+                    relationId: relationMap.get(driverId) || null,
+                    driverId,
+                    companyId,
+                    entity: {
+                        scheduleId: schedule.id,
+                        title: scheduleTitle,
+                        reason: 'SCHEDULE_DELETED',
+                    },
+                    push: {
+                        title: 'Horaire retire',
+                        body: `L'horaire "${scheduleTitle}" a ete supprime.`,
+                        type: 'DRIVER_SCHEDULE_UNASSIGNED',
+                    },
+                })
+            }
         } catch (error) {
             await trx.rollback()
             throw error
@@ -144,6 +186,39 @@ export default class ScheduleService {
                 trx
             )
             await trx.commit()
+
+            const companyId =
+                schedule.ownerType === 'Company'
+                    ? schedule.ownerId
+                    : (user.currentCompanyManaged || user.companyId || null)
+            const relations = companyId
+                ? await CompanyDriverSetting.query()
+                    .where('companyId', companyId)
+                    .whereIn('driverId', userIds)
+                : []
+            const relationMap = new Map(relations.map((r) => [r.driverId, r.id]))
+
+            for (const driverId of userIds) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'SCHEDULE',
+                    action: 'SCHEDULE_ASSIGNED',
+                    message: `Un horaire vous a ete assigne: ${schedule.title}.`,
+                    relationId: relationMap.get(driverId) || null,
+                    driverId,
+                    companyId,
+                    entity: {
+                        scheduleId: schedule.id,
+                        title: schedule.title,
+                        startTime: schedule.startTime,
+                        endTime: schedule.endTime,
+                    },
+                    push: {
+                        title: 'Nouvel horaire assigne',
+                        body: `Vous avez un nouvel horaire: ${schedule.title}.`,
+                        type: 'DRIVER_SCHEDULE_ASSIGNED',
+                    },
+                })
+            }
         } catch (error) {
             await trx.rollback()
             throw error
@@ -162,6 +237,37 @@ export default class ScheduleService {
             }
             await schedule.related('assignedUsers').detach(userIds, trx)
             await trx.commit()
+
+            const companyId =
+                schedule.ownerType === 'Company'
+                    ? schedule.ownerId
+                    : (user.currentCompanyManaged || user.companyId || null)
+            const relations = companyId
+                ? await CompanyDriverSetting.query()
+                    .where('companyId', companyId)
+                    .whereIn('driverId', userIds)
+                : []
+            const relationMap = new Map(relations.map((r) => [r.driverId, r.id]))
+
+            for (const driverId of userIds) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'SCHEDULE',
+                    action: 'SCHEDULE_UNASSIGNED',
+                    message: `Un horaire vous a ete retire: ${schedule.title}.`,
+                    relationId: relationMap.get(driverId) || null,
+                    driverId,
+                    companyId,
+                    entity: {
+                        scheduleId: schedule.id,
+                        title: schedule.title,
+                    },
+                    push: {
+                        title: 'Horaire retire',
+                        body: `Un horaire a ete retire: ${schedule.title}.`,
+                        type: 'DRIVER_SCHEDULE_UNASSIGNED',
+                    },
+                })
+            }
         } catch (error) {
             await trx.rollback()
             throw error

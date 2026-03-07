@@ -8,6 +8,7 @@ export default class extends BaseSchema {
             table.string('id').primary().notNullable()
             table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE')
             table.string('company_id').nullable().references('id').inTable('companies').onDelete('CASCADE')
+            table.string('default_template').nullable().defaultTo('COMMANDE')
 
             table.string('vehicle_type').nullable()
             table.string('vehicle_plate').nullable()

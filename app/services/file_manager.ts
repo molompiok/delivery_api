@@ -192,13 +192,29 @@ export default class FileManager {
         }
 
         // 3. Handle Uploads 
-        const multipleFiles = request.files(column)
-        const singleFile = request.file(column)
+        const multipleFiles = request.allFiles()[column] || []
+        const filesToUpload = Array.isArray(multipleFiles) ? multipleFiles : [multipleFiles]
 
-        if (multipleFiles && Array.isArray(multipleFiles) && multipleFiles.length > 0) {
-            await this.uploadFiles(multipleFiles, options, user.id)
-        } else if (singleFile && singleFile.isValid) {
-            await this.uploadFiles([singleFile], options, user.id)
+        if (filesToUpload.length > 0) {
+            // Enforce maxFiles if specified
+            if (options.config?.maxFiles) {
+                const existingFiles = await File.query()
+                    .where('tableName', this.tableName)
+                    .where('tableId', String(this.entity.id))
+                    .where('tableColumn', column)
+                    .orderBy('createdAt', 'asc')
+
+                const totalPredicted = existingFiles.length + filesToUpload.length
+                if (totalPredicted > options.config.maxFiles) {
+                    const toDeleteCount = totalPredicted - options.config.maxFiles
+                    const toDelete = existingFiles.slice(0, toDeleteCount)
+                    for (const f of toDelete) {
+                        await this.deleteFile(f.id)
+                    }
+                }
+            }
+
+            await this.uploadFiles(filesToUpload, options, user.id)
         }
     }
 
@@ -304,7 +320,9 @@ export default class FileManager {
             size: file.size,
             isEncrypted: options.config?.encrypt || false,
             fileCategory: this.getCategory(`${file.type}/${file.subtype}`),
-            metadata: {}
+            metadata: {
+                isPublic: Boolean(options.isPublic),
+            }
         })
     }
 
@@ -333,7 +351,7 @@ export default class FileManager {
             .where('tableName', tableName)
             .where('tableId', tableId)
             .where('tableColumn', column)
-            .orderBy('createdAt', 'asc')
+            .orderBy('createdAt', 'desc')
 
         return files.map(f => f.name)
     }
@@ -355,10 +373,13 @@ export default class FileManager {
         // If no FileData, access is restricted to system
         if (!fileData) return false
 
-        // If FileData exists but no user, check public access (if implemented in config)
+        // If FileData exists but no user, allow only explicit public files
         if (!user) {
-            // Placeholder: currently no columns are truly public without token
-            return false
+            // Backward-compatible rule: driver/user profile photos are public.
+            if (file.tableName === 'User' && file.tableColumn === 'photos') {
+                return true
+            }
+            return file.metadata?.isPublic === true
         }
 
         const userCompanyId = user.currentCompanyManaged || user.companyId

@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, hasMany, belongsTo, manyToMany, hasOne } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, hasMany, belongsTo, manyToMany, hasOne, computed } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
 import Vehicle from '#models/vehicle'
@@ -23,8 +23,8 @@ export default class Company extends BaseModel {
     @column()
     declare registreCommerce: string | null
 
-    @column()
-    declare logo: string | null
+    @column({ columnName: 'logo', serializeAs: null })
+    declare logoPath: string | null
 
     @column()
     declare description: string | null
@@ -35,17 +35,9 @@ export default class Company extends BaseModel {
     @column()
     declare ownerId: string
 
-    /**
-     * Identité structurelle de l'entreprise (ex: Livraison, VTC, Services).
-     * Définit le cœur de métier et déverrouille les fonctionnalités liées.
-     */
     @column()
     declare activityType: OrderTemplate
 
-    /**
-     * Préférence d'usage au quotidien pour la création de commandes.
-     * Peut être différent de l'activityType si l'entreprise diversifie ponctuellement ses activités.
-     */
     @column()
     declare defaultTemplate: OrderTemplate | null
 
@@ -62,7 +54,7 @@ export default class Company extends BaseModel {
     @belongsTo(() => User, { foreignKey: 'ownerId' })
     declare owner: BelongsTo<typeof User>
 
-    @hasMany(() => User)
+    @hasMany(() => User, { foreignKey: 'companyId' })
     declare employees: HasMany<typeof User>
 
     @manyToMany(() => User, {
@@ -93,4 +85,20 @@ export default class Company extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @computed()
+    get logo() {
+        const paths = this.$extras.logo || []
+        if (paths.length > 0) return `fs/${paths[0]}`
+        // Fallback to logoPath if loaded but extras not populated
+        if (this.logoPath && typeof this.logoPath === 'string' && !this.logoPath.startsWith('{')) {
+            return `fs/${this.logoPath}`
+        }
+        return null
+    }
+
+    async loadFiles() {
+        const FileManager = (await import('#services/file_manager')).default
+        this.$extras.logo = await FileManager.getPathsFor('Company', this.id, 'logo')
+    }
 }

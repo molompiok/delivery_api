@@ -3,6 +3,7 @@ import db from '@adonisjs/lucid/services/db'
 import CompanyDriverSetting from '#models/company_driver_setting'
 import DriverSetting from '#models/driver_setting'
 import User from '#models/user'
+import DriverRelationNotifyService from '#services/driver_relation_notify_service'
 
 export default class ZoneService {
     /**
@@ -203,6 +204,24 @@ export default class ZoneService {
             await cds.useTransaction(trx).save()
             await trx.commit()
 
+            await DriverRelationNotifyService.dispatch({
+                scope: 'ASSIGNMENT',
+                action: 'ZONE_ASSIGNED',
+                message: `Zone active assignee: ${zone.name}.`,
+                relationId: cds.id,
+                driverId: cds.driverId,
+                companyId: cds.companyId,
+                entity: {
+                    zoneId: zone.id,
+                    zoneName: zone.name,
+                },
+                push: {
+                    title: 'Zone assignee',
+                    body: `Votre zone active est maintenant ${zone.name}.`,
+                    type: 'DRIVER_ZONE_ASSIGNED',
+                },
+            })
+
             return cds
         } catch (error) {
             await trx.rollback()
@@ -224,9 +243,34 @@ export default class ZoneService {
 
             if (!cds) throw new Error('Driver not found in company')
 
+            const previousZoneId = cds.activeZoneId
+            let previousZoneName: string | null = null
+            if (previousZoneId) {
+                const zone = await Zone.find(previousZoneId, { client: trx })
+                previousZoneName = zone?.name || null
+            }
+
             cds.activeZoneId = null
             await cds.useTransaction(trx).save()
             await trx.commit()
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'ASSIGNMENT',
+                action: 'ZONE_UNASSIGNED',
+                message: 'Votre zone active a ete retiree.',
+                relationId: cds.id,
+                driverId: cds.driverId,
+                companyId: cds.companyId,
+                entity: {
+                    previousZoneId,
+                    previousZoneName,
+                },
+                push: {
+                    title: 'Zone retiree',
+                    body: 'Votre zone active a ete retiree.',
+                    type: 'DRIVER_ZONE_UNASSIGNED',
+                },
+            })
         } catch (error) {
             await trx.rollback()
             throw error

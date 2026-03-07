@@ -58,9 +58,60 @@ const refundSchema = vine.object({
 // Constantes de commission
 const DEFAULT_COMMANDE_COMMISSION_PERCENT = 1
 const DEFAULT_TICKET_FEE_PERCENT = 0
-const WAVE_FEE_PERCENT = 1
+const DEFAULT_WAVE_PAYOUT_FEE_BPS = 100
+
+interface WaveFeeEstimate {
+    feeBps: number
+    estimatedFee: number
+    totalDebit: number
+}
 
 class OrderPaymentService {
+    private readonly waveFeeCache = new Map<number, WaveFeeEstimate>()
+
+    private get fallbackWaveFeeBps(): number {
+        const configured = Number(process.env.WAVE_PAYOUT_FEE_BPS || DEFAULT_WAVE_PAYOUT_FEE_BPS)
+        if (!Number.isFinite(configured) || configured < 0) {
+            return DEFAULT_WAVE_PAYOUT_FEE_BPS
+        }
+        return Math.floor(configured)
+    }
+
+    private estimateWaveFeeLocally(amount: number): WaveFeeEstimate {
+        const normalized = Math.max(0, Math.floor(Number(amount) || 0))
+        const feeBps = this.fallbackWaveFeeBps
+        const estimatedFee = Math.ceil((normalized * feeBps) / 10000)
+        return {
+            feeBps,
+            estimatedFee,
+            totalDebit: normalized + estimatedFee,
+        }
+    }
+
+    public async estimateWaveFeeForAmount(amount: number): Promise<WaveFeeEstimate> {
+        const normalized = Math.max(0, Math.floor(Number(amount) || 0))
+        const cached = this.waveFeeCache.get(normalized)
+        if (cached) return cached
+
+        try {
+            const estimate = await walletBridge.estimatePayoutFee({ amount: normalized })
+            const mapped: WaveFeeEstimate = {
+                feeBps: Number(estimate.fee_bps || this.fallbackWaveFeeBps),
+                estimatedFee: Number(estimate.estimated_fee || 0),
+                totalDebit: Number(estimate.total_debit || normalized),
+            }
+            this.waveFeeCache.set(normalized, mapped)
+            if (this.waveFeeCache.size > 250) {
+                const oldestKey = this.waveFeeCache.keys().next().value
+                this.waveFeeCache.delete(oldestKey)
+            }
+            return mapped
+        } catch (error: any) {
+            logger.warn({ amount: normalized, error: error?.message }, '[PaymentIntent] Failed to fetch Wave payout fee estimate, fallback to local')
+            return this.estimateWaveFeeLocally(normalized)
+        }
+    }
+
     async findById(id: string, user?: User, trx?: TransactionClientContract): Promise<PaymentIntent> {
         const query = PaymentIntent.query({ client: trx }).where('id', id)
         const intent = await query.firstOrFail()
@@ -149,6 +200,7 @@ class OrderPaymentService {
                     const transitItems = booking.transitItems || []
                     const amount = transitItems.reduce((sum: number, item: any) => sum + (item.unitaryPrice || 0), 0)
 
+                    const waveFeeEstimate = await this.estimateWaveFeeForAmount(amount)
                     const splits = this.calculateSplits(
                         { amount, bookingId: booking.id, calculatedAmount: amount },
                         policy,
@@ -157,6 +209,8 @@ class OrderPaymentService {
                             template: order.template,
                             commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
                             ticketFeePercent: subscriptionRates.ticketFeePercent,
+                            waveEstimatedFee: waveFeeEstimate.estimatedFee,
+                            waveFeeBps: waveFeeEstimate.feeBps,
                         }
                     )
 
@@ -198,6 +252,7 @@ class OrderPaymentService {
                             const amnt = i === stops.length - 1 ? amountPerStop + remainder : amountPerStop
                             const calcAmnt = i === stops.length - 1 ? calculatedAmountPerStop + (calculatedAmount - (calculatedAmountPerStop * stops.length)) : calculatedAmountPerStop
 
+                            const waveFeeEstimate = await this.estimateWaveFeeForAmount(amnt)
                             const splits = this.calculateSplits(
                                 { amount: amnt, calculatedAmount: calcAmnt },
                                 policy,
@@ -206,6 +261,8 @@ class OrderPaymentService {
                                     template: order.template,
                                     commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
                                     ticketFeePercent: subscriptionRates.ticketFeePercent,
+                                    waveEstimatedFee: waveFeeEstimate.estimatedFee,
+                                    waveFeeBps: waveFeeEstimate.feeBps,
                                 }
                             )
 
@@ -228,6 +285,7 @@ class OrderPaymentService {
                     }
                 } else {
                     // Paiement unique pour toute la commande
+                    const waveFeeEstimate = await this.estimateWaveFeeForAmount(totalAmount)
                     const splits = this.calculateSplits(
                         { amount: totalAmount, calculatedAmount },
                         policy,
@@ -236,6 +294,8 @@ class OrderPaymentService {
                             template: order.template,
                             commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
                             ticketFeePercent: subscriptionRates.ticketFeePercent,
+                            waveEstimatedFee: waveFeeEstimate.estimatedFee,
+                            waveFeeBps: waveFeeEstimate.feeBps,
                         }
                     )
 
@@ -768,7 +828,12 @@ class OrderPaymentService {
 
         if (!driverWalletId || !platformWalletId) return
 
-        const splits = []
+        const splits: Array<{
+            wallet_id: string
+            amount: number
+            category: 'COD_SETTLEMENT'
+            label: string
+        }> = []
         await (intent as any).load('order', (q: any) => q.preload('company'))
         const companyWalletId = (intent as any).order?.company?.walletId
 
@@ -810,6 +875,8 @@ class OrderPaymentService {
             template?: string | null
             commandeCommissionPercent?: number
             ticketFeePercent?: number
+            waveFeeBps?: number
+            waveEstimatedFee?: number
         }
     ): PaymentSplits {
         const totalAmount = intent.amount
@@ -841,12 +908,16 @@ class OrderPaymentService {
 
         const companyGross = companyId ? Math.round((intent.calculatedAmount || totalAmount) * companyTargetPercent / 100) + (policy?.companyCommissionFixed ?? 0) : 0
 
-        // 4. Appliquer la réduction de 1% (frais Wave) au prorata sur chaque acteur
-        const waveFactor = (1 - WAVE_FEE_PERCENT / 100)
-        const platformAmount = Math.round(totalPlatformGross * waveFactor)
-        const companyAmount = Math.round(companyGross * waveFactor)
+        // 4. Appliquer les frais Wave au prorata sur chaque acteur
+        const waveFeeBps = Number.isFinite(Number(rates?.waveFeeBps)) ? Math.max(0, Math.floor(Number(rates?.waveFeeBps))) : this.fallbackWaveFeeBps
+        const computedWaveFee = Math.ceil((totalAmount * waveFeeBps) / 10000)
+        const waveFeeRaw = rates?.waveEstimatedFee ?? computedWaveFee
+        const waveFee = Math.max(0, Math.min(totalAmount, Math.floor(Number(waveFeeRaw) || 0)))
+        const totalNet = Math.max(0, totalAmount - waveFee)
+        const netFactor = totalAmount > 0 ? totalNet / totalAmount : 1
 
-        const totalNet = Math.round(totalAmount * waveFactor)
+        const platformAmount = Math.round(totalPlatformGross * netFactor)
+        const companyAmount = Math.round(companyGross * netFactor)
         const driverAmount = Math.max(0, totalNet - platformAmount - companyAmount)
 
         return {
@@ -854,7 +925,7 @@ class OrderPaymentService {
             companyAmount,
             driverAmount,
             totalNet,
-            waveFee: totalAmount - totalNet
+            waveFee
         }
     }
 }

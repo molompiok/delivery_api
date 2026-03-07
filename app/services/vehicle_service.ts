@@ -1,11 +1,13 @@
 import Vehicle, { VehicleOwnerType } from '#models/vehicle'
 import db from '@adonisjs/lucid/services/db'
 import User from '#models/user'
+import CompanyDriverSetting from '#models/company_driver_setting'
 import FileManager from '#services/file_manager'
 import File from '#models/file'
 import { DateTime } from 'luxon'
 import { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
+import DriverRelationNotifyService from '#services/driver_relation_notify_service'
 
 @inject()
 export default class VehicleService {
@@ -33,11 +35,19 @@ export default class VehicleService {
             throw new Error('Unauthorized to view these vehicles')
         }
 
-        return await Vehicle.query()
+        const vehicles = await Vehicle.query()
             .where('ownerType', ownerType)
             .where('ownerId', ownerId)
             .preload('assignedDriver')
             .orderBy('createdAt', 'desc')
+
+        for (const vehicle of vehicles) {
+            if (vehicle.assignedDriver) {
+                await vehicle.assignedDriver.loadFiles()
+            }
+        }
+
+        return vehicles
     }
 
     /**
@@ -51,6 +61,9 @@ export default class VehicleService {
         }
 
         await vehicle.load('assignedDriver')
+        if (vehicle.assignedDriver) {
+            await vehicle.assignedDriver.loadFiles()
+        }
         await vehicle.loadDocuments()
         return vehicle
     }
@@ -114,9 +127,15 @@ export default class VehicleService {
         const trx = await db.transaction()
         try {
             const vehicle = await Vehicle.query({ client: trx }).where('id', vehicleId).forUpdate().firstOrFail()
+            const previousAssignedDriverId = vehicle.assignedDriverId
+            const activeCompanyId = manager.currentCompanyManaged || manager.companyId
 
             if (vehicle.ownerType !== 'Company') {
                 throw new Error('Only company vehicles can be assigned to drivers')
+            }
+
+            if (!activeCompanyId) {
+                throw new Error('Company context required')
             }
 
             if (!await this.canManageVehicle(manager, vehicle.ownerType, vehicle.ownerId)) {
@@ -126,44 +145,178 @@ export default class VehicleService {
             if (!vehicle.metadata) vehicle.metadata = {}
             if (!vehicle.metadata.assignmentHistory) vehicle.metadata.assignmentHistory = []
 
-            const historyEntry: any = {
+            const baseHistory: any = {
                 managerId: manager.id,
                 managerName: manager.fullName || manager.phone,
                 timestamp: DateTime.now().toISO(),
             }
 
             if (!driverId) {
-                historyEntry.action = 'UNASSIGNED'
+                const staleRelations = await CompanyDriverSetting.query({ client: trx })
+                    .where('companyId', activeCompanyId)
+                    .where('activeVehicleId', vehicle.id)
+                    .forUpdate()
+
+                for (const relation of staleRelations) {
+                    relation.activeVehicleId = null
+                    await relation.useTransaction(trx).save()
+                }
+
+                vehicle.metadata.assignmentHistory.push({
+                    ...baseHistory,
+                    action: 'UNASSIGNED',
+                    driverId: previousAssignedDriverId,
+                })
                 vehicle.assignedDriverId = null
-                vehicle.metadata.assignmentHistory.push(historyEntry)
                 await vehicle.useTransaction(trx).save()
                 await trx.commit()
+
+                if (previousAssignedDriverId) {
+                    await DriverRelationNotifyService.dispatch({
+                        scope: 'ASSIGNMENT',
+                        action: 'VEHICLE_UNASSIGNED',
+                        message: 'Votre vehicule assigne a ete retire.',
+                        driverId: previousAssignedDriverId,
+                        companyId: vehicle.ownerId,
+                        entity: {
+                            vehicleId: vehicle.id,
+                            plate: vehicle.plate,
+                            brand: vehicle.brand,
+                            model: vehicle.model,
+                        },
+                        push: {
+                            title: 'Vehicule retire',
+                            body: 'Votre vehicule assigne a ete retire.',
+                            type: 'DRIVER_VEHICLE_UNASSIGNED',
+                        },
+                    })
+                }
                 return vehicle
             }
 
             const driver = await User.findOrFail(driverId, { client: trx })
-            const activeCompanyId = manager.currentCompanyManaged || manager.companyId
 
             // Verify driver relationship
-            const CompanyDriverSetting = (await import('#models/company_driver_setting')).default
             const companyRelation = await CompanyDriverSetting.query({ client: trx })
                 .where('companyId', activeCompanyId!)
                 .where('driverId', driver.id)
                 .where('status', 'ACCEPTED')
+                .forUpdate()
                 .first()
 
             if (!companyRelation) {
                 throw new Error('Driver does not belong to your company')
             }
 
-            historyEntry.action = 'ASSIGNED'
-            historyEntry.driverId = driver.id
-            historyEntry.driverName = driver.fullName || driver.phone
+            const previousVehicleForDriver = await Vehicle.query({ client: trx })
+                .where('ownerType', 'Company')
+                .where('ownerId', activeCompanyId)
+                .where('assignedDriverId', driver.id)
+                .whereNot('id', vehicle.id)
+                .forUpdate()
+                .first()
+
+            if (previousVehicleForDriver) {
+                if (!previousVehicleForDriver.metadata) previousVehicleForDriver.metadata = {}
+                if (!previousVehicleForDriver.metadata.assignmentHistory) {
+                    previousVehicleForDriver.metadata.assignmentHistory = []
+                }
+
+                previousVehicleForDriver.metadata.assignmentHistory.push({
+                    ...baseHistory,
+                    action: 'UNASSIGNED',
+                    driverId: driver.id,
+                    driverName: driver.fullName || driver.phone,
+                    reason: 'REASSIGNED_TO_NEW_VEHICLE',
+                    nextVehicleId: vehicle.id,
+                })
+                previousVehicleForDriver.assignedDriverId = null
+                await previousVehicleForDriver.useTransaction(trx).save()
+            }
+
+            const staleRelations = await CompanyDriverSetting.query({ client: trx })
+                .where('companyId', activeCompanyId)
+                .where('activeVehicleId', vehicle.id)
+                .whereNot('driverId', driver.id)
+                .forUpdate()
+
+            for (const relation of staleRelations) {
+                relation.activeVehicleId = null
+                await relation.useTransaction(trx).save()
+            }
 
             vehicle.assignedDriverId = driverId
-            vehicle.metadata.assignmentHistory.push(historyEntry)
+            vehicle.metadata.assignmentHistory.push({
+                ...baseHistory,
+                action: 'ASSIGNED',
+                driverId: driver.id,
+                driverName: driver.fullName || driver.phone,
+            })
             await vehicle.useTransaction(trx).save()
+
+            companyRelation.activeVehicleId = vehicle.id
+            await companyRelation.useTransaction(trx).save()
             await trx.commit()
+
+            if (previousAssignedDriverId && previousAssignedDriverId !== driverId) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'ASSIGNMENT',
+                    action: 'VEHICLE_UNASSIGNED',
+                    message: 'Votre vehicule assigne a ete retire.',
+                    driverId: previousAssignedDriverId,
+                    companyId: vehicle.ownerId,
+                    entity: {
+                        vehicleId: vehicle.id,
+                        plate: vehicle.plate,
+                        brand: vehicle.brand,
+                        model: vehicle.model,
+                    },
+                    push: {
+                        title: 'Vehicule retire',
+                        body: 'Votre vehicule assigne a ete retire.',
+                        type: 'DRIVER_VEHICLE_UNASSIGNED',
+                    },
+                })
+            }
+
+            if (previousVehicleForDriver && previousVehicleForDriver.id !== vehicle.id) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'ASSIGNMENT',
+                    action: 'VEHICLE_UNASSIGNED',
+                    message: 'Votre ancien vehicule a ete desassigne.',
+                    relationId: companyRelation.id,
+                    driverId: driver.id,
+                    companyId: vehicle.ownerId,
+                    entity: {
+                        vehicleId: previousVehicleForDriver.id,
+                        plate: previousVehicleForDriver.plate,
+                        brand: previousVehicleForDriver.brand,
+                        model: previousVehicleForDriver.model,
+                    },
+                    push: {
+                        enabled: false,
+                    },
+                })
+            }
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'ASSIGNMENT',
+                action: 'VEHICLE_ASSIGNED',
+                message: `Vehicule assigne: ${vehicle.plate}.`,
+                driverId: driver.id,
+                companyId: vehicle.ownerId,
+                entity: {
+                    vehicleId: vehicle.id,
+                    plate: vehicle.plate,
+                    brand: vehicle.brand,
+                    model: vehicle.model,
+                },
+                push: {
+                    title: 'Vehicule assigne',
+                    body: `Votre vehicule assigne est ${vehicle.plate}.`,
+                    type: 'DRIVER_VEHICLE_ASSIGNED',
+                },
+            })
             return vehicle
         } catch (error) {
             await trx.rollback()
@@ -194,7 +347,7 @@ export default class VehicleService {
                 .forUpdate()
                 .firstOrFail()
 
-            // Conflict check
+            // Keep 1 vehicle -> 1 driver
             const existing = await CompanyDriverSetting.query({ client: trx })
                 .where('companyId', activeCompanyId)
                 .where('activeVehicleId', vehicle.id)
@@ -205,13 +358,99 @@ export default class VehicleService {
                 throw new Error('Vehicle is already assigned to another driver')
             }
 
+            let previousVehicle: Vehicle | null = null
+            if (cds.activeVehicleId && cds.activeVehicleId !== vehicle.id) {
+                previousVehicle = await Vehicle.query({ client: trx })
+                    .where('id', cds.activeVehicleId)
+                    .forUpdate()
+                    .first()
+
+                if (previousVehicle?.assignedDriverId === driverId) {
+                    if (!previousVehicle.metadata) previousVehicle.metadata = {}
+                    if (!previousVehicle.metadata.assignmentHistory) {
+                        previousVehicle.metadata.assignmentHistory = []
+                    }
+                    previousVehicle.metadata.assignmentHistory.push({
+                        action: 'UNASSIGNED',
+                        managerId: manager.id,
+                        managerName: manager.fullName || manager.phone || manager.id,
+                        driverId,
+                        driverName: driverId,
+                        timestamp: DateTime.now().toISO(),
+                    })
+                    previousVehicle.assignedDriverId = null
+                    await previousVehicle.useTransaction(trx).save()
+                }
+            }
+
+            const staleRelations = await CompanyDriverSetting.query({ client: trx })
+                .where('companyId', activeCompanyId)
+                .where('activeVehicleId', vehicle.id)
+                .whereNot('driverId', driverId)
+                .forUpdate()
+
+            for (const relation of staleRelations) {
+                relation.activeVehicleId = null
+                await relation.useTransaction(trx).save()
+            }
+
             cds.activeVehicleId = vehicle.id
             await cds.useTransaction(trx).save()
 
+            if (!vehicle.metadata) vehicle.metadata = {}
+            if (!vehicle.metadata.assignmentHistory) vehicle.metadata.assignmentHistory = []
+            vehicle.metadata.assignmentHistory.push({
+                action: 'ASSIGNED',
+                managerId: manager.id,
+                managerName: manager.fullName || manager.phone || manager.id,
+                driverId,
+                driverName: driverId,
+                timestamp: DateTime.now().toISO(),
+            })
             vehicle.assignedDriverId = driverId
             await vehicle.useTransaction(trx).save()
 
             await trx.commit()
+
+            if (previousVehicle && previousVehicle.id !== vehicle.id) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'ASSIGNMENT',
+                    action: 'VEHICLE_UNASSIGNED',
+                    message: 'Votre ancien vehicule a ete desassigne.',
+                    relationId: cds.id,
+                    driverId: cds.driverId,
+                    companyId: cds.companyId,
+                    entity: {
+                        vehicleId: previousVehicle.id,
+                        plate: previousVehicle.plate,
+                        brand: previousVehicle.brand,
+                        model: previousVehicle.model,
+                    },
+                    push: {
+                        enabled: false,
+                    },
+                })
+            }
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'ASSIGNMENT',
+                action: 'ACTIVE_VEHICLE_SET',
+                message: `Vehicule actif defini: ${vehicle.plate}.`,
+                relationId: cds.id,
+                driverId: cds.driverId,
+                companyId: cds.companyId,
+                entity: {
+                    vehicleId: vehicle.id,
+                    plate: vehicle.plate,
+                    brand: vehicle.brand,
+                    model: vehicle.model,
+                },
+                push: {
+                    title: 'Vehicule actif mis a jour',
+                    body: `Votre vehicule actif est maintenant ${vehicle.plate}.`,
+                    type: 'DRIVER_ACTIVE_VEHICLE_SET',
+                },
+            })
             return cds
         } catch (error) {
             await trx.rollback()
@@ -235,9 +474,12 @@ export default class VehicleService {
                 .forUpdate()
                 .firstOrFail()
 
+            const previousVehicleId = cds.activeVehicleId
+            let previousVehiclePlate: string | null = null
             if (cds.activeVehicleId) {
                 const vehicle = await Vehicle.find(cds.activeVehicleId, { client: trx })
                 if (vehicle && vehicle.assignedDriverId === driverId) {
+                    previousVehiclePlate = vehicle.plate
                     vehicle.assignedDriverId = null
                     await vehicle.useTransaction(trx).save()
                 }
@@ -246,6 +488,24 @@ export default class VehicleService {
             cds.activeVehicleId = null
             await cds.useTransaction(trx).save()
             await trx.commit()
+
+            await DriverRelationNotifyService.dispatch({
+                scope: 'ASSIGNMENT',
+                action: 'ACTIVE_VEHICLE_CLEARED',
+                message: 'Votre vehicule actif a ete retire.',
+                relationId: cds.id,
+                driverId: cds.driverId,
+                companyId: cds.companyId,
+                entity: {
+                    previousVehicleId,
+                    previousVehiclePlate,
+                },
+                push: {
+                    title: 'Vehicule actif retire',
+                    body: 'Votre vehicule actif a ete retire.',
+                    type: 'DRIVER_ACTIVE_VEHICLE_CLEARED',
+                },
+            })
         } catch (error) {
             await trx.rollback()
             throw error
@@ -454,6 +714,38 @@ export default class VehicleService {
         await doc.save()
 
         await this.updateVehicleVerificationStatus(doc.tableId)
+
+        const vehicle = await Vehicle.find(doc.tableId)
+        if (vehicle?.ownerType === 'Company' && vehicle.assignedDriverId) {
+            await DriverRelationNotifyService.dispatch({
+                scope: 'DOCUMENT',
+                action: status === 'APPROVED' ? 'VEHICLE_DOCUMENT_APPROVED' : 'VEHICLE_DOCUMENT_REJECTED',
+                message:
+                    status === 'APPROVED'
+                        ? 'Un document de votre vehicule a ete valide.'
+                        : 'Un document de votre vehicule a ete rejete.',
+                driverId: vehicle.assignedDriverId,
+                companyId: vehicle.ownerId,
+                entity: {
+                    vehicleId: vehicle.id,
+                    plate: vehicle.plate,
+                    documentId: doc.id,
+                    documentType: doc.documentType,
+                    status,
+                },
+                push: {
+                    title: status === 'APPROVED' ? 'Document vehicule valide' : 'Document vehicule refuse',
+                    body:
+                        status === 'APPROVED'
+                            ? 'Un document de votre vehicule vient d etre valide.'
+                            : 'Un document de votre vehicule a ete rejete.',
+                    type:
+                        status === 'APPROVED'
+                            ? 'DRIVER_VEHICLE_DOCUMENT_APPROVED'
+                            : 'DRIVER_VEHICLE_DOCUMENT_REJECTED',
+                },
+            })
+        }
         return doc
     }
 

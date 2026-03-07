@@ -14,10 +14,13 @@ export default class Rating extends BaseModel {
     }
 
     @column()
-    declare targetId: string
+    declare orderId: string
 
     @column()
-    declare targetType: string
+    declare fromId: string
+
+    @column()
+    declare toId: string
 
     @column()
     declare score: number
@@ -25,11 +28,11 @@ export default class Rating extends BaseModel {
     @column()
     declare comment: string | null
 
-    @column()
-    declare authorId: string
-
-    @belongsTo(() => User, { foreignKey: 'authorId' })
+    @belongsTo(() => User, { foreignKey: 'fromId' })
     declare author: BelongsTo<typeof User>
+
+    @belongsTo(() => User, { foreignKey: 'toId' })
+    declare target: BelongsTo<typeof User>
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

@@ -76,6 +76,7 @@ class WsService {
 
         // 1. Notify the order-specific room (Managers join this room: "order:{id}")
         this.emitToRoom(`order:${orderId}`, 'route_updated', payload)
+        this.emitToRoom(`orders:${orderId}`, 'route_updated', payload)
 
         // 2. Notify the global fleet room for this client (Dashboard joins this)
         if (clientId) {
@@ -88,6 +89,7 @@ class WsService {
         // 4. Notify the driver-specific room
         if (driverId && opts.template !== 'VOYAGE') {
             this.emitToRoom(`driver:${driverId}`, 'route_updated', payload)
+            this.emitToRoom(`drivers:${driverId}`, 'route_updated', payload)
         }
     }
 
@@ -102,8 +104,29 @@ class WsService {
         }
 
         this.emitToRoom(`order:${orderId}`, 'order_updated', payload)
+        this.emitToRoom(`orders:${orderId}`, 'order_updated', payload)
         if (clientId) {
             this.emitToRoom(`fleet:${clientId}`, 'order_updated', payload)
+        }
+    }
+
+    /**
+     * Notify driver + company fleet when relation/invitation/assignment state changes.
+     */
+    public notifyDriverRelationUpdate(driverId?: string | null, companyId?: string | null, payload: Record<string, any> = {}) {
+        const data = {
+            ...payload,
+            timestamp: new Date().toISOString(),
+        }
+
+        if (driverId) {
+            this.emitToRoom(`driver:${driverId}`, 'driver_relation_updated', data)
+            this.emitToRoom(`drivers:${driverId}`, 'driver_relation_updated', data)
+        }
+
+        if (companyId) {
+            this.emitToRoom(`fleet:${companyId}`, 'driver_relation_updated', data)
+            this.emitToRoom(`fleet:${companyId}`, 'fleet_driver_relation_updated', data)
         }
     }
 }

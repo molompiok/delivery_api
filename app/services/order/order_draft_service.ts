@@ -1130,10 +1130,13 @@ export default class OrderDraftService {
         // Résoudre la part chauffeur via la policy et le moteur de split
         const policy = await PaymentPolicyService.resolve(order.driverId, order.companyId, order.template, trx)
         const subscriptionRates = await subscriptionService.resolveRatesForOrder(order, trx)
+        const waveFeeEstimate = await OrderPaymentService.estimateWaveFeeForAmount(finalAmount)
         const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId, {
             template: order.template,
             commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
             ticketFeePercent: subscriptionRates.ticketFeePercent,
+            waveEstimatedFee: waveFeeEstimate.estimatedFee,
+            waveFeeBps: waveFeeEstimate.feeBps,
         })
         const driverRemuneration = splits.driverAmount
 
@@ -1801,10 +1804,13 @@ export default class OrderDraftService {
             // Résoudre la part chauffeur via la policy et le moteur de split
             const policy = await PaymentPolicyService.resolve(order.driverId, order.companyId, order.template, effectiveTrx)
             const subscriptionRates = await subscriptionService.resolveRatesForOrder(order, effectiveTrx)
+            const waveFeeEstimate = await OrderPaymentService.estimateWaveFeeForAmount(finalAmount)
             const splits = OrderPaymentService.calculateSplits({ amount: finalAmount, calculatedAmount }, policy, order.companyId, {
                 template: order.template,
                 commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
                 ticketFeePercent: subscriptionRates.ticketFeePercent,
+                waveEstimatedFee: waveFeeEstimate.estimatedFee,
+                waveFeeBps: waveFeeEstimate.feeBps,
             })
             const driverRemuneration = splits.driverAmount
 

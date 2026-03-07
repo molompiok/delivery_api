@@ -4,6 +4,7 @@ import OrderStatusUpdated from '#events/order_status_updated'
 import StopStatusUpdated from '#events/stop_status_updated'
 import ActionStatusUpdated from '#events/action_status_updated'
 import OrderStructureChanged from '#events/order_structure_changed'
+import NotificationService from '#services/notification_service'
 import redis from '@adonisjs/redis/services/main'
 
 export default class OrderSocketListener {
@@ -20,8 +21,9 @@ export default class OrderSocketListener {
 
         logger.info({ orderId: payload.orderId, status: payload.status }, 'Real-time (Order): Notifying order status update')
 
-        // Notify the specific order room (for clients/tracking)
+        // Notify order rooms (legacy + current)
         WsService.emitToRoom(`orders:${payload.orderId}`, 'status_updated', payload)
+        WsService.emitToRoom(`order:${payload.orderId}`, 'status_updated', payload)
 
         // Also notify the client's personal room
         WsService.emitToRoom(`clients:${payload.clientId}`, 'order_update', payload)
@@ -49,6 +51,14 @@ export default class OrderSocketListener {
                     if (driver?.companyId && driver.companyId !== client?.effectiveCompanyId) {
                         WsService.emitToRoom(`fleet:${driver.companyId}`, 'order_status_updated', payload)
                     }
+
+                    // Push notification for impactful mission state changes
+                    if (driver && ['CANCELLED', 'FAILED', 'DELIVERED', 'NO_DRIVER_AVAILABLE'].includes(payload.status)) {
+                        await NotificationService.sendOrderUpdate(driver, {
+                            orderId: payload.orderId,
+                            status: payload.status,
+                        })
+                    }
                 }
             }
         } catch (error) {
@@ -62,6 +72,7 @@ export default class OrderSocketListener {
 
         // Notify the specific order room
         WsService.emitToRoom(`order:${payload.orderId}`, 'stop_status_updated', payload)
+        WsService.emitToRoom(`orders:${payload.orderId}`, 'stop_status_updated', payload)
     }
 
     public async onActionStatusUpdated(event: ActionStatusUpdated) {
@@ -72,6 +83,7 @@ export default class OrderSocketListener {
 
         // Notify the specific order room
         WsService.emitToRoom(`order:${payload.orderId}`, 'action_status_updated', payload)
+        WsService.emitToRoom(`orders:${payload.orderId}`, 'action_status_updated', payload)
     }
 
     /**
@@ -90,5 +102,24 @@ export default class OrderSocketListener {
 
         // 3. Notify Order Update (trigger data re-fetch)
         WsService.notifyOrderUpdate(orderId, clientId)
+
+        // 4. Push a lightweight alert to the assigned driver
+        try {
+            const Order = (await import('#models/order')).default
+            const User = (await import('#models/user')).default
+            const order = await Order.find(orderId)
+            if (order?.driverId) {
+                const driver = await User.find(order.driverId)
+                if (driver) {
+                    await NotificationService.sendOrderUpdate(driver, {
+                        orderId,
+                        status: order.status,
+                        message: 'Mission mise a jour. Ouvrez l application pour rafraichir.',
+                    })
+                }
+            }
+        } catch (error) {
+            logger.error({ error, orderId }, 'Real-time (Structure): Failed to notify driver push')
+        }
     }
 }

@@ -11,6 +11,9 @@ export default class extends BaseSchema {
 
             table.string('label').nullable()
             table.string('formatted_address').notNullable()
+            table.string('call').nullable()
+            table.string('room').nullable()
+            table.string('stage').nullable()
             table.string('street').nullable()
             table.string('city').nullable()
             table.double('lat').notNullable()

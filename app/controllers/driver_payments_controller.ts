@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import walletBridgeService from '#services/wallet_bridge_service'
+import WalletProvisioningService from '#services/wallet_provisioning_service'
 import { inject } from '@adonisjs/core'
 import User from '#models/user'
 import CompanyDriverSetting from '#models/company_driver_setting'
@@ -13,6 +14,7 @@ export default class DriverPaymentsController {
     public async listWallets({ auth, response }: HttpContext) {
         try {
             const user = auth.user as User
+            await WalletProvisioningService.ensureDriverWalletGraph(user)
             const wallets = []
 
             // 1. Wallet personnel
@@ -265,6 +267,40 @@ export default class DriverPaymentsController {
     }
 
     /**
+     * Estime les frais payout et la capacité de retrait (net + frais <= solde)
+     */
+    public async estimatePayout({ auth, request, response }: HttpContext) {
+        try {
+            const user = auth.user as User
+            const body = request.body()
+            const walletId = body.walletId || body.wallet_id
+            const amount = Number(body.amount ?? body.net_amount)
+
+            if (!walletId) {
+                return response.badRequest({ message: 'walletId (or wallet_id) is required' })
+            }
+
+            if (!Number.isFinite(amount) || amount <= 0) {
+                return response.badRequest({ message: 'amount (or net_amount) must be a positive number' })
+            }
+
+            const accessibleIds = await this.getAccessibleWalletIds(user)
+            if (!accessibleIds.includes(walletId)) {
+                return response.forbidden({ message: 'You do not have access to this wallet' })
+            }
+
+            const estimate = await walletBridgeService.estimatePayoutFee({
+                amount,
+                walletId,
+            })
+
+            return response.ok({ data: estimate })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
      * Transfert entre wallets du driver
      */
     public async transfer({ auth, request, response }: HttpContext) {
@@ -398,6 +434,8 @@ export default class DriverPaymentsController {
      * Privé: Récupère la liste des IDs de wallets auxquels le driver a accès
      */
     private async getAccessibleWalletIds(user: User): Promise<string[]> {
+        await WalletProvisioningService.ensureDriverWalletGraph(user)
+
         const ids: string[] = []
         if (user.walletId) ids.push(user.walletId)
 

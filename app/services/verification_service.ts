@@ -3,6 +3,7 @@ import db from '@adonisjs/lucid/services/db'
 import Company from '#models/company'
 import Document from '#models/document'
 import User from '#models/user'
+import DriverRelationNotifyService from '#services/driver_relation_notify_service'
 
 export class VerificationService {
     /**
@@ -145,6 +146,129 @@ export class VerificationService {
 
         // Auto-update driver verification status based on docs
         await this.syncDriverVerificationStatus(doc.tableId)
+
+        if (doc.tableName === 'User') {
+            const CompanyDriverSetting = (await import('#models/company_driver_setting')).default
+            const relations = await CompanyDriverSetting.query()
+                .where('driverId', doc.tableId)
+                .whereIn('status', ['ACCESS_ACCEPTED', 'PENDING_FLEET', 'ACCEPTED'])
+
+            if (relations.length === 0) {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'DOCUMENT',
+                    action: status === 'APPROVED' ? 'ADMIN_DOCUMENT_APPROVED' : 'ADMIN_DOCUMENT_REJECTED',
+                    message:
+                        status === 'APPROVED'
+                            ? 'Un document de votre dossier a ete valide.'
+                            : 'Un document de votre dossier a ete rejete.',
+                    driverId: doc.tableId,
+                    entity: {
+                        documentId: doc.id,
+                        documentType: doc.documentType,
+                        status,
+                        comment: comment || null,
+                    },
+                    push: {
+                        title: status === 'APPROVED' ? 'Document valide' : 'Document refuse',
+                        body:
+                            status === 'APPROVED'
+                                ? 'Un document vient d etre valide.'
+                                : 'Un document a ete rejete. Verifiez le commentaire.',
+                        type:
+                            status === 'APPROVED'
+                                ? 'DRIVER_ADMIN_DOCUMENT_APPROVED'
+                                : 'DRIVER_ADMIN_DOCUMENT_REJECTED',
+                    },
+                })
+            } else {
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'DOCUMENT',
+                    action: status === 'APPROVED' ? 'ADMIN_DOCUMENT_APPROVED' : 'ADMIN_DOCUMENT_REJECTED',
+                    message:
+                        status === 'APPROVED'
+                            ? 'Un document de votre dossier a ete valide.'
+                            : 'Un document de votre dossier a ete rejete.',
+                    driverId: doc.tableId,
+                    entity: {
+                        documentId: doc.id,
+                        documentType: doc.documentType,
+                        status,
+                        comment: comment || null,
+                    },
+                    push: {
+                        title: status === 'APPROVED' ? 'Document valide' : 'Document refuse',
+                        body:
+                            status === 'APPROVED'
+                                ? 'Un document vient d etre valide.'
+                                : 'Un document a ete rejete. Verifiez le commentaire.',
+                        type:
+                            status === 'APPROVED'
+                                ? 'DRIVER_ADMIN_DOCUMENT_APPROVED'
+                                : 'DRIVER_ADMIN_DOCUMENT_REJECTED',
+                    },
+                })
+
+                for (const relation of relations) {
+                    await DriverRelationNotifyService.dispatch({
+                        scope: 'DOCUMENT',
+                        action: status === 'APPROVED' ? 'ADMIN_DOCUMENT_APPROVED' : 'ADMIN_DOCUMENT_REJECTED',
+                        message:
+                            status === 'APPROVED'
+                                ? 'Un document de votre dossier a ete valide.'
+                                : 'Un document de votre dossier a ete rejete.',
+                        relationId: relation.id,
+                        driverId: relation.driverId,
+                        companyId: relation.companyId,
+                        entity: {
+                            documentId: doc.id,
+                            documentType: doc.documentType,
+                            status,
+                            comment: comment || null,
+                        },
+                        push: {
+                            enabled: false,
+                        },
+                    })
+                }
+            }
+        } else if (doc.tableName === 'Vehicle') {
+            const Vehicle = (await import('#models/vehicle')).default
+            const vehicle = await Vehicle.find(doc.tableId)
+
+            if (vehicle) {
+                const targetDriverId = vehicle.assignedDriverId || (vehicle.ownerType === 'User' ? vehicle.ownerId : null)
+                await DriverRelationNotifyService.dispatch({
+                    scope: 'DOCUMENT',
+                    action: status === 'APPROVED' ? 'ADMIN_VEHICLE_DOCUMENT_APPROVED' : 'ADMIN_VEHICLE_DOCUMENT_REJECTED',
+                    message:
+                        status === 'APPROVED'
+                            ? 'Un document vehicule a ete valide.'
+                            : 'Un document vehicule a ete rejete.',
+                    driverId: targetDriverId,
+                    companyId: vehicle.ownerType === 'Company' ? vehicle.ownerId : null,
+                    entity: {
+                        vehicleId: vehicle.id,
+                        plate: vehicle.plate,
+                        documentId: doc.id,
+                        documentType: doc.documentType,
+                        status,
+                        comment: comment || null,
+                    },
+                    push: {
+                        enabled: Boolean(targetDriverId),
+                        title: status === 'APPROVED' ? 'Document vehicule valide' : 'Document vehicule refuse',
+                        body:
+                            status === 'APPROVED'
+                                ? 'Un document de votre vehicule a ete valide.'
+                                : 'Un document de votre vehicule a ete rejete.',
+                        type:
+                            status === 'APPROVED'
+                                ? 'DRIVER_ADMIN_VEHICLE_DOCUMENT_APPROVED'
+                                : 'DRIVER_ADMIN_VEHICLE_DOCUMENT_REJECTED',
+                    },
+                })
+            }
+        }
 
         return doc
     }

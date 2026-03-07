@@ -7,7 +7,7 @@ export default class extends BaseSchema {
         this.schema.createTable(this.tableName, (table) => {
             table.string('id').primary().notNullable()
             table.string('order_id').notNullable().references('id').inTable('orders').onDelete('CASCADE')
-            table.integer('sequence').notNullable()
+            table.integer('sequence').nullable()
 
             table.string('start_address_id').nullable().references('id').inTable('addresses').onDelete('SET NULL')
             table.string('end_address_id').nullable().references('id').inTable('addresses').onDelete('SET NULL')

@@ -34,6 +34,7 @@ router.group(() => {
 
     // Orders
     router.get('/orders', [OrdersController, 'index'])
+    router.get('/orders/stats', [OrdersController, 'stats'])
     router.post('/orders', [OrdersController, 'store'])
     router.post('/orders/initiate', [OrdersController, 'initiate'])
     router.post('/orders/:id/submit', [OrdersController, 'submit'])

@@ -49,6 +49,7 @@ export default defineConfig({
     () => import('@adonisjs/auth/auth_provider'),
     () => import('@adonisjs/ally/ally_provider'),
     () => import('@adonisjs/redis/redis_provider'),
+    () => import('@adonisjs/transmit/transmit_provider'),
     () => import('#providers/app_provider')
   ],
 
@@ -69,7 +70,15 @@ export default defineConfig({
       file: () => import('./start/kernel.js'),
       environment: ['web']
     },
+    {
+      file: () => import('./start/transmit.js'),
+      environment: ['web']
+    },
     () => import('./start/init.js'),
+    {
+      file: () => import('./start/wave_transmit_bridge.js'),
+      environment: ['web']
+    },
     {
       file: () => import('./start/ws.js'),
       environment: ['web']

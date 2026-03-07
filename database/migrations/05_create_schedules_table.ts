@@ -13,8 +13,7 @@ export default class extends BaseSchema {
             table.string('schedule_type').notNullable()
             table.string('schedule_category').defaultTo('WORK')
             table.string('recurrence_type').notNullable()
-
-            table.integer('day_of_week').nullable()
+            table.json('days_of_week').nullable()
             table.date('specific_date').nullable()
             table.date('start_date').nullable()
             table.date('end_date').nullable()
@@ -42,6 +41,7 @@ export default class extends BaseSchema {
             table.increments('id').primary().notNullable()
             table.string('schedule_id').notNullable().references('id').inTable('schedules').onDelete('CASCADE')
             table.string('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE')
+            table.string('assigned_by').nullable().references('id').inTable('users').onDelete('SET NULL')
             table.timestamp('created_at').notNullable()
             table.timestamp('updated_at').nullable()
         })

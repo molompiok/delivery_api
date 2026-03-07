@@ -6,16 +6,17 @@ export default class extends BaseSchema {
     async up() {
         this.schema.createTable(this.tableName, (table) => {
             table.string('id').primary().notNullable()
-
             table.string('company_id').nullable().references('id').inTable('companies').onDelete('CASCADE')
             table.string('driver_id').nullable().references('id').inTable('users').onDelete('CASCADE')
             table.string('name').notNullable()
+            table.string('template').nullable().defaultTo('COMMANDE')
 
             // Base
             table.integer('base_fee').notNullable().defaultTo(500)
 
             // Distance
             table.integer('per_km_rate').notNullable().defaultTo(150)
+            table.integer('per_minute_rate').defaultTo(0)
             table.decimal('min_distance', 8, 2).notNullable().defaultTo(2)
             table.decimal('max_distance', 8, 2).nullable()
 
@@ -39,7 +40,10 @@ export default class extends BaseSchema {
             table.decimal('light_load_discount_threshold_kg', 8, 2).notNullable().defaultTo(1)
             table.decimal('light_load_discount_percent', 5, 2).notNullable().defaultTo(0)
 
-            table.boolean('is_default').notNullable().defaultTo(false)
+            // Zone Matrix
+            table.boolean('zone_matrix_enabled').notNullable().defaultTo(false)
+            table.jsonb('zone_matrix').notNullable().defaultTo('{}')
+
             table.boolean('is_active').notNullable().defaultTo(true)
 
             table.timestamp('created_at').notNullable()

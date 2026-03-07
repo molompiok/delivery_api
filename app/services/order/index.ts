@@ -5,6 +5,7 @@ import redis from '@adonisjs/redis/services/main'
 import Order from '#models/order'
 import OrderStatusUpdated from '#events/order_status_updated'
 import wsService from '#services/ws_service'
+import NotificationService from '#services/notification_service'
 import { inject } from '@adonisjs/core'
 import StepService from './step_service.js'
 import StopService from './stop_service.js'
@@ -726,6 +727,18 @@ export default class OrderService {
                 clientId: order.clientId
             }))
 
+            // Notify offered/assigned driver if any
+            const targetDriverId = order.driverId || order.offeredDriverId
+            if (targetDriverId) {
+                const driver = await (await import('#models/user')).default.find(targetDriverId)
+                if (driver) {
+                    await NotificationService.sendMissionCancelled(driver, {
+                        orderId: order.id,
+                        reason,
+                    })
+                }
+            }
+
             return order
         } catch (error) {
             await trx.rollback()
@@ -799,6 +812,85 @@ export default class OrderService {
             await trx.rollback()
             throw error
         }
+    }
+
+    /**
+     * Get order statistics for a client over the last 7 days.
+     * Respects requestedFields to only perform necessary queries.
+     */
+    async getOrderStats(clientId: string, requestedFields: string[] = []) {
+        const now = DateTime.local()
+        const sevenDaysAgo = now.minus({ days: 6 }).startOf('day')
+
+        const result: any = {}
+
+        // Helper for base query within 7 days
+        const base7dQuery = () => Order.query()
+            .where('clientId', clientId)
+            .where('isDeleted', false)
+            .where('createdAt', '>=', sevenDaysAgo.toSQL()!)
+
+        // 1. Daily Counts (for chart)
+        if (requestedFields.includes('dailyCounts')) {
+            const dailyActivity = []
+            for (let i = 6; i >= 0; i--) {
+                const date = now.minus({ days: i })
+                const startOfDay = date.startOf('day').toSQL()
+                const endOfDay = date.endOf('day').toSQL()
+
+                const count = await Order.query()
+                    .where('clientId', clientId)
+                    .where('isDeleted', false)
+                    .whereBetween('createdAt', [startOfDay!, endOfDay!])
+                    .count('* as total')
+
+                dailyActivity.push({
+                    date: date.toFormat('dd/MM'),
+                    dayName: date.toFormat('ccc'),
+                    count: Number(count[0].$extras.total || 0)
+                })
+            }
+            result.dailyCounts = dailyActivity
+        }
+
+        // 2. Completion Rate
+        if (requestedFields.includes('completionRate')) {
+            const [total, completed] = await Promise.all([
+                base7dQuery().whereNot('status', 'CANCELLED').count('* as total'),
+                base7dQuery().whereIn('status', ['DELIVERED', 'COMPLETED']).count('* as total')
+            ])
+
+            const totalCount = Number(total[0].$extras.total || 0)
+            const completedCount = Number(completed[0].$extras.total || 0)
+            result.completionRate = totalCount > 0 ? Number(((completedCount / totalCount) * 100).toFixed(1)) : 100
+            result.total7d = totalCount
+        }
+
+        // 3. Templates Distribution
+        if (requestedFields.includes('templates')) {
+            const templateCounts = await base7dQuery()
+                .select('template')
+                .count('* as total')
+                .groupBy('template')
+
+            result.templates = templateCounts.map(tc => ({
+                template: tc.template || 'OTHER',
+                count: Number(tc.$extras.total || 0)
+            }))
+        }
+
+        // 4. In Progress Count (Live active orders)
+        if (requestedFields.includes('inProgress')) {
+            const inProgress = await Order.query()
+                .where('clientId', clientId)
+                .where('isDeleted', false)
+                .whereIn('status', ['ACCEPTED', 'IN_TRANSIT', 'PICKING_UP', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+                .count('* as total')
+
+            result.inProgressCount = Number(inProgress[0].$extras.total || 0)
+        }
+
+        return result
     }
 
     /**
@@ -891,6 +983,10 @@ export default class OrderService {
             // Notify the driver that the voyage is PUBLISHED
             if (order.driverId) {
                 wsService.emitToRoom(`driver:${order.driverId}`, 'order_published', {
+                    orderId: order.id,
+                    message: 'Le voyage a été publié et est ouvert aux réservations.'
+                })
+                wsService.emitToRoom(`drivers:${order.driverId}`, 'order_published', {
                     orderId: order.id,
                     message: 'Le voyage a été publié et est ouvert aux réservations.'
                 })
