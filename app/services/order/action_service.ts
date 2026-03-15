@@ -3,29 +3,65 @@ import Action from '#models/action'
 import ActionProof from '#models/action_proof'
 import Order from '#models/order'
 import Stop from '#models/stop'
-import { generateVerificationCode } from '#utils/verification_code'
 import { LogisticsOperationResult } from '../../types/logistics.js'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { addActionSchema, updateActionSchema } from '../../validators/order_validator.js'
 import vine from '@vinejs/vine'
 import { inject } from '@adonisjs/core'
 import TransitItemService from './transit_item_service.js'
+import TransitItem from '#models/transit_item'
+import ValidationRuleEngine, { ItemValidationRules } from './validation_rule_engine.js'
 
 @inject()
 export default class ActionService {
     constructor(protected transitItemService: TransitItemService) { }
 
+    private getAnchorIds(item: TransitItem | null): string[] {
+        if (!item) return []
+        const ids = new Set<string>()
+        if (item.id) ids.add(item.id)
+        if (item.originalId) ids.add(item.originalId)
+        return Array.from(ids)
+    }
+
+    private async applyValidationForAction(action: Action, itemRules: ItemValidationRules | undefined, trx: TransactionClientContract) {
+        const resolved = ValidationRuleEngine.resolveEffectiveRulesForAction({
+            actionType: action.type,
+            actionRules: action.confirmationRules,
+            itemRules,
+        })
+
+        await ValidationRuleEngine.applyProofsForAction({
+            actionId: action.id,
+            rules: resolved.rules,
+            trx,
+            source: resolved.source,
+            phase: resolved.phase,
+        })
+
+        action.metadata = {
+            ...(action.metadata || {}),
+            validationSource: resolved.source,
+        }
+    }
+
     /**
      * Adds an action to a stop.
      */
-    async addAction(stopId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<Action>> {
+    async addAction(stopId: string, clientId: string, data: any, trx?: TransactionClientContract, targetCompanyId?: string): Promise<LogisticsOperationResult<Action>> {
         const validatedData = await vine.validate({ schema: addActionSchema, data })
         const effectiveTrx = trx || await db.transaction()
         try {
             const stop = await Stop.query({ client: effectiveTrx }).where('id', stopId).first()
             if (!stop) throw new Error('Stop not found')
 
-            const stopOrder = await Order.query({ client: effectiveTrx }).where('id', stop.orderId).where('clientId', clientId).first()
+            const stopOrder = await Order.query({ client: effectiveTrx })
+                .where('id', stop.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!stopOrder) throw new Error('Stop not found or unauthorized')
 
             const isDraft = stopOrder.status === 'DRAFT'
@@ -34,6 +70,7 @@ export default class ActionService {
 
             // Priority Logic for TransitItem + Strict Consistency Check
             let transitItemId: string | null = null
+            let linkedTransitItemForRules: TransitItem | null = null
             if (!isService) {
                 if (validatedData.transit_item) {
                     // Rule 2: Strict ID Consistency Check
@@ -46,19 +83,22 @@ export default class ActionService {
                     const tiId = validatedData.transit_item.id || validatedData.transit_item_id
                     if (tiId) {
                         // Attempt Update
-                        const tiRes = await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
+                        const tiRes = await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx, targetCompanyId)
+                        linkedTransitItemForRules = tiRes.entity || null
 
                         if (tiRes.entity) {
                             transitItemId = tiId
                         } else {
                             // Fallback: Create if not found (Upsert resilience)
-                            const createRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx)
+                            const createRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx, targetCompanyId)
                             transitItemId = createRes.entity!.id
+                            linkedTransitItemForRules = createRes.entity || null
                         }
                     } else {
                         // Create new
-                        const tiRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx)
+                        const tiRes = await this.transitItemService.addTransitItem(stop.orderId, clientId, validatedData.transit_item, effectiveTrx, targetCompanyId)
                         transitItemId = tiRes.entity!.id
+                        linkedTransitItemForRules = tiRes.entity || null
                     }
                 } else if (validatedData.transit_item_id) {
                     // Rule 3: Verify existence
@@ -68,10 +108,27 @@ export default class ActionService {
                     }
                     // Anchoring: Link to original if it's a shadow
                     transitItemId = (exists.isPendingChange && exists.originalId) ? exists.originalId : exists.id
+                    linkedTransitItemForRules = exists
                 }
             }
 
             const targetStopId = stop.isPendingChange && stop.originalId ? stop.originalId : stop.id
+
+            const linkedItem = linkedTransitItemForRules || (transitItemId
+                ? await this.transitItemService.findTransitItem(transitItemId, effectiveTrx)
+                : null
+            )
+
+            const normalizedInputRules = ValidationRuleEngine.normalizeRuleSet(validatedData.confirmation_rules || {})
+            const scopedRules = isService
+                ? {
+                    actionRules: normalizedInputRules,
+                    itemRulesPatch: {} as ItemValidationRules,
+                    hasItemScopedRules: false,
+                }
+                : ValidationRuleEngine.splitActionRulesByScope(normalizedInputRules)
+            const actionLevelRules = scopedRules.actionRules
+            let itemRules = linkedItem ? ValidationRuleEngine.extractItemValidationRules(linkedItem.metadata) : {}
 
             const newAction = await Action.create({
                 orderId: stop.orderId,
@@ -81,13 +138,27 @@ export default class ActionService {
                 transitItemId: transitItemId,
                 serviceTime: validatedData.service_time || 300,
                 status: 'PENDING',
-                confirmationRules: validatedData.confirmation_rules || {},
+                confirmationRules: actionLevelRules,
                 metadata: validatedData.metadata || {},
                 isPendingChange: !isDraft,
             }, { client: effectiveTrx })
 
-            if (validatedData.confirmation_rules) {
-                await this.processActionRules(newAction.id, validatedData.confirmation_rules, effectiveTrx)
+            if (!isService && linkedItem && scopedRules.hasItemScopedRules) {
+                itemRules = ValidationRuleEngine.mergeItemValidationRules(itemRules, scopedRules.itemRulesPatch)
+                linkedItem.metadata = ValidationRuleEngine.setItemValidationRulesInMetadata(linkedItem.metadata, itemRules)
+                await linkedItem.useTransaction(effectiveTrx).save()
+            }
+
+            await this.applyValidationForAction(newAction, itemRules, effectiveTrx)
+            await newAction.useTransaction(effectiveTrx).save()
+
+            if (!isService && linkedItem && scopedRules.hasItemScopedRules) {
+                await this.transitItemService.syncItemValidationOnActions(
+                    this.getAnchorIds(linkedItem),
+                    itemRules,
+                    effectiveTrx,
+                    { skipActionIds: [newAction.id] }
+                )
             }
 
             if (!isDraft) {
@@ -110,14 +181,20 @@ export default class ActionService {
     /**
      * Updates an action.
      */
-    async updateAction(actionId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<Action>> {
+    async updateAction(actionId: string, clientId: string, data: any, trx?: TransactionClientContract, targetCompanyId?: string): Promise<LogisticsOperationResult<Action>> {
         const validatedData = await vine.validate({ schema: updateActionSchema, data })
         const effectiveTrx = trx || await db.transaction()
         try {
             const action = await Action.query({ client: effectiveTrx }).where('id', actionId).first()
             if (!action) throw new Error('Action not found')
 
-            const actionOrder = await Order.query({ client: effectiveTrx }).where('id', action.orderId).where('clientId', clientId).first()
+            const actionOrder = await Order.query({ client: effectiveTrx })
+                .where('id', action.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!actionOrder) throw new Error('Action not found or unauthorized')
 
             const isDraft = actionOrder.status === 'DRAFT'
@@ -161,11 +238,20 @@ export default class ActionService {
             }
 
             if (validatedData.service_time !== undefined) targetAction.serviceTime = validatedData.service_time
+            const scopedRules = validatedData.confirmation_rules !== undefined
+                ? (
+                    isService
+                        ? {
+                            actionRules: ValidationRuleEngine.normalizeRuleSet(validatedData.confirmation_rules || {}),
+                            itemRulesPatch: {} as ItemValidationRules,
+                            hasItemScopedRules: false,
+                        }
+                        : ValidationRuleEngine.splitActionRulesByScope(validatedData.confirmation_rules || {})
+                )
+                : null
+
             if (validatedData.confirmation_rules !== undefined) {
-                targetAction.confirmationRules = {
-                    ...(targetAction.confirmationRules || {}),
-                    ...(validatedData.confirmation_rules || {})
-                }
+                targetAction.confirmationRules = scopedRules?.actionRules || ValidationRuleEngine.emptyRuleSet()
             }
             if (validatedData.metadata !== undefined) {
                 targetAction.metadata = {
@@ -174,6 +260,7 @@ export default class ActionService {
                 }
             }
 
+            let linkedTransitItemForRules: TransitItem | null = null
             // Sync nested TransitItem if provided and not a service
             if (finalType !== 'service') {
                 if (validatedData.transit_item) {
@@ -187,12 +274,14 @@ export default class ActionService {
                     const tiId = validatedData.transit_item.id || validatedData.transit_item_id || targetAction.transitItemId
                     if (tiId) {
                         // Update existing (Rule 2: recursive update even if ID present)
-                        await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
+                        const tiRes = await this.transitItemService.updateTransitItem(tiId, clientId, validatedData.transit_item, effectiveTrx)
                         targetAction.transitItemId = tiId
+                        linkedTransitItemForRules = tiRes.entity || null
                     } else {
                         // Create new
-                        const tiRes = await this.transitItemService.addTransitItem(actionOrder.id, clientId, validatedData.transit_item, effectiveTrx)
+                        const tiRes = await this.transitItemService.addTransitItem(actionOrder.id, clientId, validatedData.transit_item, effectiveTrx, targetCompanyId)
                         targetAction.transitItemId = tiRes.entity!.id
+                        linkedTransitItemForRules = tiRes.entity || null
                     }
                 } else if (validatedData.transit_item_id) {
                     const exists = await this.transitItemService.findTransitItem(validatedData.transit_item_id, effectiveTrx)
@@ -201,15 +290,35 @@ export default class ActionService {
                     }
                     // Anchoring: Link to original if it's a shadow
                     targetAction.transitItemId = (exists.isPendingChange && exists.originalId) ? exists.originalId : exists.id
+                    linkedTransitItemForRules = exists
                 }
             } else {
                 targetAction.transitItemId = null
             }
 
+            const linkedItem = !isService
+                ? (linkedTransitItemForRules || (targetAction.transitItemId
+                    ? await this.transitItemService.findTransitItem(targetAction.transitItemId, effectiveTrx)
+                    : null))
+                : null
+            let itemRules = linkedItem ? ValidationRuleEngine.extractItemValidationRules(linkedItem.metadata) : {}
+
+            if (!isService && linkedItem && scopedRules?.hasItemScopedRules) {
+                itemRules = ValidationRuleEngine.mergeItemValidationRules(itemRules, scopedRules.itemRulesPatch)
+                linkedItem.metadata = ValidationRuleEngine.setItemValidationRulesInMetadata(linkedItem.metadata, itemRules)
+                await linkedItem.useTransaction(effectiveTrx).save()
+            }
+
+            await this.applyValidationForAction(targetAction, itemRules, effectiveTrx)
             await targetAction.useTransaction(effectiveTrx).save()
 
-            if (validatedData.confirmation_rules) {
-                await this.processActionRules(targetAction.id, validatedData.confirmation_rules, effectiveTrx)
+            if (!isService && linkedItem && scopedRules?.hasItemScopedRules) {
+                await this.transitItemService.syncItemValidationOnActions(
+                    this.getAnchorIds(linkedItem),
+                    itemRules,
+                    effectiveTrx,
+                    { skipActionIds: [targetAction.id] }
+                )
             }
 
             if (!isDraft) {
@@ -232,13 +341,19 @@ export default class ActionService {
     /**
      * Removes an action.
      */
-    async removeAction(actionId: string, clientId: string, trx?: TransactionClientContract) {
+    async removeAction(actionId: string, clientId: string, trx?: TransactionClientContract, targetCompanyId?: string) {
         const effectiveTrx = trx || await db.transaction()
         try {
             const action = await Action.query({ client: effectiveTrx }).where('id', actionId).first()
             if (!action) throw new Error('Action not found')
 
-            const actionOrder = await Order.query({ client: effectiveTrx }).where('id', action.orderId).where('clientId', clientId).first()
+            const actionOrder = await Order.query({ client: effectiveTrx })
+                .where('id', action.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!actionOrder) throw new Error('Action not found or unauthorized')
 
             const isDraft = actionOrder.status === 'DRAFT'
@@ -284,43 +399,12 @@ export default class ActionService {
      * Internal helper to process action confirmation rules.
      */
     async processActionRules(actionId: string, rules: any, trx: TransactionClientContract) {
-        // Clear existing proofs if any (for updates)
-        await ActionProof.query().useTransaction(trx).where('actionId', actionId).delete()
-
-        // Process PHOTO rules
-        if (rules.photo && Array.isArray(rules.photo)) {
-            for (const photoRule of rules.photo) {
-                await ActionProof.create({
-                    actionId,
-                    type: 'PHOTO',
-                    key: photoRule.name || 'verify_photo',
-                    expectedValue: photoRule.reference || null,
-                    isVerified: false,
-                    metadata: {
-                        pickup: photoRule.pickup ?? false,
-                        delivery: photoRule.delivery ?? false,
-                        compare: photoRule.compare ?? false,
-                    }
-                }, { client: trx })
-            }
-        }
-
-        // Process CODE rules
-        if (rules.code && Array.isArray(rules.code)) {
-            for (const codeRule of rules.code) {
-                await ActionProof.create({
-                    actionId,
-                    type: 'CODE',
-                    key: codeRule.name || 'verify_code',
-                    expectedValue: codeRule.reference || codeRule.compare ? generateVerificationCode() : null,
-                    isVerified: false,
-                    metadata: {
-                        pickup: codeRule.pickup ?? false,
-                        delivery: codeRule.delivery ?? false,
-                        compare: codeRule.compare ?? false,
-                    }
-                }, { client: trx })
-            }
-        }
+        await ValidationRuleEngine.applyProofsForAction({
+            actionId,
+            rules,
+            trx,
+            source: 'ACTION',
+            phase: 'service',
+        })
     }
 }

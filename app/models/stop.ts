@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, belongsTo, hasMany } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, belongsTo, hasMany, computed } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Order from '#models/order'
 import Address from '#models/address'
@@ -58,6 +58,16 @@ export default class Stop extends BaseModel {
     })
     declare metadata: any
 
+    @column()
+    declare reversalAmount: number
+
+    @column()
+    declare includeWithdrawalFees: boolean
+
+    @column()
+    declare deliveryFee: number | null
+
+
     @column({
         serializeAs: 'statusHistory',
         prepare: (v) => v ? JSON.stringify(v) : JSON.stringify([]),
@@ -100,4 +110,32 @@ export default class Stop extends BaseModel {
 
     @hasMany(() => PaymentIntent)
     declare paymentIntents: HasMany<typeof PaymentIntent>
+
+    @computed({ serializeAs: 'amountToCollect' })
+    public get amountToCollect(): number {
+        // We sum the reversal amount (what goes back to merchant) 
+        // AND the progressive payment parts (what the client pays for delivery)
+        let total = this.reversalAmount || 0
+
+        if (this.paymentIntents) {
+            for (const intent of this.paymentIntents) {
+                // If it's PENDING, the driver might need to collect it (if CASH) 
+                // or wait for successful payment (if WAVE)
+                if (intent.status === 'PENDING') {
+                    total += intent.amount
+                }
+            }
+        }
+        return total
+    }
+
+    @computed({ serializeAs: 'paymentMethod' })
+    public get paymentMethod(): string | null {
+        if (!this.paymentIntents || this.paymentIntents.length === 0) {
+            return null
+        }
+        // Usually, there is only one intent per stop in PROGRESSIVE mode.
+        // If there are multiple, we take the primary one.
+        return this.paymentIntents[0].paymentMethod
+    }
 }

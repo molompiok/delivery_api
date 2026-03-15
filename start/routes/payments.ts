@@ -5,6 +5,9 @@ const PaymentPoliciesController = () => import('#controllers/payment_policies_co
 const PricingFiltersController = () => import('#controllers/pricing_filters_controller')
 const OrderPaymentsController = () => import('#controllers/order_payments_controller')
 const SalaryPaymentsController = () => import('#controllers/salary_payments_controller')
+const DriverPaymentsController = () => import('#controllers/driver_payments_controller')
+const ClientPaymentsController = () => import('#controllers/client_payments_controller')
+
 
 router.group(() => {
 
@@ -48,3 +51,38 @@ router.group(() => {
 router.group(() => {
     router.post('/settle-pending-cod', [OrderPaymentsController, 'settlePendingCod'])
 }).prefix('/v1/admin').use(middleware.auth())
+
+
+// ── Client Payments ──
+router.group(() => {
+
+    router.group(() => {
+        router.get('/wallet', [ClientPaymentsController, 'getWallet'])
+        router.get('/transactions', [ClientPaymentsController, 'getTransactions'])
+        router.post('/deposit', [ClientPaymentsController, 'deposit'])
+        router.get('/stats', [ClientPaymentsController, 'stats'])
+        router.post('/transfer', [ClientPaymentsController, 'transfer'])
+        router.post('/payout', [ClientPaymentsController, 'payout'])
+        router.post('/payout-estimate', [ClientPaymentsController, 'estimatePayout'])
+    }).prefix('/payments')
+
+}).prefix('/v1/client').use(middleware.auth())
+
+
+// ── Driver Payments ──
+router.group(() => {
+
+    router.group(() => {
+        router.get('/wallets', [DriverPaymentsController, 'listWallets'])
+        router.get('/transactions', [DriverPaymentsController, 'getTransactions'])
+        router.post('/deposit', [DriverPaymentsController, 'deposit'])
+        router.post('/payout', [DriverPaymentsController, 'payout'])
+        router.post('/payout-estimate', [DriverPaymentsController, 'estimatePayout'])
+        router.post('/transfer', [DriverPaymentsController, 'transfer'])
+        router.get('/transfer-targets', [DriverPaymentsController, 'listTransferTargets'])
+        router.get('/stats', [DriverPaymentsController, 'stats'])
+        router.get('/pending-cod', [DriverPaymentsController, 'listPendingCod'])
+        router.get('/debt-stats', [DriverPaymentsController, 'getDebtStats'])
+    }).prefix('/payments')
+
+}).prefix('/v1/driver').use(middleware.auth())

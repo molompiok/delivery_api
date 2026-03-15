@@ -16,20 +16,26 @@ const CompanyB2BsController = () => import('#controllers/company_b_2_bs_controll
 const CompanyController = () => import('#controllers/company_controller')
 
 // --- PUBLIC COMPANY SEARCH ---
-router.group(() => {
+router
+  .group(() => {
     router.get('/companies/search', [CompanyController, 'searchPublic'])
-}).prefix('/v1')
+  })
+  .prefix('/v1')
 
 // --- PUBLIC VOYAGE ROUTES ---
-router.group(() => {
+router
+  .group(() => {
     router.get('/voyages', [VoyagesController, 'index'])
     router.get('/voyages/:id', [VoyagesController, 'show'])
     router.get('/voyages/:id/seats', [VoyagesController, 'seats'])
-}).prefix('/v1')
+  })
+  .prefix('/v1')
 
 // --- AUTH PROTECTED ROUTES ---
-router.group(() => {
+router
+  .group(() => {
     // Geo / Places
+    router.get('/geo/search', [GeoController, 'searchPlaces'])
     router.get('/geo/reverse', [GeoController, 'reverseGeocode'])
 
     // Orders
@@ -54,6 +60,9 @@ router.group(() => {
 
     // Bookings
     router.get('/bookings', [BookingsController, 'index'])
+    router.get('/bookings/:id', [BookingsController, 'show'])
+    router.post('/bookings/:id/reactivate', [BookingsController, 'reactivate'])
+    router.post('/voyages/:id/estimate-booking', [BookingsController, 'estimate'])
     router.post('/voyages/:id/bookings', [BookingsController, 'store'])
 
     // Granular Order Management
@@ -84,6 +93,6 @@ router.group(() => {
     router.get('/idep/vehicles/:id', [IdepVehicleController, 'show'])
     router.put('/idep/vehicles/:id', [IdepVehicleController, 'update'])
     router.post('/idep/vehicles/:id/upload-doc', [IdepVehicleController, 'uploadDoc'])
-})
-    .prefix('/v1')
-    .use(middleware.auth())
+  })
+  .prefix('/v1')
+  .use(middleware.auth())

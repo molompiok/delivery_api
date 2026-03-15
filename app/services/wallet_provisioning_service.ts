@@ -1,6 +1,7 @@
 import User from '#models/user'
 import Company from '#models/company'
 import CompanyDriverSetting from '#models/company_driver_setting'
+import DriverSetting from '#models/driver_setting'
 import walletBridgeService from '#services/wallet_bridge_service'
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
@@ -84,7 +85,7 @@ class WalletProvisioningService {
             return user.walletId
         }
 
-        const entityType = options.entityType || (user.isDriver ? 'DRIVER' : 'CLIENT')
+        const entityType = options.entityType || 'CLIENT'
         const ownerName = this.resolveUserOwnerName(user)
         const walletId = await this.safeAutoAssign({
             ownerId: user.id,
@@ -188,6 +189,38 @@ class WalletProvisioningService {
         return fresh.walletId
     }
 
+    async ensureDriverProfileWallet(input: DriverSetting | string): Promise<string | null> {
+        const profile = typeof input === 'string'
+            ? await DriverSetting.query().where('id', input).preload('user').first()
+            : input
+
+        if (!profile) return null
+        if (profile.walletId) return profile.walletId
+
+        if (!profile.$preloaded.user) {
+            await profile.load('user')
+        }
+
+        const ownerName = `${this.resolveUserOwnerName(profile.user)} (Pro)`
+        const walletId = await this.safeAutoAssign({
+            ownerId: profile.id,
+            entityType: 'DRIVER',
+            ownerName,
+        })
+
+        if (!walletId) return null
+
+        const fresh = await DriverSetting.find(profile.id)
+        if (!fresh) return null
+        if (!fresh.walletId) {
+            fresh.walletId = walletId
+            await fresh.save()
+        }
+
+        profile.walletId = fresh.walletId
+        return fresh.walletId
+    }
+
     /**
      * Best-effort repair for existing data:
      * - User wallet
@@ -196,6 +229,11 @@ class WalletProvisioningService {
      */
     async ensureDriverWalletGraph(user: User): Promise<void> {
         await this.ensureUserWallet(user)
+
+        const profile = await DriverSetting.query().where('userId', user.id).first()
+        if (profile) {
+            await this.ensureDriverProfileWallet(profile)
+        }
 
         const missingRelationWallets = await CompanyDriverSetting.query()
             .where('driverId', user.id)

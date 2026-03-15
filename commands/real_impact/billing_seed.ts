@@ -139,19 +139,19 @@ export default class BillingSeed extends BaseCommand {
 
             const orderCount = Math.floor(Math.random() * 20) + 15
             for (let i = 0; i < orderCount; i++) {
-                const deliveredAt = currentMonthStart.plus({
+                const completedAt = currentMonthStart.plus({
                     days: Math.floor(Math.random() * 25),
                     hours: Math.floor(Math.random() * 23)
                 })
-                const template = (deliveredAt < startOfSim.plus({ months: 6, days: 15 })) ? 'COMMANDE' : 'VOYAGE'
+                const template = (completedAt < startOfSim.plus({ months: 6, days: 15 })) ? 'COMMANDE' : 'VOYAGE'
 
                 const order = await Order.create({
                     companyId: company.id,
                     clientId: user!.id,
                     status: 'DELIVERED',
                     template: template as any,
-                    deliveredAt,
-                    createdAt: deliveredAt.minus({ hours: 2 }),
+                    completedAt,
+                    createdAt: completedAt.minus({ hours: 2 }),
                 })
 
                 const amount = template === 'COMMANDE'

@@ -18,7 +18,7 @@ export default class CompanyController {
                 return response.ok([])
             }
             const companies = await Company.query()
-                .where('verificationStatus', 'VERIFIED')
+                .whereIn('verificationStatus', ['VERIFIED', 'PENDING'])
                 .where('name', 'ILIKE', `%${q}%`)
                 .select('id', 'name', 'activityType', 'logo')
                 .limit(10)

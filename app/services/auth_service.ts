@@ -214,7 +214,18 @@ export default class AuthService {
         const trx = await db.transaction()
         try {
             const { photos, addressPhotos, ...otherData } = data
-            user.merge(otherData)
+
+            // Explicitly filter allowed User fields to prevent "params" or other garbage 
+            // from crashing the model update.
+            const allowedFields = ['fullName', 'email', 'phone', 'isDriver', 'isAdmin', 'isActive', 'fcmToken']
+            const filteredData = Object.keys(otherData)
+                .filter(key => allowedFields.includes(key))
+                .reduce((obj: any, key) => {
+                    obj[key] = otherData[key]
+                    return obj
+                }, {})
+
+            user.merge(filteredData)
             await user.useTransaction(trx).save()
 
             const FileManager = (await import('#services/file_manager')).default

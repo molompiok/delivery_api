@@ -13,6 +13,7 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 @inject()
 export default class DispatchService {
     private readonly REJECTION_PREFIX = 'sublymus:order:rejections:'
+    private readonly DRIVER_STATE_PREFIX = 'sublymus:driver:'
 
     /**
      * Main entry point to dispatch an order based on its assignment mode.
@@ -65,7 +66,8 @@ export default class DispatchService {
             const state = await RedisService.getDriverState(driver.id)
             if (state && state.status === 'ONLINE') {
                 logger.info({ orderId: order.id, driverId: driver.id }, 'Target dispatch: Found specific driver')
-                return this.offerToDriver(order, driver.id, trx)
+                const offered = await this.offerToDriver(order, driver.id, trx)
+                if (offered) return
             }
         }
 
@@ -116,7 +118,8 @@ export default class DispatchService {
             const state = await RedisService.getDriverState(driver.id)
             if (state && state.status === 'ONLINE' && state.active_company_id === companyId) {
                 logger.info({ orderId: order.id, driverId: driver.id }, 'Internal dispatch: Best candidate found')
-                return this.offerToDriver(order, driver.id, trx)
+                const offered = await this.offerToDriver(order, driver.id, trx)
+                if (offered) return
             }
         }
 
@@ -152,11 +155,22 @@ export default class DispatchService {
             if (rejections.includes(candidate.id)) continue
 
             const state = await RedisService.getDriverState(candidate.id)
+            if (!state) {
+                await this.cleanupStaleDriverCandidate(candidate.id, 'missing redis state')
+                continue
+            }
 
             // Critères : ONLINE et acceptant les ordres globaux
-            if (state && state.status === 'ONLINE') {
+            if (state.status === 'ONLINE') {
+                const validDriver = await this.resolveActiveDriver(candidate.id)
+                if (!validDriver) {
+                    await this.cleanupStaleDriverCandidate(candidate.id, 'driver missing/inactive in SQL')
+                    continue
+                }
+
                 logger.info({ orderId: order.id, driverId: candidate.id, dist: candidate.distance }, 'Global dispatch: Found nearby ONLINE driver')
-                return this.offerToDriver(order, candidate.id, trx)
+                const offered = await this.offerToDriver(order, candidate.id, trx)
+                if (offered) return
             }
         }
 
@@ -173,6 +187,12 @@ export default class DispatchService {
             // Vérifier l'éligibilité au chaînage
             if (!RedisService.canAcceptChainedOrder(state)) continue
 
+            const validDriver = await this.resolveActiveDriver(state.id)
+            if (!validDriver) {
+                await this.cleanupStaleDriverCandidate(state.id, 'busy chaining candidate missing/inactive in SQL')
+                continue
+            }
+
             // Vérifier la proximité de la destination avec le pickup
             if (state.next_destination) {
                 const distanceToPickup = this.haversineDistance(
@@ -187,7 +207,8 @@ export default class DispatchService {
                         distanceToPickup,
                         currentOrders: state.current_orders.length
                     }, 'Global dispatch: Found BUSY driver eligible for chaining')
-                    return this.offerToDriver(order, state.id, trx)
+                    const offered = await this.offerToDriver(order, state.id, trx)
+                    if (offered) return
                 }
             }
         }
@@ -253,7 +274,7 @@ export default class DispatchService {
     /**
      * Offer the order to a specific driver.
      */
-    private async offerToDriver(order: Order, driverId: string, trx?: TransactionClientContract) {
+    private async offerToDriver(order: Order, driverId: string, trx?: TransactionClientContract): Promise<boolean> {
         const effectiveTrx = trx || await db.transaction()
         try {
             // Durée de l'offre basée sur la priorité
@@ -265,7 +286,7 @@ export default class DispatchService {
             if (!state || state.status !== 'ONLINE') {
                 logger.warn({ orderId: order.id, driverId }, 'Offer aborted: Driver is no longer ONLINE')
                 if (!trx) await effectiveTrx.rollback()
-                return
+                return false
             }
 
             // Lock order record
@@ -290,9 +311,24 @@ export default class DispatchService {
             }))
 
             logger.info({ orderId: o.id, driverId, expiresAt: o.offerExpiresAt.toISO() }, 'Order offered to driver')
+            return true
         } catch (error) {
             if (!trx) await effectiveTrx.rollback()
             throw error
         }
+    }
+
+    private async resolveActiveDriver(driverId: string): Promise<User | null> {
+        return User.query()
+            .where('id', driverId)
+            .where('isDriver', true)
+            .where('isActive', true)
+            .first()
+    }
+
+    private async cleanupStaleDriverCandidate(driverId: string, reason: string) {
+        logger.warn({ driverId, reason }, 'Dispatch: removing stale driver candidate from Redis')
+        await RedisService.removeDriverFromGeoIndex(driverId)
+        await redis.del(`${this.DRIVER_STATE_PREFIX}${driverId}:state`)
     }
 }

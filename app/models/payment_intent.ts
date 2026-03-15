@@ -1,11 +1,12 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, belongsTo } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, belongsTo, hasMany } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import Order from '#models/order'
 import Booking from '#models/booking'
 import Stop from '#models/stop'
 import User from '#models/user'
-import {type BelongsTo } from '@adonisjs/lucid/types/relations'
+import CodCollection from '#models/cod_collection'
+import { type BelongsTo, type HasMany } from '@adonisjs/lucid/types/relations'
 
 export default class PaymentIntent extends BaseModel {
     @column({ isPrimary: true })
@@ -77,4 +78,7 @@ export default class PaymentIntent extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @hasMany(() => CodCollection)
+    declare codCollections: HasMany<typeof CodCollection>
 }

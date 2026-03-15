@@ -53,7 +53,13 @@ export default class OrderSocketListener {
                     }
 
                     // Push notification for impactful mission state changes
-                    if (driver && ['CANCELLED', 'FAILED', 'DELIVERED', 'NO_DRIVER_AVAILABLE'].includes(payload.status)) {
+                    if (driver && payload.status === 'ACCEPTED') {
+                        await NotificationService.sendOrderUpdate(driver, {
+                            orderId: payload.orderId,
+                            status: payload.status,
+                            message: 'Mission acceptee. Vous etes desormais assigne.',
+                        })
+                    } else if (driver && ['CANCELLED', 'FAILED', 'DELIVERED', 'NO_DRIVER_AVAILABLE'].includes(payload.status)) {
                         await NotificationService.sendOrderUpdate(driver, {
                             orderId: payload.orderId,
                             status: payload.status,
@@ -90,7 +96,7 @@ export default class OrderSocketListener {
      * Listen for structural changes (stops/actions) and notify the dashboard.
      */
     public async onOrderStructureChanged(event: OrderStructureChanged) {
-        const { orderId, clientId } = event.payload
+        const { orderId, clientId, notifyDriver } = event.payload
 
         logger.info({ orderId }, 'Real-time (Structure): Order structure changed, invalidating route and notifying dashboard')
 
@@ -103,7 +109,11 @@ export default class OrderSocketListener {
         // 3. Notify Order Update (trigger data re-fetch)
         WsService.notifyOrderUpdate(orderId, clientId)
 
-        // 4. Push a lightweight alert to the assigned driver
+        // 4. Push lightweight alert to driver ONLY when update is explicitly pushed
+        if (!notifyDriver) {
+            return
+        }
+
         try {
             const Order = (await import('#models/order')).default
             const User = (await import('#models/user')).default
@@ -114,7 +124,7 @@ export default class OrderSocketListener {
                     await NotificationService.sendOrderUpdate(driver, {
                         orderId,
                         status: order.status,
-                        message: 'Mission mise a jour. Ouvrez l application pour rafraichir.',
+                        message: 'Mission mise a jour par le manager. Ouvrez l application pour synchroniser.',
                     })
                 }
             }

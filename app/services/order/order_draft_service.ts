@@ -15,8 +15,9 @@ import PricingFilterService, { StopPriceInput } from '#services/pricing_filter_s
 import PaymentPolicyService from '#services/payment_policy_service'
 import OrderPaymentService from '#services/order_payment_service'
 import subscriptionService from '#services/subscription_service'
-import { SimplePackageInfo } from '#services/pricing_service'
+
 import OrderStatusUpdated from '#events/order_status_updated'
+import OrderStructureChanged from '#events/order_structure_changed'
 import DispatchService from '#services/dispatch_service'
 import LogisticsService from '#services/logistics_service'
 import { inject } from '@adonisjs/core'
@@ -32,6 +33,12 @@ import wsService from '#services/ws_service'
 
 
 const COCODY = [-3.989, 5.348] as [number, number]
+
+export interface SimplePackageInfo {
+    dimensions: any
+    quantity: number
+}
+
 /**
  * ARCHITECTURE NOTE: Smart Recalculation & Deviation Handling
  * ---------------------------------------------------------
@@ -479,6 +486,7 @@ export default class OrderDraftService {
             const targetCompanyIdFromPayload = data.targetCompanyId || data.target_company_id || null
             const targetDriverIdFromPayload = data.targetDriverId || data.target_driver_id || null
             const explicitRefId = data.ref_id || data.refId || null
+            const paymentTrigger = data.paymentTrigger || data.payment_trigger || null
 
             // TARGET contract: either company target OR driver target is required.
             if (assignmentMode === 'TARGET' && !targetCompanyIdFromPayload && !targetDriverIdFromPayload && !explicitRefId) {
@@ -614,6 +622,7 @@ export default class OrderDraftService {
                 refId: normalizedRefId,
                 vehicleId: data.vehicleId || null,
                 assignmentAttemptCount: 0,
+                paymentTrigger: paymentTrigger,
                 metadata: data.metadata || {}
             }, { client: effectiveTrx })
 
@@ -654,10 +663,11 @@ export default class OrderDraftService {
     /**
      * Fetches detailed order with all relations preloaded.
      */
-    async getOrderDetails(orderId: string, clientId?: string, options: { trx?: TransactionClientContract, withRoute?: boolean, json?: boolean, include?: string[] } = { withRoute: false, json: true }) {
+    async getOrderDetails(orderId: string, clientId?: string, options: { trx?: TransactionClientContract, withRoute?: boolean, json?: boolean, include?: string[], targetCompanyId?: string } = { withRoute: false, json: true }) {
         logger.debug({ orderId, clientId, options }, '[ORDER_DRAFT] Fetching order details')
         const query = Order.query({ client: options.trx })
             .preload('vehicle')
+            .preload('driver', (q) => q.preload('driverSetting'))
             .preload('steps', (q) => q.orderBy('sequence', 'asc')
                 .preload('stops', (sq) => sq.orderBy('execution_order', 'asc').orderBy('display_order', 'asc')
                     .preload('address')
@@ -666,6 +676,7 @@ export default class OrderDraftService {
             )
             .preload('transitItems')
             .preload('bookings', (q) => q.preload('client').preload('transitItems').preload('pickupStop').preload('dropoffStop'))
+            .preload('paymentIntents')
 
         if (options.withRoute || options.include?.includes('leg')) {
             logger.debug({ orderId }, '[ORDER_DRAFT] Including heavy leg relationship')
@@ -673,11 +684,19 @@ export default class OrderDraftService {
         }
 
         if (orderId === 'latest') {
-            if (!clientId) throw new Error('clientId is required for latest order retrieval')
-            query.where('clientId', clientId).orderBy('createdAt', 'desc')
+            if (!clientId && !options.targetCompanyId) throw new Error('clientId or targetCompanyId is required for latest order retrieval')
+            query.where((q) => {
+                if (clientId) q.where('clientId', clientId)
+                if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+            }).orderBy('createdAt', 'desc')
         } else {
             query.where('id', orderId)
-            if (clientId) query.where('clientId', clientId)
+            if (clientId || options.targetCompanyId) {
+                query.where((q) => {
+                    if (clientId) q.where('clientId', clientId)
+                    if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+                })
+            }
         }
 
         const order = await query.first()
@@ -685,6 +704,10 @@ export default class OrderDraftService {
         if (!order) {
             logger.error({ orderId, clientId }, 'Order not found during getOrderDetails')
             throw new Error('Order not found')
+        }
+
+        if (order.driverId && order.driver) {
+            await order.driver.loadFiles()
         }
 
         // Apply shadow filtering before returning
@@ -784,12 +807,16 @@ export default class OrderDraftService {
     /**
      * Gets only the route (live and pending) for an order.
      */
-    async getRoute(orderId: string, _clientId?: string, options: { live?: boolean, pending?: boolean, force?: boolean, simplify?: boolean, no_geo?: boolean } = { live: true, pending: true, force: false }, trx?: TransactionClientContract) {
+    async getRoute(orderId: string, clientId?: string, options: { live?: boolean, pending?: boolean, force?: boolean, simplify?: boolean, no_geo?: boolean, targetCompanyId?: string } = { live: true, pending: true, force: false }, trx?: TransactionClientContract) {
         // If nothing requested (edge case), return empty
         if (!options.live && !options.pending) return {}
 
         const query = Order.query({ client: trx })
             .where('id', orderId)
+            .where((q) => {
+                if (clientId) q.where('clientId', clientId)
+                if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+            })
             .preload('vehicle')
             .preload('leg')
             .preload('steps', (q) => q.orderBy('sequence', 'asc')
@@ -799,6 +826,13 @@ export default class OrderDraftService {
                 )
             )
             .preload('transitItems')
+
+        if (clientId || options.targetCompanyId) {
+            query.where((q) => {
+                if (clientId) q.where('clientId', clientId)
+                if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+            })
+        }
 
         const order = await query.first()
 
@@ -1075,8 +1109,8 @@ export default class OrderDraftService {
     /**
      * Estimates a draft order (route + pricing).
      */
-    async estimateDraft(orderId: string, clientId: string, trx?: TransactionClientContract) {
-        const order = await this.getOrderDetails(orderId, clientId, { trx })
+    async estimateDraft(orderId: string, clientId: string, { targetCompanyId, trx }: { targetCompanyId?: string, trx?: TransactionClientContract }) {
+        const order = await this.getOrderDetails(orderId, clientId, { trx, targetCompanyId })
         const virtualState = this.buildVirtualState(order, { view: 'CLIENT' })
 
         const startLocation = await this.getDriverStartLocation(order.driverId) || COCODY as [number, number]
@@ -1233,15 +1267,28 @@ export default class OrderDraftService {
             ]
             await order.useTransaction(effectiveTrx).save()
 
+            const postCommitTasks = () => {
+                emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
+                    orderId: order.id,
+                    status: order.status,
+                    clientId: order.clientId
+                }))
+
+                // Auto-dispatch is opt-in to preserve manual "driver picks mission" workflows.
+                const shouldAutoDispatch = String(process.env.ENABLE_AUTO_DISPATCH_ON_SUBMIT || '').toLowerCase() === 'true'
+                if (shouldAutoDispatch) {
+                    this.dispatchService.dispatch(order).catch((err) => {
+                        logger.error({ err, orderId: order.id }, '[OrderDraftService] Dispatch after submit failed')
+                    })
+                }
+            }
+
+            if (typeof (effectiveTrx as any).after === 'function') {
+                ; (effectiveTrx as any).after('commit', postCommitTasks)
+            }
+
             if (!trx) await (effectiveTrx as any).commit()
-
-            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
-                orderId: order.id,
-                status: order.status,
-                clientId: order.clientId
-            }))
-
-            // await this.dispatchService.dispatch(order, effectiveTrx)
+            else if (typeof (effectiveTrx as any).after !== 'function') postCommitTasks()
 
             return order
         } catch (error) {
@@ -1409,9 +1456,16 @@ export default class OrderDraftService {
     /**
      * Reverts all pending changes (shadows) and resets the order status.
      */
-    async revertPendingChanges(orderId: string, trx?: TransactionClientContract) {
-        const effectiveTrx = trx || await db.transaction()
+    async revertPendingChanges(orderId: string, clientId: string, options: { trx?: TransactionClientContract, targetCompanyId?: string } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
         try {
+            await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+                })
+                .firstOrFail()
             // 1. Delete all shadow Actions
             const shadowActions = await Action.query({ client: effectiveTrx }).where('orderId', orderId).where('isPendingChange', true)
             for (const action of shadowActions) {
@@ -1448,9 +1502,9 @@ export default class OrderDraftService {
             await this.cleanupOrphanedAddresses(orderId, effectiveTrx)
             await this.cleanupOrphanedTransitItems(orderId, effectiveTrx)
 
-            if (!trx) await effectiveTrx.commit()
+            if (!options.trx) await effectiveTrx.commit()
         } catch (error) {
-            if (!trx) await effectiveTrx.rollback()
+            if (!options.trx) await effectiveTrx.rollback()
             throw error
         }
     }
@@ -1834,13 +1888,18 @@ export default class OrderDraftService {
     /**
      * Pushes pending changes (shadows) to the live order.
      */
-    async pushUpdates(orderId: string, clientId: string, trx?: TransactionClientContract) {
-        const effectiveTrx = trx || await db.transaction()
+    async pushUpdates(orderId: string, clientId: string, options: { trx?: TransactionClientContract, targetCompanyId?: string } = {}) {
+        const effectiveTrx = options.trx || await db.transaction()
         try {
-            const order = await Order.find(orderId, { client: effectiveTrx })
-            if (!order || order.clientId !== clientId) {
-                throw new Error('Order not found or access denied')
-            }
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+                })
+                .preload('steps', (q) => q.preload('stops'))
+                .preload('transitItems')
+                .firstOrFail()
 
             // 1. Apply merge logic
             await this.applyShadowChanges(order.id, effectiveTrx)
@@ -1861,7 +1920,7 @@ export default class OrderDraftService {
             await this.calculateOrderStats(freshOrder, effectiveTrx)
             await freshOrder.useTransaction(effectiveTrx).save()
 
-            if (!trx) await effectiveTrx.commit()
+            if (!options.trx) await effectiveTrx.commit()
 
             // 3. Notify real-time listeners
             emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
@@ -1875,9 +1934,15 @@ export default class OrderDraftService {
                 }
             }))
 
+            emitter.emit(OrderStructureChanged, new OrderStructureChanged({
+                orderId: order.id,
+                clientId: order.clientId,
+                notifyDriver: true,
+            }))
+
             return freshOrder
         } catch (error) {
-            if (!trx) await effectiveTrx.rollback()
+            if (!options.trx) await effectiveTrx.rollback()
             throw error
         }
     }

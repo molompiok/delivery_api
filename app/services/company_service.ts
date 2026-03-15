@@ -840,7 +840,7 @@ export default class CompanyService {
         const deliveredThisMonth = await Order.query()
             .where('driverId', driverId)
             .where('status', 'DELIVERED')
-            .where('deliveredAt', '>=', startOfMonth.toSQL()!)
+            .where('completedAt', '>=', startOfMonth.toSQL()!)
 
         let monthlyRevenue = 0
         deliveredThisMonth.forEach(o => {

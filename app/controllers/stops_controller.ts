@@ -10,7 +10,7 @@ export default class StopsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.addStop(params.stepId, user.id, payload)
+            const result = await this.orderService.addStop(params.stepId, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.created({
                 stop: result.entity,
                 validationErrors: result.validationErrors
@@ -24,7 +24,7 @@ export default class StopsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.updateStop(params.id, user.id, payload)
+            const result = await this.orderService.updateStop(params.id, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({
                 stop: result.entity,
                 validationErrors: result.validationErrors
@@ -40,7 +40,7 @@ export default class StopsController {
     async destroy({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const result = await this.orderService.removeStop(params.id, user.id)
+            const result = await this.orderService.removeStop(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(result)
         } catch (error: any) {
             if (error.message.includes('not found')) {
@@ -53,7 +53,7 @@ export default class StopsController {
     async restorePrice({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const result = await this.orderService.restoreStopPrice(params.id, user.id)
+            const result = await this.orderService.restoreStopPrice(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(result)
         } catch (error: any) {
             if (error.message.includes('not found')) {

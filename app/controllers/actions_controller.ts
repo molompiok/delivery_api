@@ -10,7 +10,7 @@ export default class ActionsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.addAction(params.stopId, user.id, payload)
+            const result = await this.orderService.addAction(params.stopId, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.created({
                 action: result.entity,
                 validationErrors: result.validationErrors
@@ -24,7 +24,7 @@ export default class ActionsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.updateAction(params.id, user.id, payload)
+            const result = await this.orderService.updateAction(params.id, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({
                 action: result.entity,
                 validationErrors: result.validationErrors
@@ -40,7 +40,7 @@ export default class ActionsController {
     async destroy({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const result = await this.orderService.removeAction(params.id, user.id)
+            const result = await this.orderService.removeAction(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(result)
         } catch (error: any) {
             if (error.message.includes('not found')) {

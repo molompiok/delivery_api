@@ -55,7 +55,7 @@ export default class StopService {
     /**
      * Adds a stop to a step.
      */
-    async addStop(stepId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<Stop>> {
+    async addStop(stepId: string, clientId: string, data: any, trx?: TransactionClientContract, targetCompanyId?: string): Promise<LogisticsOperationResult<Stop>> {
         const validatedData = await vine.validate({ schema: addStopSchema, data })
         const effectiveTrx = trx || await db.transaction()
         try {
@@ -63,7 +63,13 @@ export default class StopService {
             if (!step) {
                 throw new Error(`Step not found [ID: ${stepId}] while adding stop`)
             }
-            const order = await Order.query({ client: effectiveTrx }).where('id', step.orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', step.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) throw new Error('Unauthorized or Order not found')
             const coordinates = await this.resolveAddressCoordinates(validatedData as any)
 
@@ -125,13 +131,16 @@ export default class StopService {
                 status: 'PENDING',
                 isPendingChange: !isDraft,
                 client: validatedData.client || null,
-                metadata: validatedData.metadata || {}
+                metadata: validatedData.metadata || {},
+                reversalAmount: validatedData.reversal_amount ?? 0,
+                includeWithdrawalFees: validatedData.include_withdrawal_fees ?? true,
+                deliveryFee: validatedData.delivery_fee ?? null,
             }, { client: effectiveTrx })
 
             // Action Creation
             if (validatedData.actions && validatedData.actions.length > 0) {
                 for (const actionData of validatedData.actions) {
-                    await this.actionService.addAction(stop.id, clientId, actionData, effectiveTrx)
+                    await this.actionService.addAction(stop.id, clientId, actionData, effectiveTrx, targetCompanyId)
                 }
             }
 
@@ -144,7 +153,7 @@ export default class StopService {
                         productName: 'Point de passage',
                         is_invisible_in_detail: true // Hint for UI
                     }
-                }, effectiveTrx)
+                }, effectiveTrx, targetCompanyId)
             }
 
             if (!isDraft) {
@@ -167,14 +176,20 @@ export default class StopService {
     /**
      * Updates a stop.
      */
-    async updateStop(stopId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<Stop>> {
+    async updateStop(stopId: string, clientId: string, data: any, trx?: TransactionClientContract, targetCompanyId?: string): Promise<LogisticsOperationResult<Stop>> {
         const validatedData = await vine.validate({ schema: updateStopSchema, data })
         const effectiveTrx = trx || await db.transaction()
         try {
             const stop = await Stop.query({ client: effectiveTrx }).where('id', stopId).preload('address').first()
             if (!stop) throw new Error('Stop not found')
 
-            const order = await Order.query({ client: effectiveTrx }).where('id', stop.orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', stop.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) throw new Error('Unauthorized or Order not found')
             const isDraft = order.status === 'DRAFT'
 
@@ -219,6 +234,9 @@ export default class StopService {
                         status: stop.status,
                         client: stop.client,
                         metadata: stop.metadata,
+                        reversalAmount: stop.reversalAmount,
+                        includeWithdrawalFees: stop.includeWithdrawalFees,
+                        deliveryFee: stop.deliveryFee,
                         originalId: stop.id,
                         isPendingChange: true
                     }, { client: effectiveTrx })
@@ -252,6 +270,9 @@ export default class StopService {
             }
 
             if (validatedData.display_order !== undefined) targetStop.displayOrder = validatedData.display_order
+            if (validatedData.reversal_amount !== undefined) targetStop.reversalAmount = validatedData.reversal_amount
+            if (validatedData.include_withdrawal_fees !== undefined) targetStop.includeWithdrawalFees = validatedData.include_withdrawal_fees
+            if (validatedData.delivery_fee !== undefined) targetStop.deliveryFee = validatedData.delivery_fee
 
             // Merge metadata for client and address_extra
             targetStop.metadata = {
@@ -301,13 +322,19 @@ export default class StopService {
     /**
      * Removes a stop.
      */
-    async removeStop(stopId: string, clientId: string, trx?: TransactionClientContract) {
+    async removeStop(stopId: string, clientId: string, trx?: TransactionClientContract, targetCompanyId?: string) {
         const effectiveTrx = trx || await db.transaction()
         try {
             const stop = await Stop.query({ client: effectiveTrx }).where('id', stopId).first()
             if (!stop) throw new Error('Stop not found')
 
-            const order = await Order.query({ client: effectiveTrx }).where('id', stop.orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', stop.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) throw new Error('Unauthorized or Order not found')
             const isDraft = order.status === 'DRAFT'
 
@@ -336,13 +363,19 @@ export default class StopService {
     /**
      * Restores the original price for a stop by removing overrides.
      */
-    async restorePrice(stopId: string, clientId: string, trx?: TransactionClientContract) {
+    async restorePrice(stopId: string, clientId: string, trx?: TransactionClientContract, targetCompanyId?: string) {
         const effectiveTrx = trx || await db.transaction()
         try {
             const stop = await Stop.query({ client: effectiveTrx }).where('id', stopId).first()
             if (!stop) throw new Error('Stop not found')
 
-            const order = await Order.query({ client: effectiveTrx }).where('id', stop.orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', stop.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) throw new Error('Unauthorized or Order not found')
 
             const meta = stop.metadata || {}

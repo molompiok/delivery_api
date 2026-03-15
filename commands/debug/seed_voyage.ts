@@ -99,7 +99,7 @@ export default class SeedVoyage extends BaseCommand {
                 await order.useTransaction(trx).save()
 
                 this.logger.info(`2. Publishing Voyage (ID: ${order.id})...`)
-                await orderService.publishOrder(order.id, managerId, trx)
+                await orderService.publishOrder(order.id, managerId, { trx })
 
                 await trx.commit()
                 this.logger.success(`✅ Voyage created and published successfully: ${order.id}`)

@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, beforeCreate, column, belongsTo, hasOne } from '@adonisjs/lucid/orm'
+import { BaseModel, beforeCreate, column, belongsTo, hasOne, computed, hasMany } from '@adonisjs/lucid/orm'
 import { generateId } from '../utils/id_generator.js'
 import User from '#models/user'
 import Vehicle from '#models/vehicle'
@@ -12,7 +12,6 @@ import Company from '#models/company'
 import Booking from '#models/booking'
 import PaymentIntent from '#models/payment_intent'
 import type { BelongsTo, HasOne, HasMany } from '@adonisjs/lucid/types/relations'
-import { hasMany } from '@adonisjs/lucid/orm'
 import type { PricingDetails, OrderMetadata } from '../types/logistics.js'
 import type { OrderTemplate } from '#constants/order_templates'
 
@@ -74,6 +73,9 @@ export default class Order extends BaseModel {
     declare initiatorId: string | null
 
     @column()
+    declare paymentTrigger: 'BEFORE_START' | 'ON_DELIVERY' | 'PROGRESSIVE' | 'ON_ACCEPT' | null
+
+    @column()
     declare isDeleted: boolean
 
     @column()
@@ -114,14 +116,9 @@ export default class Order extends BaseModel {
     })
     declare metadata: OrderMetadata
 
-    @column.dateTime()
-    declare etaPickup: DateTime | null
 
     @column.dateTime()
-    declare etaDelivery: DateTime | null
-
-    @column.dateTime()
-    declare deliveredAt: DateTime | null
+    declare completedAt: DateTime | null
 
     @belongsTo(() => User, { foreignKey: 'clientId' })
     declare client: BelongsTo<typeof User>
@@ -165,4 +162,22 @@ export default class Order extends BaseModel {
 
     @column.dateTime({ autoCreate: true, autoUpdate: true })
     declare updatedAt: DateTime | null
+
+    @computed({ serializeAs: 'amountPaid' })
+    public get amountPaid(): number {
+        if (!this.paymentIntents) return 0
+        return this.paymentIntents
+            .filter(i => i.status === 'COMPLETED')
+            .reduce((sum, i) => sum + (i.amount || 0), 0)
+    }
+
+    @computed({ serializeAs: 'paymentStatus' })
+    public get paymentStatus(): 'PAID' | 'PARTIAL' | 'UNPAID' {
+        const total = this.pricingData?.clientFee || 0
+        const paid = this.amountPaid
+
+        if (paid <= 0) return 'UNPAID'
+        if (paid >= total) return 'PAID'
+        return 'PARTIAL'
+    }
 }

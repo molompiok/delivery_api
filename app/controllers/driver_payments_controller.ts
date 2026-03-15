@@ -4,6 +4,8 @@ import WalletProvisioningService from '#services/wallet_provisioning_service'
 import { inject } from '@adonisjs/core'
 import User from '#models/user'
 import CompanyDriverSetting from '#models/company_driver_setting'
+import DriverSetting from '#models/driver_setting'
+import CodCollection from '#models/cod_collection'
 
 @inject()
 export default class DriverPaymentsController {
@@ -16,11 +18,14 @@ export default class DriverPaymentsController {
             const user = auth.user as User
             await WalletProvisioningService.ensureDriverWalletGraph(user)
             const wallets = []
+            const driverProfile = await DriverSetting.query().where('userId', user.id).first()
+
+            // Charger les photos une seule fois
+            await user.loadFiles()
 
             // 1. Wallet personnel
             if (user.walletId) {
                 try {
-                    await user.loadFiles() // Charger les photos
                     console.log(`[DriverPayments] Fetching personal wallet ${user.walletId} for user ${user.id}`)
                     const walletData = await walletBridgeService.getWallet(user.walletId) as any
 
@@ -48,7 +53,36 @@ export default class DriverPaymentsController {
                 }
             }
 
-            // 2. Wallets liés aux entreprises (ETP/IDEP)
+            // 2. Wallet Driver Indépendant (Pro)
+            if (driverProfile && driverProfile.walletId) {
+                try {
+                    console.log(`[DriverPayments] Fetching independent wallet ${driverProfile.walletId} for driver ${user.id}`)
+                    const walletData = await walletBridgeService.getWallet(driverProfile.walletId) as any
+
+                    const transformed = {
+                        ...walletData,
+                        name: 'Portefeuille Indépendant',
+                        owner_name: walletData.ownerName || walletData.owner_name || 'Portefeuille Pro',
+                        ownerName: walletData.ownerName || walletData.owner_name || 'Portefeuille Pro',
+                        label: 'Indépendant (Pro)',
+                        balance_available: walletData.balance_available ?? walletData.balanceAvailable,
+                        balance_accounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                        balanceAvailable: walletData.balance_available ?? walletData.balanceAvailable,
+                        balanceAccounting: walletData.balance_accounting ?? walletData.balanceAccounting,
+                        wallet_type: 'DRIVER',
+                        walletType: 'DRIVER',
+                        isPersonal: false, // Professionnel
+                        img: user.photos && user.photos.length > 0 ? user.photos[0] : null,
+                        image_url: user.photos && user.photos.length > 0 ? user.photos[0] : null,
+                        photo: user.photos && user.photos.length > 0 ? user.photos[0] : null
+                    }
+                    wallets.push(transformed)
+                } catch (e) {
+                    console.error('Failed to fetch driver profile wallet', e)
+                }
+            }
+
+            // 3. Wallets liés aux entreprises (ETP)
             const relations = await CompanyDriverSetting.query()
                 .where('driverId', user.id)
                 .whereIn('status', ['ACCEPTED', 'ACCESS_ACCEPTED'])
@@ -431,6 +465,59 @@ export default class DriverPaymentsController {
     }
 
     /**
+     * Liste les dettes COD différées pour le driver
+     */
+    public async listPendingCod({ auth, response }: HttpContext) {
+        try {
+            const user = auth.user as User
+            const collections = await (CodCollection.query() as any)
+                .where('driverId', user.id)
+                .where('status', 'COD_DEFERRED')
+                .preload('order')
+                .preload('stop', (q: any) => q.preload('address'))
+                .orderBy('collectedAt', 'desc')
+
+            return response.ok(collections)
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
+     * Statistiques de dettes pour le dashboard driver
+     */
+    public async getDebtStats({ auth, response }: HttpContext) {
+        try {
+            const user = auth.user as User
+            const collections = await CodCollection.query()
+                .where('driverId', user.id)
+                .where('status', 'COD_DEFERRED')
+
+            const totalDebt = collections.reduce((sum, c) => sum + (c.expectedAmount || 0), 0)
+
+            // On cherche l'échéance la plus proche (minuit après le premier COD différé)
+            let earliestDeadline: string | null = null
+            if (collections.length > 0) {
+                const dates = collections.map(c => c.collectedAt).filter(d => !!d)
+                if (dates.length > 0) {
+                    // Minuit (début du jour suivant)
+                    const minDate = dates.reduce((min, d) => d! < min! ? d : min, dates[0])
+                    earliestDeadline = minDate!.plus({ days: 1 }).startOf('day').toISO()
+                }
+            }
+
+            return response.ok({
+                totalDebt,
+                count: collections.length,
+                earliestDeadline,
+                currency: 'F CFA'
+            })
+        } catch (error: any) {
+            return response.badRequest({ message: error.message })
+        }
+    }
+
+    /**
      * Privé: Récupère la liste des IDs de wallets auxquels le driver a accès
      */
     private async getAccessibleWalletIds(user: User): Promise<string[]> {
@@ -438,6 +525,9 @@ export default class DriverPaymentsController {
 
         const ids: string[] = []
         if (user.walletId) ids.push(user.walletId)
+
+        const profile = await DriverSetting.query().where('userId', user.id).first()
+        if (profile?.walletId) ids.push(profile.walletId)
 
         // 1. Wallets des boites où il est driver
         const relations = await CompanyDriverSetting.query()

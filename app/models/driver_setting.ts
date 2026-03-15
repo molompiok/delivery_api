@@ -66,6 +66,9 @@ export default class DriverSetting extends BaseModel {
     @column()
     declare allowChaining: boolean  // Autoriser le chaînage de missions
 
+    @column()
+    declare walletId: string | null
+
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime
 

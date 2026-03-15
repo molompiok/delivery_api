@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 const modelsDir = path.join(__dirname, 'app/models');
 const files = fs.readdirSync(modelsDir).filter(f => f.endsWith('.ts'));

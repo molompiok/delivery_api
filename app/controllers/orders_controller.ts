@@ -42,12 +42,15 @@ export default class OrdersController {
     async submit({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            logger.info({ orderId: params.id, userId: user.id }, '[ORDERS_CONTROLLER] Submitting order')
             const order = await this.orderService.submitOrder(params.id, user.id)
+            logger.info({ orderId: params.id }, '[ORDERS_CONTROLLER] Order submitted successfully')
             return response.ok({
                 message: 'Order submitted successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            logger.error({ orderId: params.id, error: error.message }, '[ORDERS_CONTROLLER] Failed to submit order')
             return response.badRequest({ message: error.message })
         }
     }
@@ -58,7 +61,7 @@ export default class OrdersController {
     async publish({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.publishOrder(params.id, user.id)
+            const order = await this.orderService.publishOrder(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({
                 message: 'Order published successfully',
                 order: order.serialize()
@@ -74,7 +77,7 @@ export default class OrdersController {
     async pushUpdates({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.pushUpdates(params.id, user.id)
+            const order = await this.orderService.pushUpdates(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({
                 message: 'Order updates pushed successfully',
                 order: order.serialize()
@@ -90,7 +93,7 @@ export default class OrdersController {
     async revertChanges({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.revertPendingChanges(params.id, user.id)
+            const order = await this.orderService.revertPendingChanges(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({
                 message: 'Order changes reverted successfully',
                 order: order.serialize()
@@ -107,12 +110,15 @@ export default class OrdersController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
+            logger.info({ userId: user.id, payload }, '[ORDERS_CONTROLLER] Creating order (Bulk)')
             const order = await this.orderService.createOrder(user.id, payload)
+            logger.info({ orderId: order.id }, '[ORDERS_CONTROLLER] Order created successfully')
             return response.created({
                 message: 'Order created successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            logger.error({ userId: auth.user?.id, error: error.message, stack: error.stack }, '[ORDERS_CONTROLLER] Failed to create order')
             return response.badRequest({ message: error.message })
         }
     }
@@ -124,7 +130,7 @@ export default class OrdersController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.addTransitItem(params.id, user.id, payload)
+            const result = await this.orderService.addTransitItem(params.id, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.created(result)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -134,7 +140,7 @@ export default class OrdersController {
     async estimateDraft({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const estimation = await this.orderService.estimateDraft(params.id, user.id)
+            const estimation = await this.orderService.estimateDraft(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(estimation)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -160,7 +166,7 @@ export default class OrdersController {
             if (withTemplates === 'true') requestedFields.push('templates')
             if (withInProgress === 'true') requestedFields.push('inProgress')
 
-            const stats = await this.orderService.getOrderStats(user.id, requestedFields)
+            const stats = await this.orderService.getOrderStats(user.id, requestedFields, user.effectiveCompanyId || undefined)
             return response.ok(stats)
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -181,11 +187,12 @@ export default class OrdersController {
                     perPage: perPage ? Number(perPage) : undefined,
                     search: search || undefined,
                     status: status || undefined,
+                    targetCompanyId: user.effectiveCompanyId || undefined
                 })
                 return response.ok(result)
             }
 
-            const orders = await this.orderService.listOrders(user.id)
+            const orders = await this.orderService.listOrders(user.id, user.effectiveCompanyId || undefined)
             return response.ok(orders.map(o => o.serialize()))
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -209,7 +216,8 @@ export default class OrdersController {
             logger.info({ orderId: params.id, userId: user.id, include: includeArray }, '[ORDERS_CONTROLLER] Show order')
 
             const order = await this.orderService.getOrderDetails(params.id, user.id, {
-                include: includeArray
+                include: includeArray,
+                targetCompanyId: user.effectiveCompanyId || undefined
             })
             return response.ok(order)
         } catch (error: any) {
@@ -235,7 +243,10 @@ export default class OrdersController {
                 no_geo: no_geo === 'true' || no_geo === '1',
             }
 
-            const route = await this.orderService.getRoute(params.id, user.id, options)
+            const route = await this.orderService.getRoute(params.id, user.id, {
+                ...options,
+                targetCompanyId: user.effectiveCompanyId || undefined
+            })
 
             let actualTrace = null
             if (options.trace) {
@@ -302,7 +313,7 @@ export default class OrdersController {
         try {
             const user = auth.getUserOrFail()
             const { reason } = request.all()
-            const order = await this.orderService.cancelOrder(params.id, user.id, reason)
+            const order = await this.orderService.cancelOrder(params.id, user.id, reason, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({ message: 'Order cancelled successfully', order: order.serialize() })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -316,7 +327,7 @@ export default class OrdersController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const order = await this.orderService.updateOrder(params.id, user.id, payload)
+            const order = await this.orderService.updateOrder(params.id, user.id, payload, undefined, user.effectiveCompanyId || undefined)
             return response.ok({
                 message: 'Order updated successfully',
                 order: order.serialize()
@@ -333,7 +344,7 @@ export default class OrdersController {
         try {
             const user = auth.getUserOrFail()
             const { stop_id } = request.all()
-            await this.orderService.setNextStop(params.id, user.id, stop_id)
+            await this.orderService.setNextStop(params.id, user.id, stop_id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({ message: 'Next stop updated successfully' })
         } catch (error: any) {
             return response.badRequest({ message: error.message })
@@ -349,7 +360,7 @@ export default class OrdersController {
             const { lat, lng } = request.all()
             const gps = (lat && lng) ? { lat: Number(lat), lng: Number(lng) } : undefined
 
-            const route = await this.orderService.recalculateRoute(params.id, user.id, gps)
+            const route = await this.orderService.recalculateRoute(params.id, user.id, { gps, targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(route)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

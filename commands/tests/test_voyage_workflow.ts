@@ -1,3 +1,41 @@
+/**
+ * VOYAGE SYSTEM DOCUMENTATION & WORKFLOW VALIDATION
+ * 
+ * --- CONCEPT ---
+ * A "Voyage" is a specialized type of Order (template='VOYAGE') that represents 
+ * a scheduled transport service with multiple stops and individual seat bookings.
+ * 
+ * --- CORE COMPONENTS ---
+ * 1. Order (template: 'VOYAGE'): The container for the entire trip.
+ * 2. Stops & Steps: Define the route. A voyage can have N stops. 
+ *    Pricing and availability are calculated per segment (e.g., Stop A to Stop C).
+ * 3. Seat Map (order.metadata.seatMap): Defines the vehicle's layout and seat types.
+ *    - VIP seats can have custom rules (fixed addition or multipliers).
+ * 4. Bookings: Individual reservations linked to the voyage for specific segments and seats.
+ * 
+ * --- PRICING LOGIC ---
+ * The system determines the price for a segment in this order:
+ * A. PRICE MATRIX (Priority 1): 
+ *    Defined in `order.pricingData.matrix`. It maps stop pairs to fixed prices.
+ *    Example: { "stop_A": { "stop_C": 8000 } }
+ * B. DISTANCE FALLBACK (Priority 2):
+ *    If no matrix entry exists, it uses `calculateHaversineDistance` between stops 
+ *    and applies the `PricingFilter` rates (Base Fee + Distance Fee).
+ * C. SEAT SURCHARGE:
+ *    The segment price is then adjusted by the seat's VIP rule (e.g., +1500 FCFA).
+ * 
+ * --- SEGMENT OVERLAP (INTELLIGENT BOOKING) ---
+ * The system allows multiple bookings on the same seat as long as their segments
+ * do not overlap. 
+ * Condition: (New Booking Start < Existing Booking End) AND (New Booking End > Existing Booking Start)
+ * 
+ * This test ensures that:
+ * - Voyages can only be booked when PUBLISHED.
+ * - Overlapping bookings on the same seat are REJECTED.
+ * - Non-overlapping bookings on the same seat are ACCEPTED.
+ * - PaymentIntents are correctly generated per booking.
+ */
+
 import { BaseCommand } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 import { inject } from '@adonisjs/core'
@@ -198,6 +236,12 @@ export default class TestVoyageWorkflow extends BaseCommand {
           seat_1: { isVip: true, rule: { type: 'addition', value: 1500 } },
         },
       },
+      // NOTE: You can also define a pricing matrix here for fixed segment prices:
+      // pricingData: {
+      //   matrix: {
+      //     "stop_id_1": { "stop_id_3": 5000 }
+      //   }
+      // },
       steps: [
         {
           sequence: 1,
@@ -344,7 +388,7 @@ export default class TestVoyageWorkflow extends BaseCommand {
   ) {
     // HTTP POST /v1/orders/:id/publish
     this.logger.info(`[HTTP] POST /v1/orders/${orderId}/publish | emitter=${emitterId}`)
-    const order = await orderService.publishOrder(orderId, emitterId, trx)
+    const order = await orderService.publishOrder(orderId, emitterId, { trx })
     this.logger.info(`[HTTP] 200 /v1/orders/${orderId}/publish | status=${order.status}`)
     return order
   }

@@ -68,6 +68,7 @@ interface PaymentIntentResponse {
     amount: number
     currency: string
     external_reference?: string
+    expires_at?: string | null
 }
 
 interface InternalIntentPayload {
@@ -272,6 +273,19 @@ class WalletBridgeService {
      */
     async getBalance(walletId: string): Promise<BalanceResponse> {
         return this.request<BalanceResponse>('GET', `/wallets/${walletId}/balance`)
+    }
+
+    /**
+     * Résoudre un wallet_id par numéro de téléphone Wave
+     */
+    async resolveWalletIdByPhone(phone: string): Promise<string | null> {
+        try {
+            const data = await this.request<{ walletId: string }>('GET', `/wallets/by-phone/${phone}`)
+            return data.walletId
+        } catch (error) {
+            logger.warn({ phone, error: error.message }, '[WalletBridge] Could not resolve wallet by phone')
+            return null
+        }
     }
 
     // ─── PAIEMENTS EXTERNES (WAVE CHECKOUT) ───────────────

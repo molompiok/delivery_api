@@ -76,6 +76,10 @@ export default defineConfig({
     },
     () => import('./start/init.js'),
     {
+      file: () => import('./start/payment_sync_runtime.js'),
+      environment: ['web']
+    },
+    {
       file: () => import('./start/wave_transmit_bridge.js'),
       environment: ['web']
     },

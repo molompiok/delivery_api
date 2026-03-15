@@ -21,6 +21,7 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import OrderDraftService from '#services/order/order_draft_service'
 import { GeoCompressor } from '#utils/geo_compressor'
 import vine from '@vinejs/vine'
+import orderPaymentService from '#services/order_payment_service'
 
 const verifyCodeValidator = vine.compile(
     vine.object({
@@ -670,6 +671,15 @@ export default class MissionService {
 
                 await stop.useTransaction(trx).save();
 
+                // Progressive payment release (if configured) once stop is truly completed.
+                if (newStatus === 'COMPLETED') {
+                    (trx as any).after('commit', () => {
+                        orderPaymentService.onStopCompleted(stop.id).catch((err) => {
+                            logger.error({ err, stopId: stop.id }, 'Failed to release stop payment after completion')
+                        })
+                    })
+                }
+
                 // SOCKET
                 (trx as any).after('commit', () => {
                     emitter.emit(StopStatusUpdated, new StopStatusUpdated({
@@ -800,8 +810,8 @@ export default class MissionService {
                 order.status = newStatus as any
 
                 // Immutable business timestamp used for subscription billing periods.
-                if (newStatus === 'DELIVERED' && !order.deliveredAt) {
-                    order.deliveredAt = DateTime.now()
+                if (newStatus === 'DELIVERED' && !order.completedAt) {
+                    order.completedAt = DateTime.now()
                 }
 
                 // HISTORY
@@ -876,8 +886,10 @@ export default class MissionService {
                     stopsQuery.orderBy('execution_order', 'asc')
                     stopsQuery.preload('actions', (actionsQuery) => {
                         actionsQuery.where('isPendingChange', false)
+                        actionsQuery.preload('proofs')
                     })
                     stopsQuery.preload('address')
+                    stopsQuery.preload('paymentIntents')
                 })
             })
             .firstOrFail()
@@ -893,28 +905,15 @@ export default class MissionService {
             .where((q) => {
                 // FILTER: PENDING (Offers)
                 if (!filter || filter === 'pending') {
-                    q.orWhere((pendingQ) => {
-                        pendingQ.where('status', 'PENDING')
-                        pendingQ.where((subQ) => {
-                            // Direct assignment (TARGET)
-                            subQ.orWhere((targetQ) => {
-                                targetQ.where('assignmentMode', 'TARGET')
-                                targetQ.where('refId', driverId)
-                            })
-                            // Global assignment (GLOBAL + Company Check)
-                            subQ.orWhere((globalQ) => {
-                                globalQ.where('assignmentMode', 'GLOBAL')
-                                if (ds?.currentCompanyId) {
-                                    globalQ.whereHas('client', (clientQ) => {
-                                        clientQ.where('companyId', ds.currentCompanyId!)
-                                    })
-                                }
-                            })
+                    if (ds?.currentCompanyId) {
+                        q.orWhere((pendingQ) => {
+                            pendingQ.where('status', 'PENDING')
+                            pendingQ.where('companyId', ds.currentCompanyId!)
+                            pendingQ.whereNull('driverId')
                         })
-                        // Ensure NOT already assigned to someone else (though status=PENDING usually implies this)
-                        pendingQ.whereNull('driverId')
-                    })
+                    }
                 }
+
 
                 // FILTER: ACTIVE (My current missions)
                 if (!filter || filter === 'active') {
@@ -941,8 +940,10 @@ export default class MissionService {
                     stopsQuery.orderBy('execution_order', 'asc')
                     stopsQuery.preload('actions', (actionsQuery) => {
                         actionsQuery.where('isPendingChange', false)
+                        actionsQuery.preload('proofs')
                     })
                     stopsQuery.preload('address')
+                    stopsQuery.preload('paymentIntents')
                 })
             })
             .orderBy('createdAt', 'desc')
@@ -983,7 +984,7 @@ export default class MissionService {
             return { data: orders, meta }
         }
 
-        return orders
+        return orders;
     }
 
     /**

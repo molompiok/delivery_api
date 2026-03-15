@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import emitter from '@adonisjs/core/services/emitter'
 import redis from '@adonisjs/redis/services/main'
+import logger from '@adonisjs/core/services/logger'
 import Order from '#models/order'
 import OrderStatusUpdated from '#events/order_status_updated'
 import wsService from '#services/ws_service'
@@ -14,7 +15,6 @@ import TransitItemService from './transit_item_service.js'
 import OrderDraftService from './order_draft_service.js'
 import LogisticsService from '../logistics_service.js'
 import GeoService from '../geo_service.js'
-import PricingService from '../pricing_service.js'
 import subscriptionService from '#services/subscription_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import PayloadMapper from './payload_mapper.js'
@@ -24,1020 +24,1592 @@ import { createOrderSchema } from '#validators/order_validator'
 
 @inject()
 export default class OrderService {
-    constructor(
-        protected stepService: StepService,
-        protected stopService: StopService,
-        protected actionService: ActionService,
-        protected transitItemService: TransitItemService,
-        protected orderDraftService: OrderDraftService
-    ) { }
-
-    /**
-     * Lists orders for a client.
-     */
-    async listOrders(clientId: string) {
-        return Order.query()
-            .where('clientId', clientId)
-            .where('isDeleted', false)
-            .preload('driver')
-            .preload('vehicle')
-            .orderBy('createdAt', 'desc')
-    }
-
-    /**
-     * Lists orders for a client with optimized summary format.
-     * Supports server-side pagination, search, and status filtering.
-     */
-    async listOrdersSummary(clientId: string, options: {
-        page?: number,
-        perPage?: number,
-        search?: string,
-        status?: string
-    } = {}) {
-        const page = options.page || 1
-        const perPage = options.perPage || 12
-
-        let query = Order.query()
-            .where('clientId', clientId)
-            .where('isDeleted', false)
-            .preload('driver', (q) => q.preload('driverSetting', (sq) => sq.preload('activeVehicle')))
-            .preload('vehicle')
-            .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
-
-        // Status filter
-        if (options.status && options.status !== 'ALL') {
-            if (options.status === 'IN_PROGRESS') {
-                query = query.whereIn('status', ['ACCEPTED', 'IN_TRANSIT', 'PICKING_UP', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
-            } else if (options.status === 'INCIDENTS') {
-                query = query.where('status', 'FAILED')
-            } else {
-                query = query.where('status', options.status)
-            }
-        }
-
-        // Search by order ID or ref
-        if (options.search) {
-            const term = `%${options.search}%`
-            query = query.where((builder) => {
-                builder
-                    .whereILike('id', term)
-                    .orWhereILike('refId', term)
-            })
-        }
-
-        query = query.orderBy('createdAt', 'desc')
-
-        const paginated = await query.paginate(page, perPage)
-        const orders = paginated.all()
-
-        // --- Real-time Redis GPS Fallback ---
-        const driverIds = orders
-            .filter(o => o.driverId)
-            .map(o => o.driverId!)
-        const driverStatesMap = new Map<string, any>()
-
-        if (driverIds.length > 0) {
-            const RedisService = (await import('#services/redis_service')).default
-            const states = await Promise.all(driverIds.map(id => RedisService.getDriverState(id)))
-            states.forEach(state => {
-                if (state) driverStatesMap.set(state.id, state)
-            })
-        }
-
-        // --- Global Status Counts (for filter badges) ---
-        // Base query for counts (respects client and search, but NOT status filter)
-        const baseCountQuery = () => {
-            let q = Order.query().where('clientId', clientId).where('isDeleted', false)
-            if (options.search) {
-                const term = `%${options.search}%`
-                q = q.where((builder) => {
-                    builder.whereILike('id', term).orWhereILike('refId', term)
-                })
-            }
-            return q
-        }
-
-        const [totalAll, totalPending, totalInProgress, totalDelivered, totalFailed] = await Promise.all([
-            baseCountQuery().count('* as total'),
-            baseCountQuery().where('status', 'PENDING').count('* as total'),
-            baseCountQuery().whereIn('status', ['ACCEPTED', 'IN_TRANSIT', 'PICKING_UP', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY']).count('* as total'),
-            baseCountQuery().where('status', 'DELIVERED').count('* as total'),
-            baseCountQuery().where('status', 'FAILED').count('* as total')
-        ])
-
-        return {
-            data: orders.map(order => this.formatOrderSummary(order, driverStatesMap.get(order.driverId || ''))),
-            meta: {
-                total: paginated.total,
-                perPage: paginated.perPage,
-                currentPage: paginated.currentPage,
-                lastPage: paginated.lastPage,
-                counts: {
-                    ALL: Number(totalAll[0].$extras.total),
-                    PENDING: Number(totalPending[0].$extras.total),
-                    IN_PROGRESS: Number(totalInProgress[0].$extras.total),
-                    DELIVERED: Number(totalDelivered[0].$extras.total),
-                    INCIDENTS: Number(totalFailed[0].$extras.total)
-                }
-            }
-        }
-    }
-
-    /**
-     * Formats an order into the optimized "nickel" summary JSON.
-     */
-    private formatOrderSummary(order: Order, redisDriverState?: any) {
-        const metadata = order.metadata || {}
-        const routeExec = metadata.route_execution || { visited: [] as string[], remaining: [] as string[], planned: [] as string[] }
-        const visited = routeExec.visited || []
-        const remaining = routeExec.remaining || []
-        const planned = routeExec.planned || []
-
-        const allStops = order.steps.flatMap(s => s.stops || [])
-
-        // --- Itinerary Logic ---
-        let displayFrom = ''
-        let displayTo = ''
-        let lastStopObj = null
-        let nextStopObj = null
-
-        const getStopActions = (stop: any) => {
-            const actions = stop?.actions || []
-            return {
-                pickup: actions.filter((a: any) => String(a.type).toUpperCase() === 'PICKUP').reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
-                drop: actions.filter((a: any) => String(a.type).toUpperCase() === 'DELIVERY').reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
-                service: actions.filter((a: any) => String(a.type).toUpperCase() === 'SERVICE').reduce((acc: number, a: any) => acc + (a.quantity || 0), 0)
-            }
-        }
-
-        // --- Aggregate Order-wide Action Totals (Quantities) ---
-        const actionTotals = {
-            pickup: 0,
-            drop: 0,
-            service: 0
-        }
-        allStops.forEach(stop => {
-            const actions = stop.actions || []
-            actions.forEach((a: any) => {
-                const q = a.quantity || 0
-                if (String(a.type).toUpperCase() === 'PICKUP') actionTotals.pickup += q
-                else if (String(a.type).toUpperCase() === 'DELIVERY') actionTotals.drop += q
-                else if (String(a.type).toUpperCase() === 'SERVICE') actionTotals.service += q
-            })
-        })
-
-        // Identify key stops for the summary
-        const effectivePlanned = planned.length > 0
-            ? planned
-            : allStops.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map(s => s.id)
-
-        const firstStopId = effectivePlanned[0]
-        const finalStopId = effectivePlanned[effectivePlanned.length - 1]
-
-        const lastStopId = visited.length > 0 ? visited[visited.length - 1] : firstStopId
-        const nextStopId = remaining.length > 0 ? remaining[0] : finalStopId
-
-        const lastStop = allStops.find(s => s.id === lastStopId)
-        const nextStop = allStops.find(s => s.id === nextStopId)
-
-        if (lastStop) {
-            lastStopObj = {
-                id: lastStop.id,
-                address: lastStop.address?.formattedAddress || lastStop.address?.street || 'Départ non défini',
-                lat: lastStop.address?.lat,
-                lng: lastStop.address?.lng,
-                actions: getStopActions(lastStop)
-            }
-            displayFrom = lastStopObj.address
-        }
-
-        if (nextStop) {
-            nextStopObj = {
-                id: nextStop.id,
-                address: nextStop.address?.formattedAddress || nextStop.address?.street || 'Destination non définie',
-                lat: nextStop.address?.lat,
-                lng: nextStop.address?.lng,
-                actions: getStopActions(nextStop)
-            }
-            displayTo = nextStopObj.address
-        }
-
-        // --- Next Stop Actions ---
-        let nextStopActions = null
-        if (remaining.length > 0) {
-            const nextStopId = remaining[0]
-            const nextStop = allStops.find(s => s.id === nextStopId)
-            if (nextStop && nextStop.actions && nextStop.actions.length > 0) {
-                const firstAction = nextStop.actions[0]
-                nextStopActions = {
-                    type: firstAction.type,
-                    mainItem: firstAction.transitItem?.name || 'Item',
-                    totalCount: nextStop.actions.length
-                }
-            }
-        }
-
-        const totalStops = planned.length || allStops.length
-        const visitedCount = visited.length
-        const progressPercent = totalStops > 0 ? Math.round((visitedCount / totalStops) * 100) : 0
-
-        const totalActions = allStops.reduce((acc, stop) => acc + (stop.actions?.length || 0), 0)
-
-        return {
-            id: order.id,
-            status: order.status,
-            assignment: {
-                mode: order.assignmentMode,
-                priority: order.priority
-            },
-            attribution: order.driverId ? {
-                driver: {
-                    id: order.driver?.id,
-                    name: order.driver?.fullName,
-                    phone: order.driver?.phone,
-                    avatar: null, // To be handled later if needed
-                    position: (redisDriverState?.last_lat && redisDriverState?.last_lng)
-                        ? {
-                            lat: Number(redisDriverState.last_lat),
-                            lng: Number(redisDriverState.last_lng)
-                        }
-                        : (order.driver?.driverSetting ? {
-                            lat: order.driver.driverSetting.currentLat,
-                            lng: order.driver.driverSetting.currentLng
-                        } : null)
-                },
-                vehicle: (order.driver?.driverSetting?.vehiclePlate
-                    ? {
-                        id: order.driver.driverSetting.id,
-                        type: order.driver.driverSetting.vehicleType || 'UNKNOWN',
-                        plate: order.driver.driverSetting.vehiclePlate
-                    }
-                    : null
-                )
-            } : null,
-            itinerary: {
-                totalStops,
-                visitedCount,
-                progressPercent,
-                totalActions,
-                display: {
-                    label: remaining.length === 0 && planned.length > 0 ? "Itinéraire Complet" : "En cours",
-                    from: displayFrom,
-                    to: displayTo
-                },
-                stops: {
-                    last: lastStopObj,
-                    next: nextStopObj
-                },
-                actionTotals
-            },
-            nextStopActions,
-            pricing: {
-                amount: order.pricingData?.clientFee || 0,
-                currency: order.pricingData?.currency || 'XOF'
-            },
-            timestamps: {
-                createdAt: order.createdAt,
-                updatedAt: order.updatedAt
-            }
-        }
-    }
-
-    /**
-     * Initiates a new empty order for a client.
-     */
-    async initiateOrder(clientId: string, metadata: any = {}, trx?: TransactionClientContract) {
-        return this.orderDraftService.initiateOrder(clientId, metadata, trx)
-    }
-
-    /**
-     * Submits a draft order to PENDING status.
-     */
-    async submitOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
-        return this.orderDraftService.submitOrder(orderId, clientId, trx)
-    }
-
-    /**
-     * Gets full order details with all sub-components and applied shadows.
-     */
-    async getOrderDetails(orderId: string, clientId: string, options: any = {}) {
-        return this.orderDraftService.getOrderDetails(orderId, clientId, options)
-    }
-
-    /**
-     * Gets order route (geometry + waypoints).
-     */
-    async getRoute(orderId: string, clientId: string, options: any) {
-        return this.orderDraftService.getRoute(orderId, clientId, options)
-    }
-
-    /**
-     * Reverts all pending shadow changes for an order.
-     */
-    async revertPendingChanges(orderId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const order = await Order.query({ client: effectiveTrx })
-                .where('id', orderId)
-                .where('clientId', clientId)
-                .firstOrFail()
-
-            await this.orderDraftService.revertPendingChanges(order.id, effectiveTrx)
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return order
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async addStep(orderId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const res = await this.stepService.addStep(orderId, clientId, data, effectiveTrx)
-            await redis.del(`order:pending_route:${orderId}`)
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
-            res.validationErrors = LogisticsService.validateDraftConsistency(virtualState).validationErrors
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-
-            throw error
-        }
-    }
-
-    async updateStep(stepId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const res = await this.stepService.updateStep(stepId, clientId, data, effectiveTrx)
-            const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
-            await redis.del(`order:pending_route:${step.order_id}`)
-
-            const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async removeStep(stepId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
-            const orderId = step.order_id
-            await redis.del(`order:pending_route:${orderId}`)
-            const res = await this.stepService.removeStep(stepId, clientId, effectiveTrx)
-
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async addStop(stepId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const res = await this.stopService.addStop(stepId, clientId, data, effectiveTrx)
-            const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
-            await redis.del(`order:pending_route:${step.order_id}`)
-
-            const order = await this.orderDraftService.getOrderDetails(step.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async updateStop(stopId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const res = await this.stopService.updateStop(stopId, clientId, data, effectiveTrx)
-            const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
-            await redis.del(`order:pending_route:${stop.order_id}`)
-
-            const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async removeStop(stopId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
-            const orderId = stop.order_id
-            await redis.del(`order:pending_route:${orderId}`)
-            const res = await this.stopService.removeStop(stopId, clientId, effectiveTrx)
-
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async addAction(stopId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const res = await this.actionService.addAction(stopId, clientId, data, effectiveTrx)
-            const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
-            await redis.del(`order:pending_route:${stop.order_id}`)
-
-            const order = await this.orderDraftService.getOrderDetails(stop.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: stop.orderId,
-                clientId
-            }))
-
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async updateAction(actionId: string, clientId: string, data: any, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const res = await this.actionService.updateAction(actionId, clientId, data, effectiveTrx)
-            const action = await db.from('actions').useTransaction(effectiveTrx).where('id', actionId).first()
-            await redis.del(`order:pending_route:${action.order_id}`)
-
-            const order = await this.orderDraftService.getOrderDetails(action.order_id, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: action.orderId,
-                clientId
-            }))
-
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async removeAction(actionId: string, clientId: string, options: { trx?: TransactionClientContract } = {}) {
-        const effectiveTrx = options.trx || await db.transaction()
-        try {
-            const action = await db.from('actions').useTransaction(effectiveTrx).where('id', actionId).first()
-            const orderId = action.order_id
-            await redis.del(`order:pending_route:${orderId}`)
-            const res = await this.actionService.removeAction(actionId, clientId, effectiveTrx)
-
-            const order = await this.orderDraftService.getOrderDetails(orderId, clientId, { trx: effectiveTrx, json: false }) as Order
-            await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
-            await order.useTransaction(effectiveTrx).save()
-
-            if (!options.trx) await effectiveTrx.commit()
-
-
-            // Emit structure change event
-            await emitter.emit(OrderStructureChanged, new OrderStructureChanged({
-                orderId: order.id,
-                clientId
-            }))
-
-            return res
-        } catch (error) {
-            if (!options.trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    async addTransitItem(orderId: string, clientId: string, data: any, trx?: TransactionClientContract) {
-        return this.transitItemService.addTransitItem(orderId, clientId, data, trx)
-    }
-
-    async updateTransitItem(itemId: string, clientId: string, data: any, trx?: TransactionClientContract) {
-        return this.transitItemService.updateTransitItem(itemId, clientId, data, trx)
-    }
-
-    /**
-     * Updates top-level order metadata and optionally syncs structure if draft.
-     */
-    async updateOrder(orderId: string, clientId: string, payload: any, trx?: TransactionClientContract) {
-        const hasComplexPayload = payload.steps || payload.transit_items
-        const effectiveTrx = trx || await db.transaction()
-
-        try {
-            const order = await Order.query({ client: effectiveTrx })
-                .where('id', orderId)
-                .where('clientId', clientId)
-                .forUpdate()
-                .firstOrFail()
-
-            if (payload.metadata) order.metadata = payload.metadata
-            if (payload.ref_id) order.refId = payload.ref_id
-            if (payload.assignment_mode) order.assignmentMode = payload.assignment_mode
-            if (payload.priority) order.priority = payload.priority
-
-            await order.useTransaction(effectiveTrx).save()
-
-            if (hasComplexPayload) {
-                if (order.status === 'DRAFT') {
-                    // Clear existing structure before syncing for DRAFT orders
-                    await db.from('actions').whereIn('stop_id', db.from('stops').whereIn('step_id', db.from('steps').where('order_id', orderId).select('id')).select('id')).useTransaction(effectiveTrx).delete()
-                    await db.from('stops').whereIn('step_id', db.from('steps').where('order_id', orderId).select('id')).useTransaction(effectiveTrx).delete()
-                    await db.from('steps').where('order_id', orderId).useTransaction(effectiveTrx).delete()
-                    await db.from('transit_items').where('order_id', orderId).useTransaction(effectiveTrx).delete()
-                }
-
-                await this.syncOrderStructure(orderId, clientId, payload, effectiveTrx)
-                await redis.del(`order:pending_route:${orderId}`)
-            }
-
-            if (!trx) await effectiveTrx.commit()
-            return order
-        } catch (error) {
-            if (!trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    /**
-     * Internal method to populate/sync steps, stops and actions.
-     */
-    private async syncOrderStructure(orderId: string, clientId: string, payload: any, trx: any) {
-        const { items: mappedItems, map: idMap } = PayloadMapper.mapTransitItems(payload.transit_items || [])
-        const mappedSteps = PayloadMapper.replaceReferenceIds(payload.steps || [], idMap)
-
-        await this.transitItemService.createBulk(orderId, mappedItems, trx)
-
-        if (mappedSteps) {
-            for (const stepData of mappedSteps) {
-                let stepRes: any
-                if (stepData.id) {
-                    stepRes = await this.stepService.updateStep(stepData.id, clientId, stepData, trx)
-                } else {
-                    stepRes = await this.stepService.addStep(orderId, clientId, stepData, trx)
-                }
-
-                if (stepData.stops) {
-                    for (const stopData of stepData.stops) {
-                        // Inject price override if provided in payload
-                        if (payload.priceOverrides) {
-                            const stopKey = stopData.id || stopData.reference_id || stopData.reference
-                            if (stopKey && payload.priceOverrides[stopKey] !== undefined) {
-                                stopData.metadata = stopData.metadata || {}
-                                stopData.metadata.price_override = {
-                                    is_active: true,
-                                    amount: payload.priceOverrides[stopKey]
-                                }
-                            }
-                        }
-
-                        if (stopData.id) {
-                            await this.stopService.updateStop(stopData.id, clientId, stopData, trx)
-                        } else {
-                            const targetStepId = stepRes.entity?.id || stepData.id
-                            await this.stopService.addStop(targetStepId, clientId, stopData, trx)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Pushes pending updates to the live order.
-     */
-    async pushUpdates(orderId: string, clientId: string) {
-        return this.orderDraftService.pushUpdates(orderId, clientId)
-    }
-
-    /**
-     * Cancels a pending order.
-     */
-    async cancelOrder(orderId: string, clientId: string, reason: string) {
-        const trx = await db.transaction()
-        try {
-            const order = await Order.query({ client: trx })
-                .where('id', orderId)
-                .where('clientId', clientId)
-                .forUpdate()
-                .first()
-
-            if (!order) throw new Error('Order not found')
-            if (order.status !== 'PENDING') throw new Error('Only pending orders can be cancelled')
-
-            order.status = 'CANCELLED'
-            order.statusHistory = [
-                ...(order.statusHistory || []),
-                {
-                    status: 'CANCELLED',
-                    timestamp: DateTime.now().toISO()!,
-                    note: `Cancelled by client. Reason: ${reason}`
-                }
-            ]
-            await order.useTransaction(trx).save()
-            await trx.commit()
-
-            emitter.emit(OrderStatusUpdated, new OrderStatusUpdated({
-                orderId: order.id,
-                status: order.status,
-                clientId: order.clientId
-            }))
-
-            // Notify offered/assigned driver if any
-            const targetDriverId = order.driverId || order.offeredDriverId
-            if (targetDriverId) {
-                const driver = await (await import('#models/user')).default.find(targetDriverId)
-                if (driver) {
-                    await NotificationService.sendMissionCancelled(driver, {
-                        orderId: order.id,
-                        reason,
-                    })
-                }
-            }
-
-            return order
-        } catch (error) {
-            await trx.rollback()
-            throw error
-        }
-    }
-
-    /**
-     * Explicitly set the next stop for a driver (Driver Choice).
-     */
-    async setNextStop(orderId: string, clientId: string, stopId: string) {
-        const trx = await db.transaction()
-        try {
-            const order = await Order.query({ client: trx })
-                .where('id', orderId)
-                .where('clientId', clientId)
-                .preload('steps', (q) => q.preload('stops'))
-                .firstOrFail()
-
-            const allStops = order.steps.flatMap(s => s.stops || [])
-            const targetStop = allStops.find(s => s.id === stopId)
-            if (!targetStop) throw new Error('Stop not found in this order')
-
-            const meta = order.metadata || {}
-            meta.driver_choices = {
-                ...(meta.driver_choices || {}),
-                next_stop_id: stopId
-            }
-            order.metadata = meta
-            await order.useTransaction(trx).save()
-
-            // Trigger re-calculation
-            const reloadedOrder = await Order.query({ client: trx })
-                .where('id', orderId)
-                .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
-                .preload('transitItems')
-                .firstOrFail()
-
-            await this.orderDraftService.calculateOrderStats(reloadedOrder, trx)
-
-            await trx.commit()
-        } catch (error) {
-            await trx.rollback()
-            throw error
-        }
-    }
-
-    /**
-     * Re-calculates the remaining route from a specific GPS position.
-     */
-    async recalculateRoute(orderId: string, clientId: string, gps?: { lat: number, lng: number }) {
-        const trx = await db.transaction()
-        try {
-            const order = await Order.query({ client: trx })
-                .where('id', orderId)
-                .where('clientId', clientId)
-                .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
-                .preload('transitItems')
-                .preload('leg')
-                .firstOrFail()
-
-            const forcedStartLocation: [number, number] | undefined = gps ? [gps.lng, gps.lat] : undefined
-
-            await this.orderDraftService.calculateOrderStats(order, trx, { forcedStartLocation })
-            await order.useTransaction(trx).save()
-
-            await trx.commit()
-
-            return this.orderDraftService.getRoute(orderId, clientId, { live: true, pending: false })
-        } catch (error) {
-            await trx.rollback()
-            throw error
-        }
-    }
-
-    /**
-     * Get order statistics for a client over the last 7 days.
-     * Respects requestedFields to only perform necessary queries.
-     */
-    async getOrderStats(clientId: string, requestedFields: string[] = []) {
-        const now = DateTime.local()
-        const sevenDaysAgo = now.minus({ days: 6 }).startOf('day')
-
-        const result: any = {}
-
-        // Helper for base query within 7 days
-        const base7dQuery = () => Order.query()
-            .where('clientId', clientId)
-            .where('isDeleted', false)
-            .where('createdAt', '>=', sevenDaysAgo.toSQL()!)
-
-        // 1. Daily Counts (for chart)
-        if (requestedFields.includes('dailyCounts')) {
-            const dailyActivity = []
-            for (let i = 6; i >= 0; i--) {
-                const date = now.minus({ days: i })
-                const startOfDay = date.startOf('day').toSQL()
-                const endOfDay = date.endOf('day').toSQL()
-
-                const count = await Order.query()
-                    .where('clientId', clientId)
-                    .where('isDeleted', false)
-                    .whereBetween('createdAt', [startOfDay!, endOfDay!])
-                    .count('* as total')
-
-                dailyActivity.push({
-                    date: date.toFormat('dd/MM'),
-                    dayName: date.toFormat('ccc'),
-                    count: Number(count[0].$extras.total || 0)
-                })
-            }
-            result.dailyCounts = dailyActivity
-        }
-
-        // 2. Completion Rate
-        if (requestedFields.includes('completionRate')) {
-            const [total, completed] = await Promise.all([
-                base7dQuery().whereNot('status', 'CANCELLED').count('* as total'),
-                base7dQuery().whereIn('status', ['DELIVERED', 'COMPLETED']).count('* as total')
-            ])
-
-            const totalCount = Number(total[0].$extras.total || 0)
-            const completedCount = Number(completed[0].$extras.total || 0)
-            result.completionRate = totalCount > 0 ? Number(((completedCount / totalCount) * 100).toFixed(1)) : 100
-            result.total7d = totalCount
-        }
-
-        // 3. Templates Distribution
-        if (requestedFields.includes('templates')) {
-            const templateCounts = await base7dQuery()
-                .select('template')
-                .count('* as total')
-                .groupBy('template')
-
-            result.templates = templateCounts.map(tc => ({
-                template: tc.template || 'OTHER',
-                count: Number(tc.$extras.total || 0)
-            }))
-        }
-
-        // 4. In Progress Count (Live active orders)
-        if (requestedFields.includes('inProgress')) {
-            const inProgress = await Order.query()
-                .where('clientId', clientId)
-                .where('isDeleted', false)
-                .whereIn('status', ['ACCEPTED', 'IN_TRANSIT', 'PICKING_UP', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
-                .count('* as total')
-
-            result.inProgressCount = Number(inProgress[0].$extras.total || 0)
-        }
-
-        return result
-    }
-
-    /**
-     * Estimates an order before creation.
-     */
-    async getEstimation(payload: any) {
-        const stops = payload.stops || []
-        if (stops.length < 2) throw new Error('Need at least 2 stops for estimation')
-
-        const routeDetails = await GeoService.calculateOptimizedRoute(stops)
-        if (!routeDetails) throw new Error('Route calculation failed')
-
-        const pricing = await PricingService.calculateFees(
-            routeDetails.global_summary.total_distance_meters,
-            routeDetails.global_summary.total_duration_seconds,
-            [] // No items yet
+  constructor(
+    protected stepService: StepService,
+    protected stopService: StopService,
+    protected actionService: ActionService,
+    protected transitItemService: TransitItemService,
+    protected orderDraftService: OrderDraftService
+  ) { }
+
+  /**
+   * Lists orders for a client.
+   */
+  async listOrders(clientId: string, targetCompanyId?: string) {
+    return Order.query()
+      .where((q) => {
+        q.where('clientId', clientId)
+        if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+      })
+      .where('isDeleted', false)
+      .preload('driver')
+      .preload('vehicle')
+      .orderBy('createdAt', 'desc')
+  }
+
+  /**
+   * Lists orders for a client with optimized summary format.
+   * Supports server-side pagination, search, and status filtering.
+   */
+  async listOrdersSummary(
+    clientId: string,
+    options: {
+      page?: number
+      perPage?: number
+      search?: string
+      status?: string
+      targetCompanyId?: string
+    } = {}
+  ) {
+    const page = options.page || 1
+    const perPage = options.perPage || 12
+
+    let query = Order.query()
+      .where((q) => {
+        q.where('clientId', clientId)
+        if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+      })
+      .where('isDeleted', false)
+      .preload('driver', (q) => q.preload('driverSetting', (sq) => sq.preload('activeVehicle')))
+      .preload('vehicle')
+      .preload('steps', (q) =>
+        q.orderBy('sequence', 'asc').preload('stops', (sq) =>
+          sq
+            .orderBy('display_order', 'asc')
+            .preload('address')
+            .preload('actions', (aq) => aq.preload('transitItem'))
         )
+      )
+
+    // Status filter
+    if (options.status && options.status !== 'ALL') {
+      if (options.status === 'IN_PROGRESS') {
+        query = query.whereIn('status', [
+          'ACCEPTED',
+          'IN_TRANSIT',
+          'PICKING_UP',
+          'AT_PICKUP',
+          'COLLECTED',
+          'AT_DELIVERY',
+        ])
+      } else if (options.status === 'INCIDENTS') {
+        query = query.where('status', 'FAILED')
+      } else {
+        query = query.where('status', options.status)
+      }
+    }
+
+    // Search by order ID or ref
+    if (options.search) {
+      const term = `%${options.search}%`
+      query = query.where((builder) => {
+        builder.whereILike('id', term).orWhereILike('refId', term)
+      })
+    }
+
+    query = query.orderBy('createdAt', 'desc')
+
+    const paginated = await query.paginate(page, perPage)
+    const orders = paginated.all()
+
+    // --- Real-time Redis GPS Fallback ---
+    const driverIds = orders.filter((o) => o.driverId).map((o) => o.driverId!)
+    const driverStatesMap = new Map<string, any>()
+
+    if (driverIds.length > 0) {
+      const RedisService = (await import('#services/redis_service')).default
+      const states = await Promise.all(driverIds.map((id) => RedisService.getDriverState(id)))
+      states.forEach((state) => {
+        if (state) driverStatesMap.set(state.id, state)
+      })
+    }
+
+    // --- Global Status Counts (for filter badges) ---
+    // Base query for counts (respects client and search, but NOT status filter)
+    const baseCountQuery = () => {
+      let q = Order.query()
+        .where((sq) => {
+          sq.where('clientId', clientId)
+          if (options.targetCompanyId) sq.orWhere('companyId', options.targetCompanyId)
+        })
+        .where('isDeleted', false)
+      if (options.search) {
+        const term = `%${options.search}%`
+        q = q.where((builder) => {
+          builder.whereILike('id', term).orWhereILike('refId', term)
+        })
+      }
+      return q
+    }
+
+    const [totalAll, totalPending, totalInProgress, totalDelivered, totalFailed] =
+      await Promise.all([
+        baseCountQuery().count('* as total'),
+        baseCountQuery().where('status', 'PENDING').count('* as total'),
+        baseCountQuery()
+          .whereIn('status', [
+            'ACCEPTED',
+            'IN_TRANSIT',
+            'PICKING_UP',
+            'AT_PICKUP',
+            'COLLECTED',
+            'AT_DELIVERY',
+          ])
+          .count('* as total'),
+        baseCountQuery().where('status', 'DELIVERED').count('* as total'),
+        baseCountQuery().where('status', 'FAILED').count('* as total'),
+      ])
+
+    return {
+      data: orders.map((order) =>
+        this.formatOrderSummary(order, driverStatesMap.get(order.driverId || ''))
+      ),
+      meta: {
+        total: paginated.total,
+        perPage: paginated.perPage,
+        currentPage: paginated.currentPage,
+        lastPage: paginated.lastPage,
+        counts: {
+          ALL: Number(totalAll[0].$extras.total),
+          PENDING: Number(totalPending[0].$extras.total),
+          IN_PROGRESS: Number(totalInProgress[0].$extras.total),
+          DELIVERED: Number(totalDelivered[0].$extras.total),
+          INCIDENTS: Number(totalFailed[0].$extras.total),
+        },
+      },
+    }
+  }
+
+  /**
+   * Formats an order into the optimized "nickel" summary JSON.
+   */
+  private formatOrderSummary(order: Order, redisDriverState?: any) {
+    const metadata = order.metadata || {}
+    const routeExec = metadata.route_execution || {
+      visited: [] as string[],
+      remaining: [] as string[],
+      planned: [] as string[],
+    }
+    const visited = routeExec.visited || []
+    const remaining = routeExec.remaining || []
+    const planned = routeExec.planned || []
+
+    const allStops = order.steps.flatMap((s) => s.stops || [])
+
+    // --- Itinerary Logic ---
+    let displayFrom = ''
+    let displayTo = ''
+    let lastStopObj = null
+    let nextStopObj = null
+
+    const getStopActions = (stop: any) => {
+      const actions = stop?.actions || []
+      return {
+        pickup: actions
+          .filter((a: any) => String(a.type).toUpperCase() === 'PICKUP')
+          .reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
+        drop: actions
+          .filter((a: any) => String(a.type).toUpperCase() === 'DELIVERY')
+          .reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
+        service: actions
+          .filter((a: any) => String(a.type).toUpperCase() === 'SERVICE')
+          .reduce((acc: number, a: any) => acc + (a.quantity || 0), 0),
+      }
+    }
+
+    // --- Aggregate Order-wide Action Totals (Quantities) ---
+    const actionTotals = {
+      pickup: 0,
+      drop: 0,
+      service: 0,
+    }
+    allStops.forEach((stop) => {
+      const actions = stop.actions || []
+      actions.forEach((a: any) => {
+        const q = a.quantity || 0
+        if (String(a.type).toUpperCase() === 'PICKUP') actionTotals.pickup += q
+        else if (String(a.type).toUpperCase() === 'DELIVERY') actionTotals.drop += q
+        else if (String(a.type).toUpperCase() === 'SERVICE') actionTotals.service += q
+      })
+    })
+
+    // Identify key stops for the summary
+    const effectivePlanned =
+      planned.length > 0
+        ? planned
+        : allStops.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map((s) => s.id)
+
+    const firstStopId = effectivePlanned[0]
+    const finalStopId = effectivePlanned[effectivePlanned.length - 1]
+
+    const lastStopId = visited.length > 0 ? visited[visited.length - 1] : firstStopId
+    const nextStopId = remaining.length > 0 ? remaining[0] : finalStopId
+
+    const lastStop = allStops.find((s) => s.id === lastStopId)
+    const nextStop = allStops.find((s) => s.id === nextStopId)
+
+    if (lastStop) {
+      lastStopObj = {
+        id: lastStop.id,
+        address:
+          lastStop.address?.formattedAddress || lastStop.address?.street || 'Départ non défini',
+        lat: lastStop.address?.lat,
+        lng: lastStop.address?.lng,
+        actions: getStopActions(lastStop),
+      }
+      displayFrom = lastStopObj.address
+    }
+
+    if (nextStop) {
+      nextStopObj = {
+        id: nextStop.id,
+        address:
+          nextStop.address?.formattedAddress ||
+          nextStop.address?.street ||
+          'Destination non définie',
+        lat: nextStop.address?.lat,
+        lng: nextStop.address?.lng,
+        actions: getStopActions(nextStop),
+      }
+      displayTo = nextStopObj.address
+    }
+
+    // --- Next Stop Actions ---
+    let nextStopActions = null
+    if (remaining.length > 0) {
+      const nextStopId = remaining[0]
+      const nextStop = allStops.find((s) => s.id === nextStopId)
+      if (nextStop && nextStop.actions && nextStop.actions.length > 0) {
+        const firstAction = nextStop.actions[0]
+        nextStopActions = {
+          type: firstAction.type,
+          mainItem: firstAction.transitItem?.name || 'Item',
+          totalCount: nextStop.actions.length,
+        }
+      }
+    }
+
+    const totalStops = planned.length || allStops.length
+    const visitedCount = visited.length
+    const progressPercent = totalStops > 0 ? Math.round((visitedCount / totalStops) * 100) : 0
+
+    const totalActions = allStops.reduce((acc, stop) => acc + (stop.actions?.length || 0), 0)
+
+    return {
+      id: order.id,
+      status: order.status,
+      assignment: {
+        mode: order.assignmentMode,
+        priority: order.priority,
+      },
+      attribution: order.driverId
+        ? {
+          driver: {
+            id: order.driver?.id,
+            name: order.driver?.fullName,
+            phone: order.driver?.phone,
+            avatar: null, // To be handled later if needed
+            position:
+              redisDriverState?.last_lat && redisDriverState?.last_lng
+                ? {
+                  lat: Number(redisDriverState.last_lat),
+                  lng: Number(redisDriverState.last_lng),
+                }
+                : order.driver?.driverSetting
+                  ? {
+                    lat: order.driver.driverSetting.currentLat,
+                    lng: order.driver.driverSetting.currentLng,
+                  }
+                  : null,
+          },
+          vehicle: order.driver?.driverSetting?.vehiclePlate
+            ? {
+              id: order.driver.driverSetting.id,
+              type: order.driver.driverSetting.vehicleType || 'UNKNOWN',
+              plate: order.driver.driverSetting.vehiclePlate,
+            }
+            : null,
+        }
+        : null,
+      itinerary: {
+        totalStops,
+        visitedCount,
+        progressPercent,
+        totalActions,
+        display: {
+          label: remaining.length === 0 && planned.length > 0 ? 'Itinéraire Complet' : 'En cours',
+          from: displayFrom,
+          to: displayTo,
+        },
+        stops: {
+          last: lastStopObj,
+          next: nextStopObj,
+        },
+        actionTotals,
+      },
+      nextStopActions,
+      pricing: {
+        amount: order.pricingData?.clientFee || 0,
+        currency: order.pricingData?.currency || 'XOF',
+        paymentStatus: order.paymentStatus,
+        amountPaid: order.amountPaid,
+      },
+      timestamps: {
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      },
+    }
+  }
+
+  /**
+   * Initiates a new empty order for a client.
+   */
+  async initiateOrder(clientId: string, metadata: any = {}, trx?: TransactionClientContract) {
+    return this.orderDraftService.initiateOrder(clientId, metadata, trx)
+  }
+
+  /**
+   * Submits a draft order to PENDING status.
+   */
+  async submitOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
+    return this.orderDraftService.submitOrder(orderId, clientId, trx)
+  }
+
+  /**
+   * Gets full order details with all sub-components and applied shadows.
+   */
+  async getOrderDetails(orderId: string, clientId: string, options: any = {}) {
+    return this.orderDraftService.getOrderDetails(orderId, clientId, options)
+  }
+
+  /**
+   * Gets order route (geometry + waypoints).
+   */
+  async getRoute(orderId: string, clientId: string, options: any) {
+    return this.orderDraftService.getRoute(orderId, clientId, options)
+  }
+
+  /**
+   * Reverts all pending shadow changes for an order.
+   */
+  async revertPendingChanges(
+    orderId: string,
+    clientId: string,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const order = await Order.query({ client: effectiveTrx })
+        .where('id', orderId)
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+        })
+        .firstOrFail()
+
+      await this.orderDraftService.revertPendingChanges(order.id, clientId, {
+        trx: effectiveTrx,
+        targetCompanyId: options.targetCompanyId,
+      })
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return order
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async addStep(
+    orderId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const res = await this.stepService.addStep(
+        orderId,
+        clientId,
+        data,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+      await redis.del(`order:pending_route:${orderId}`)
+      const order = (await this.orderDraftService.getOrderDetails(orderId, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      const virtualState = this.orderDraftService.buildVirtualState(order, { view: 'CLIENT' })
+      res.validationErrors =
+        LogisticsService.validateDraftConsistency(virtualState).validationErrors
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+
+      throw error
+    }
+  }
+
+  async updateStep(
+    stepId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const res = await this.stepService.updateStep(
+        stepId,
+        clientId,
+        data,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+      const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
+      await redis.del(`order:pending_route:${step.order_id}`)
+
+      const order = (await this.orderDraftService.getOrderDetails(step.order_id, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async removeStep(
+    stepId: string,
+    clientId: string,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
+      const orderId = step.order_id
+      await redis.del(`order:pending_route:${orderId}`)
+      const res = await this.stepService.removeStep(
+        stepId,
+        clientId,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+
+      const order = (await this.orderDraftService.getOrderDetails(orderId, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async addStop(
+    stepId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const res = await this.stopService.addStop(
+        stepId,
+        clientId,
+        data,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+      const step = await db.from('steps').useTransaction(effectiveTrx).where('id', stepId).first()
+      await redis.del(`order:pending_route:${step.order_id}`)
+
+      const order = (await this.orderDraftService.getOrderDetails(step.order_id, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async updateStop(
+    stopId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const res = await this.stopService.updateStop(
+        stopId,
+        clientId,
+        data,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+      const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+      await redis.del(`order:pending_route:${stop.order_id}`)
+
+      const order = (await this.orderDraftService.getOrderDetails(stop.order_id, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async removeStop(
+    stopId: string,
+    clientId: string,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+      const orderId = stop.order_id
+      await redis.del(`order:pending_route:${orderId}`)
+      const res = await this.stopService.removeStop(
+        stopId,
+        clientId,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+
+      const order = (await this.orderDraftService.getOrderDetails(orderId, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async restoreStopPrice(
+    stopId: string,
+    clientId: string,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+      const orderId = stop.order_id
+      await redis.del(`order:pending_route:${orderId}`)
+      const res = await this.stopService.restorePrice(
+        stopId,
+        clientId,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+
+      const order = (await this.orderDraftService.getOrderDetails(orderId, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async addAction(
+    stopId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const res = await this.actionService.addAction(
+        stopId,
+        clientId,
+        data,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+      const stop = await db.from('stops').useTransaction(effectiveTrx).where('id', stopId).first()
+      await redis.del(`order:pending_route:${stop.order_id}`)
+
+      const order = (await this.orderDraftService.getOrderDetails(stop.order_id, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: stop.order_id,
+          clientId,
+        })
+      )
+
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async updateAction(
+    actionId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const res = await this.actionService.updateAction(
+        actionId,
+        clientId,
+        data,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+      const action = await db
+        .from('actions')
+        .useTransaction(effectiveTrx)
+        .where('id', actionId)
+        .first()
+      await redis.del(`order:pending_route:${action.order_id}`)
+
+      const order = (await this.orderDraftService.getOrderDetails(action.order_id, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: action.order_id,
+          clientId,
+        })
+      )
+
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async removeAction(
+    actionId: string,
+    clientId: string,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const action = await db
+        .from('actions')
+        .useTransaction(effectiveTrx)
+        .where('id', actionId)
+        .first()
+      const orderId = action.order_id
+      await redis.del(`order:pending_route:${orderId}`)
+      const res = await this.actionService.removeAction(
+        actionId,
+        clientId,
+        effectiveTrx,
+        options.targetCompanyId
+      )
+
+      const order = (await this.orderDraftService.getOrderDetails(orderId, clientId, {
+        trx: effectiveTrx,
+        json: false,
+        targetCompanyId: options.targetCompanyId,
+      })) as Order
+      await this.orderDraftService.calculateOrderStats(order, effectiveTrx)
+      await order.useTransaction(effectiveTrx).save()
+
+      if (!options.trx) await effectiveTrx.commit()
+
+      // Emit structure change event
+      await emitter.emit(
+        OrderStructureChanged,
+        new OrderStructureChanged({
+          orderId: order.id,
+          clientId,
+        })
+      )
+
+      return res
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  async addTransitItem(
+    orderId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    return this.transitItemService.addTransitItem(
+      orderId,
+      clientId,
+      data,
+      options.trx,
+      options.targetCompanyId
+    )
+  }
+
+  async updateTransitItem(
+    itemId: string,
+    clientId: string,
+    data: any,
+    options: { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    return this.transitItemService.updateTransitItem(
+      itemId,
+      clientId,
+      data,
+      options.trx,
+      options.targetCompanyId
+    )
+  }
+
+  /**
+   * Updates top-level order metadata and optionally syncs structure if draft.
+   */
+  async updateOrder(
+    orderId: string,
+    clientId: string,
+    payload: any,
+    trx?: TransactionClientContract,
+    targetCompanyId?: string
+  ) {
+    const hasComplexPayload = payload.steps || payload.transit_items
+    const effectiveTrx = trx || (await db.transaction())
+
+    try {
+      const order = await Order.query({ client: effectiveTrx })
+        .where('id', orderId)
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+        })
+        .forUpdate()
+        .firstOrFail()
+
+      if (payload.metadata) order.metadata = payload.metadata
+      if (payload.ref_id) order.refId = payload.ref_id
+      if (payload.assignment_mode) order.assignmentMode = payload.assignment_mode
+      if (payload.priority) order.priority = payload.priority
+
+      // Map B2B/Target specific fields
+      if (payload.targetCompanyId) order.companyId = payload.targetCompanyId
+      if (payload.targetDriverId) order.offeredDriverId = payload.targetDriverId
+      if (payload.vehicleId) order.vehicleId = payload.vehicleId
+      if (payload.paymentTrigger) order.paymentTrigger = payload.paymentTrigger
+      if (payload.payment_trigger) order.paymentTrigger = payload.payment_trigger
+
+      await order.useTransaction(effectiveTrx).save()
+
+      if (hasComplexPayload) {
+        if (order.status === 'DRAFT') {
+          // Clear existing structure before syncing for DRAFT orders
+          await db
+            .from('actions')
+            .whereIn(
+              'stop_id',
+              db
+                .from('stops')
+                .whereIn('step_id', db.from('steps').where('order_id', orderId).select('id'))
+                .select('id')
+            )
+            .useTransaction(effectiveTrx)
+            .delete()
+          await db
+            .from('stops')
+            .whereIn('step_id', db.from('steps').where('order_id', orderId).select('id'))
+            .useTransaction(effectiveTrx)
+            .delete()
+          await db.from('steps').where('order_id', orderId).useTransaction(effectiveTrx).delete()
+          await db
+            .from('transit_items')
+            .where('order_id', orderId)
+            .useTransaction(effectiveTrx)
+            .delete()
+        }
+
+        await this.syncOrderStructure(orderId, clientId, payload, effectiveTrx, targetCompanyId)
+        await redis.del(`order:pending_route:${orderId}`)
+      }
+
+      if (!trx) await effectiveTrx.commit()
+      return order
+    } catch (error) {
+      if (!trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  /**
+   * Internal method to populate/sync steps, stops and actions.
+   */
+  private async syncOrderStructure(
+    orderId: string,
+    clientId: string,
+    payload: any,
+    trx: any,
+    targetCompanyId?: string
+  ) {
+    const { items: mappedItems, map: idMap } = PayloadMapper.mapTransitItems(
+      payload.transit_items || []
+    )
+    const mappedSteps = PayloadMapper.replaceReferenceIds(payload.steps || [], idMap)
+
+    await this.transitItemService.createBulk(orderId, mappedItems, trx)
+
+    if (mappedSteps) {
+      for (const stepData of mappedSteps) {
+        let stepRes: any
+        if (stepData.id) {
+          stepRes = await this.stepService.updateStep(
+            stepData.id,
+            clientId,
+            stepData,
+            trx,
+            targetCompanyId
+          )
+        } else {
+          stepRes = await this.stepService.addStep(
+            orderId,
+            clientId,
+            stepData,
+            trx,
+            targetCompanyId
+          )
+        }
+
+        if (stepData.stops) {
+          for (const stopData of stepData.stops) {
+            // Inject price override if provided in payload
+            if (payload.priceOverrides) {
+              const stopKey = stopData.id || stopData.reference_id || stopData.reference
+              if (stopKey && payload.priceOverrides[stopKey] !== undefined) {
+                stopData.metadata = stopData.metadata || {}
+                stopData.metadata.price_override = {
+                  is_active: true,
+                  amount: payload.priceOverrides[stopKey],
+                }
+              }
+            }
+
+            if (stopData.id) {
+              await this.stopService.updateStop(
+                stopData.id,
+                clientId,
+                stopData,
+                trx,
+                targetCompanyId
+              )
+            } else {
+              const targetStepId = stepRes.entity?.id || stepData.id
+              await this.stopService.addStop(targetStepId, clientId, stopData, trx, targetCompanyId)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Pushes pending updates to the live order.
+   */
+  async pushUpdates(orderId: string, clientId: string, options: { targetCompanyId?: string } = {}) {
+    return this.orderDraftService.pushUpdates(orderId, clientId, options)
+  }
+
+  /**
+   * Cancels a pending order.
+   */
+  async cancelOrder(
+    orderId: string,
+    clientId: string,
+    reason: string,
+    options: { targetCompanyId?: string } = {}
+  ) {
+    const trx = await db.transaction()
+    try {
+      const order = await Order.query({ client: trx })
+        .where('id', orderId)
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+        })
+        .preload('steps', (q) =>
+          q.preload('stops', (sq) => sq.preload('actions'))
+        )
+        .forUpdate()
+        .first()
+
+      if (!order) throw new Error('Order not found')
+      if (!['PENDING', 'ACCEPTED'].includes(order.status)) {
+        throw new Error('Only pending orders that have not started can be cancelled')
+      }
+
+      const routeExecution = (order.metadata?.route_execution || {}) as {
+        visited?: string[]
+      }
+      const visited = Array.isArray(routeExecution.visited) ? routeExecution.visited : []
+      const hasStartedByStops = (order.steps || []).some((step) =>
+        (step.stops || []).some((stop) => {
+          const stopStatus = String(stop.status || 'PENDING').toUpperCase()
+          if (stopStatus !== 'PENDING') return true
+          return (stop.actions || []).some((action) => String(action.status || 'PENDING').toUpperCase() !== 'PENDING')
+        })
+      )
+
+      if (visited.length > 0 || hasStartedByStops) {
+        throw new Error('Order already started and can no longer be cancelled')
+      }
+
+      order.status = 'CANCELLED'
+      order.statusHistory = [
+        ...(order.statusHistory || []),
+        {
+          status: 'CANCELLED',
+          timestamp: DateTime.now().toISO()!,
+          note: `Cancelled by client. Reason: ${reason}`,
+        },
+      ]
+      await order.useTransaction(trx).save()
+      await trx.commit()
+
+      emitter.emit(
+        OrderStatusUpdated,
+        new OrderStatusUpdated({
+          orderId: order.id,
+          status: order.status,
+          clientId: order.clientId,
+        })
+      )
+
+      // Notify offered/assigned driver if any
+      const targetDriverId = order.driverId || order.offeredDriverId
+      if (targetDriverId) {
+        const driver = await (await import('#models/user')).default.find(targetDriverId)
+        if (driver) {
+          await NotificationService.sendMissionCancelled(driver, {
+            orderId: order.id,
+            reason,
+          })
+        }
+      }
+
+      return order
+    } catch (error) {
+      await trx.rollback()
+      throw error
+    }
+  }
+
+  /**
+   * Explicitly set the next stop for a driver (Driver Choice).
+   */
+  async setNextStop(
+    orderId: string,
+    clientId: string,
+    stopId: string,
+    options: { targetCompanyId?: string } = {}
+  ) {
+    const trx = await db.transaction()
+    try {
+      const order = await Order.query({ client: trx })
+        .where('id', orderId)
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+        })
+        .preload('steps', (q) => q.preload('stops'))
+        .firstOrFail()
+
+      const allStops = order.steps.flatMap((s) => s.stops || [])
+      const targetStop = allStops.find((s) => s.id === stopId)
+      if (!targetStop) throw new Error('Stop not found in this order')
+
+      const meta = order.metadata || {}
+      meta.driver_choices = {
+        ...(meta.driver_choices || {}),
+        next_stop_id: stopId,
+      }
+      order.metadata = meta
+      await order.useTransaction(trx).save()
+
+      // Trigger re-calculation
+      const reloadedOrder = await Order.query({ client: trx })
+        .where('id', orderId)
+        .preload('steps', (q) =>
+          q.orderBy('sequence', 'asc').preload('stops', (sq) =>
+            sq
+              .orderBy('display_order', 'asc')
+              .preload('address')
+              .preload('actions', (aq) => aq.preload('transitItem'))
+          )
+        )
+        .preload('transitItems')
+        .firstOrFail()
+
+      await this.orderDraftService.calculateOrderStats(reloadedOrder, trx)
+
+      await trx.commit()
+    } catch (error) {
+      await trx.rollback()
+      throw error
+    }
+  }
+
+  /**
+   * Re-calculates the remaining route from a specific GPS position.
+   */
+  async recalculateRoute(
+    orderId: string,
+    clientId: string,
+    options: { gps?: { lat: number; lng: number }; targetCompanyId?: string } = {}
+  ) {
+    const trx = await db.transaction()
+    try {
+      const order = await Order.query({ client: trx })
+        .where('id', orderId)
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+        })
+        .preload('steps', (q) =>
+          q.orderBy('sequence', 'asc').preload('stops', (sq) =>
+            sq
+              .orderBy('display_order', 'asc')
+              .preload('address')
+              .preload('actions', (aq) => aq.preload('transitItem'))
+          )
+        )
+        .preload('transitItems')
+        .preload('leg')
+        .firstOrFail()
+
+      const forcedStartLocation: [number, number] | undefined = options.gps
+        ? [options.gps.lng, options.gps.lat]
+        : undefined
+
+      await this.orderDraftService.calculateOrderStats(order, trx, { forcedStartLocation })
+      await order.useTransaction(trx).save()
+
+      await trx.commit()
+
+      return this.orderDraftService.getRoute(orderId, clientId, {
+        live: true,
+        pending: false,
+        targetCompanyId: options.targetCompanyId,
+      })
+    } catch (error) {
+      await trx.rollback()
+      throw error
+    }
+  }
+
+  /**
+   * Get order statistics for a client over the last 7 days.
+   * Respects requestedFields to only perform necessary queries.
+   */
+  async getOrderStats(clientId: string, requestedFields: string[] = [], targetCompanyId?: string) {
+    const now = DateTime.local()
+    const sevenDaysAgo = now.minus({ days: 6 }).startOf('day')
+
+    const result: any = {}
+
+    // Helper for base query within 7 days
+    const base7dQuery = () =>
+      Order.query()
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+        })
+        .where('isDeleted', false)
+        .where('createdAt', '>=', sevenDaysAgo.toSQL()!)
+
+    // 1. Daily Counts (for chart)
+    if (requestedFields.includes('dailyCounts')) {
+      const dailyActivity = []
+      for (let i = 6; i >= 0; i--) {
+        const date = now.minus({ days: i })
+        const startOfDay = date.startOf('day').toSQL()
+        const endOfDay = date.endOf('day').toSQL()
+
+        const count = await Order.query()
+          .where((q) => {
+            q.where('clientId', clientId)
+            if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+          })
+          .where('isDeleted', false)
+          .whereBetween('createdAt', [startOfDay!, endOfDay!])
+          .count('* as total')
+
+        dailyActivity.push({
+          date: date.toFormat('dd/MM'),
+          dayName: date.toFormat('ccc'),
+          count: Number(count[0].$extras.total || 0),
+        })
+      }
+      result.dailyCounts = dailyActivity
+    }
+
+    // 2. Completion Rate
+    if (requestedFields.includes('completionRate')) {
+      const [total, completed] = await Promise.all([
+        base7dQuery().whereNot('status', 'CANCELLED').count('* as total'),
+        base7dQuery().whereIn('status', ['DELIVERED', 'COMPLETED']).count('* as total'),
+      ])
+
+      const totalCount = Number(total[0].$extras.total || 0)
+      const completedCount = Number(completed[0].$extras.total || 0)
+      result.completionRate =
+        totalCount > 0 ? Number(((completedCount / totalCount) * 100).toFixed(1)) : 100
+      result.total7d = totalCount
+    }
+
+    // 3. Templates Distribution
+    if (requestedFields.includes('templates')) {
+      const templateCounts = await base7dQuery()
+        .select('template')
+        .count('* as total')
+        .groupBy('template')
+
+      result.templates = templateCounts.map((tc) => ({
+        template: tc.template || 'OTHER',
+        count: Number(tc.$extras.total || 0),
+      }))
+    }
+
+    // 4. In Progress Count (Live active orders)
+    if (requestedFields.includes('inProgress')) {
+      const inProgress = await Order.query()
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+        })
+        .where('isDeleted', false)
+        .whereIn('status', [
+          'ACCEPTED',
+          'IN_TRANSIT',
+          'PICKING_UP',
+          'AT_PICKUP',
+          'COLLECTED',
+          'AT_DELIVERY',
+        ])
+        .count('* as total')
+
+      result.inProgressCount = Number(inProgress[0].$extras.total || 0)
+    }
+
+    return result
+  }
+
+  /**
+   * Estimates an order before creation.
+   */
+  async getEstimation(payload: any) {
+    const extractStops = () => {
+      if (Array.isArray(payload?.stops)) {
+        return payload.stops
+          .map((stop: any, index: number) => {
+            const lat = Number(stop?.lat ?? stop?.address?.lat)
+            const lng = Number(stop?.lng ?? stop?.address?.lng)
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+            return {
+              coordinates: [lng, lat] as [number, number],
+              type: 'break' as const,
+              address_text: stop?.street || stop?.address?.street || `Stop ${index + 1}`,
+              address_id: stop?.id || `stop_${index + 1}`,
+            }
+          })
+          .filter(Boolean)
+      }
+
+      const steps = Array.isArray(payload?.steps) ? payload.steps : []
+      return steps.flatMap((step: any) =>
+        (Array.isArray(step?.stops) ? step.stops : [])
+          .map((stop: any, index: number) => {
+            const address = stop?.address || {}
+            const lat = Number(address?.lat ?? stop?.lat)
+            const lng = Number(address?.lng ?? stop?.lng)
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+            return {
+              coordinates: [lng, lat] as [number, number],
+              type: 'break' as const,
+              address_text: address?.street || stop?.street || `Stop ${index + 1}`,
+              address_id: stop?.id || `stop_${index + 1}`,
+            }
+          })
+          .filter(Boolean)
+      )
+    }
+
+    const extractPackages = () => {
+      const items = Array.isArray(payload?.transit_items)
+        ? payload.transit_items
+        : Array.isArray(payload?.transitItems)
+          ? payload.transitItems
+          : []
+
+      return items.map((item: any) => {
+        const dimensions = item?.dimensions || {}
+        const requirements = Array.isArray(item?.requirements)
+          ? item.requirements
+          : Array.isArray(item?.metadata?.requirements)
+            ? item.metadata.requirements
+            : []
 
         return {
-            route: routeDetails,
-            pricing
+          dimensions: {
+            weight: Number(item?.weight) || Number(dimensions?.weight) || undefined,
+            depth_cm: Number(dimensions?.depth_cm ?? dimensions?.depthCm) || undefined,
+            width_cm: Number(dimensions?.width_cm ?? dimensions?.widthCm) || undefined,
+            height_cm: Number(dimensions?.height_cm ?? dimensions?.heightCm) || undefined,
+          },
+          quantity: Number(item?.quantity) || Number(item?.metadata?.quantity) || 1,
+          mention_warning: requirements.some((r: any) => String(r).toLowerCase() === 'fragile')
+            ? 'fragile'
+            : undefined,
         }
+      })
     }
 
-    /**
-     * Full order creation (Bulk).
-     */
-    async createOrder(clientId: string, payload: any, trx?: TransactionClientContract) {
-        const validatedPayload = await vine.validate({ schema: createOrderSchema, data: payload })
-        const effectiveTrx = trx || await db.transaction()
-        try {
-            const order = await this.initiateOrder(clientId, validatedPayload, effectiveTrx)
-            await this.updateOrder(order.id, clientId, validatedPayload, effectiveTrx)
-            if (!trx) await effectiveTrx.commit()
-            return order
-        } catch (error) {
-            if (!trx) await effectiveTrx.rollback()
-            throw error
+    const stops = extractStops()
+    if (stops.length < 2) throw new Error('Need at least 2 stops for estimation')
+
+    const routeDetails = await GeoService.calculateOptimizedRoute(stops as Array<any>)
+    if (!routeDetails) throw new Error('Route calculation failed')
+
+    const pricingFilterService = (await import('#services/pricing_filter_service')).default
+    const filter = await pricingFilterService.resolve(
+      payload?.target_driver_id || payload?.driverId,
+      payload?.targetCompanyId || payload?.companyId,
+      payload?.template
+    )
+
+    let totalWeightKg = 0
+    let totalVolumeM3 = 0
+    let isFragile = false
+
+    const packages = extractPackages()
+    for (const pkg of packages) {
+      const q = pkg.quantity || 1
+      totalWeightKg += (pkg.dimensions?.weight || 0) * q
+      if (pkg.dimensions?.depth_cm && pkg.dimensions?.width_cm && pkg.dimensions?.height_cm) {
+        const vol = (pkg.dimensions.depth_cm * pkg.dimensions.width_cm * pkg.dimensions.height_cm) / 1_000_000
+        totalVolumeM3 += vol * q
+      }
+      if (pkg.mention_warning === 'fragile') isFragile = true
+    }
+
+    const stopPriceInputs = routeDetails.legs.map((leg: any, index: number) => {
+      return {
+        distanceKm: (leg.distance_meters || 0) / 1000,
+        durationSeconds: leg.duration_seconds || 0,
+        weightKg: index === routeDetails.legs.length - 1 ? totalWeightKg : 0, // Assume cargo delivered at last stop for simple estimation
+        volumeM3: index === routeDetails.legs.length - 1 ? totalVolumeM3 : 0,
+        isFragile,
+        template: payload?.template,
+      }
+    })
+
+    // If only total summary is available or legs are simplified
+    if (stopPriceInputs.length === 0 && routeDetails.global_summary) {
+      stopPriceInputs.push({
+        distanceKm: (routeDetails.global_summary.total_distance_meters || 0) / 1000,
+        durationSeconds: routeDetails.global_summary.total_duration_seconds || 0,
+        weightKg: totalWeightKg,
+        volumeM3: totalVolumeM3,
+        isFragile,
+        template: payload?.template,
+      })
+    }
+
+    const { finalAmount, stopBreakdowns } = pricingFilterService.calculateOrderPrice(filter, stopPriceInputs)
+
+    return {
+      route: routeDetails,
+      pricing: {
+        clientFee: finalAmount,
+        driverRemuneration: Math.round(finalAmount * 0.8), // Default 80% if not specified in filter
+        currency: 'XOF',
+        breakdown: {
+          baseFee: stopBreakdowns.reduce((sum, b) => sum + (b.baseFee || 0), 0),
+          distanceFee: stopBreakdowns.reduce((sum, b) => sum + (b.distanceFee || 0), 0),
+          durationFee: stopBreakdowns.reduce((sum, b) => sum + (b.durationFee || 0), 0),
+          surcharges: {
+            weight: stopBreakdowns.reduce((sum, b) => sum + (b.weightFee || 0), 0),
+            volume: stopBreakdowns.reduce((sum, b) => sum + (b.volumeFee || 0), 0),
+            fragile: stopBreakdowns.reduce((sum, b) => sum + (b.fragileSurcharge || 0), 0),
+          }
         }
+      },
+    }
+  }
+
+  /**
+   * Full order creation (Bulk).
+   */
+  async createOrder(clientId: string, payload: any, trx?: TransactionClientContract) {
+    const validatedPayload = await vine.validate({ schema: createOrderSchema, data: payload })
+    logger.info({ clientId, validatedPayload }, '[ORDER_SERVICE] Payload validated for creation')
+    const effectiveTrx = trx || (await db.transaction())
+    try {
+      const order = await this.initiateOrder(clientId, validatedPayload, effectiveTrx)
+      await this.updateOrder(order.id, clientId, validatedPayload, effectiveTrx)
+      if (!trx) await effectiveTrx.commit()
+      return order
+    } catch (error) {
+      if (!trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  /**
+   * Estimates a draft order (includes shadow changes).
+   */
+  async estimateDraft(
+    orderId: string,
+    clientId: string,
+    options: { targetCompanyId?: string } = {}
+  ) {
+    return this.orderDraftService.estimateDraft(orderId, clientId, {
+      targetCompanyId: options.targetCompanyId,
+    })
+  }
+
+  /**
+   * Transition a DRAFT or PENDING order to PUBLISHED.
+   * Mainly for VOYAGE template.
+   */
+  async publishOrder(
+    orderId: string,
+    clientId: string,
+    options: { targetCompanyId?: string; trx?: TransactionClientContract } = {}
+  ) {
+    const effectiveTrx = options.trx || (await db.transaction())
+    try {
+      const order = await Order.query({ client: effectiveTrx })
+        .where('id', orderId)
+        .where((q) => {
+          q.where('clientId', clientId)
+          if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
+        })
+        .firstOrFail()
+
+      if (order.status !== 'DRAFT' && order.status !== 'PENDING') {
+        throw new Error(`Cannot publish order in status: ${order.status}`)
+      }
+
+      if (order.companyId) {
+        await subscriptionService.assertCompanyCanConsume(order.companyId, effectiveTrx, {
+          graceDays: 7,
+          context: `publish:${order.template || 'COMMANDE'}`,
+        })
+      }
+
+      order.status = 'PUBLISHED'
+      order.statusHistory = [
+        ...(order.statusHistory || []),
+        {
+          status: 'PUBLISHED',
+          timestamp: DateTime.now().toISO()!,
+          note: 'Order published for public viewing/booking',
+        },
+      ]
+      await order.useTransaction(effectiveTrx).save()
+
+      // Notify the driver that the voyage is PUBLISHED
+      if (order.driverId) {
+        wsService.emitToRoom(`driver:${order.driverId}`, 'order_published', {
+          orderId: order.id,
+          message: 'Le voyage a été publié et est ouvert aux réservations.',
+        })
+        wsService.emitToRoom(`drivers:${order.driverId}`, 'order_published', {
+          orderId: order.id,
+          message: 'Le voyage a été publié et est ouvert aux réservations.',
+        })
+      }
+
+      if (!options.trx) await effectiveTrx.commit()
+      return order
+    } catch (error) {
+      if (!options.trx) await effectiveTrx.rollback()
+      throw error
+    }
+  }
+
+  /**
+   * Creates an emergency INTERVENTION order.
+   */
+  async createIntervention(clientId: string, data: any, trx?: TransactionClientContract) {
+    // Force intervention flags
+    const interventionData = {
+      ...data,
+      template: 'MISSION',
+      assignmentMode: 'TARGET', // Explicitly trigger B2B targeting validation
+      isIntervention: true,
     }
 
-    /**
-     * Estimates a draft order (includes shadow changes).
-     */
-    async estimateDraft(orderId: string, clientId: string) {
-        return this.orderDraftService.estimateDraft(orderId, clientId)
+    // We use createOrder which goes through initiateOrder (Draft validation)
+    // and then updateOrder. This ensures all B2B checks run.
+    const order = await this.createOrder(clientId, interventionData, trx)
+
+    // Ensure flags are persisted perfectly and upgrade to PENDING.
+    // Internal manager bypasses and B2B active clients will reach here successfully.
+    order.isIntervention = true
+    order.template = 'MISSION'
+    order.assignmentMode = 'TARGET'
+    order.status = 'PENDING'
+
+    order.statusHistory = [
+      ...(order.statusHistory || []),
+      {
+        status: 'PENDING',
+        timestamp: DateTime.now().toISO()!,
+        note: 'Emergency intervention accepted and pending driver assignment.',
+      },
+    ]
+
+    if (trx) {
+      await order.useTransaction(trx).save()
+    } else {
+      await order.save()
     }
 
-    /**
-     * Restores the original price for a stop.
-     */
-    async restoreStopPrice(stopId: string, clientId: string) {
-        return this.stopService.restorePrice(stopId, clientId)
-    }
-
-    /**
-     * Transition a DRAFT or PENDING order to PUBLISHED.
-     * Mainly for VOYAGE template.
-     */
-    async publishOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
-        const effectiveTrx = trx || await db.transaction()
-        try {
-            const order = await Order.query({ client: effectiveTrx })
-                .where('id', orderId)
-                .where('clientId', clientId)
-                .firstOrFail()
-
-            if (order.status !== 'DRAFT' && order.status !== 'PENDING') {
-                throw new Error(`Cannot publish order in status: ${order.status}`)
-            }
-
-            if (order.companyId) {
-                await subscriptionService.assertCompanyCanConsume(order.companyId, effectiveTrx, {
-                    graceDays: 7,
-                    context: `publish:${order.template || 'COMMANDE'}`,
-                })
-            }
-
-            order.status = 'PUBLISHED'
-            order.statusHistory = [
-                ...(order.statusHistory || []),
-                {
-                    status: 'PUBLISHED',
-                    timestamp: DateTime.now().toISO()!,
-                    note: 'Order published for public viewing/booking'
-                }
-            ]
-            await order.useTransaction(effectiveTrx).save()
-
-            // Notify the driver that the voyage is PUBLISHED
-            if (order.driverId) {
-                wsService.emitToRoom(`driver:${order.driverId}`, 'order_published', {
-                    orderId: order.id,
-                    message: 'Le voyage a été publié et est ouvert aux réservations.'
-                })
-                wsService.emitToRoom(`drivers:${order.driverId}`, 'order_published', {
-                    orderId: order.id,
-                    message: 'Le voyage a été publié et est ouvert aux réservations.'
-                })
-            }
-
-            if (!trx) await effectiveTrx.commit()
-            return order
-        } catch (error) {
-            if (!trx) await effectiveTrx.rollback()
-            throw error
-        }
-    }
-
-    /**
-     * Creates an emergency INTERVENTION order.
-     */
-    async createIntervention(clientId: string, data: any, trx?: TransactionClientContract) {
-        // Force intervention flags
-        const interventionData = {
-            ...data,
-            template: 'MISSION',
-            assignmentMode: 'TARGET', // Explicitly trigger B2B targeting validation
-            isIntervention: true
-        }
-
-        // We use createOrder which goes through initiateOrder (Draft validation)
-        // and then updateOrder. This ensures all B2B checks run.
-        const order = await this.createOrder(clientId, interventionData, trx)
-
-        // Ensure flags are persisted perfectly and upgrade to PENDING.
-        // Internal manager bypasses and B2B active clients will reach here successfully.
-        order.isIntervention = true
-        order.template = 'MISSION'
-        order.assignmentMode = 'TARGET'
-        order.status = 'PENDING'
-
-        order.statusHistory = [
-            ...(order.statusHistory || []),
-            {
-                status: 'PENDING',
-                timestamp: DateTime.now().toISO()!,
-                note: 'Emergency intervention accepted and pending driver assignment.'
-            }
-        ]
-
-        if (trx) {
-            await order.useTransaction(trx).save()
-        } else {
-            await order.save()
-        }
-
-        return order
-    }
+    return order
+  }
 }

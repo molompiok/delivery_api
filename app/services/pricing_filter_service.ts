@@ -47,6 +47,7 @@ interface PriceBreakdown {
     proximityDiscount: number
     heavyLoadSurcharge: number
     lightLoadDiscount: number
+    durationFee: number
     calculatedAmount: number
     finalAmount: number
     isPriceOverridden: boolean
@@ -164,7 +165,7 @@ class PricingFilterService {
 
     // ── Resolve (chaîne driver → company → default) ──
 
-    async resolve(driverId?: string | null, companyId?: string | null, template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
+    async resolve(driverId?: string | null, companyId?: string | null, template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PricingFilter | any> {
         if (driverId) {
             const driverFilter = await this.findWithTemplateFallback('driver_id', driverId, template, trx)
             if (driverFilter) return driverFilter
@@ -179,7 +180,7 @@ class PricingFilterService {
         return this.findGlobalFallback(template, trx)
     }
 
-    private async findGlobalFallback(template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PricingFilter | null> {
+    private async findGlobalFallback(template?: OrderTemplate | null, trx?: TransactionClientContract): Promise<PricingFilter | any> {
         if (template) {
             const exact = await PricingFilter.query({ client: trx })
                 .whereNull('company_id')
@@ -190,12 +191,36 @@ class PricingFilterService {
             if (exact) return exact
         }
 
-        return PricingFilter.query({ client: trx })
+        const global = await PricingFilter.query({ client: trx })
             .whereNull('company_id')
             .whereNull('driver_id')
             .where('is_active', true)
             .whereNull('template')
             .first()
+
+        if (global) return global
+
+        // --- HARDCODED SYSTEM FALLBACK (Legacy PricingService constants) ---
+        return {
+            baseFee: 500,
+            perKmRate: 150,
+            perMinuteRate: 0.6,
+            minDistance: 1,
+            maxDistance: null,
+            perKgRate: 100, // Matching legacy Weight Surcharge
+            freeWeightKg: 5, // 5000g threshold
+            perM3Rate: 2500, // To match roughly the volume surcharge
+            fragileMultiplier: 1.5,
+            urgentMultiplier: 1.5,
+            nightMultiplier: 1.3,
+            proximityDiscountPercent: 10,
+            proximityThresholdKm: 2,
+            heavyLoadSurchargeThresholdKg: 50,
+            heavyLoadSurchargePercent: 15,
+            lightLoadDiscountThresholdKg: 1,
+            lightLoadDiscountPercent: 5,
+            template: null,
+        }
     }
 
     // ── List / Find ──
@@ -380,7 +405,7 @@ class PricingFilterService {
 
     // ── Calculs ──
 
-    calculateStopPrice(filter: PricingFilter, input: StopPriceInput): PriceBreakdown {
+    calculateStopPrice(filter: PricingFilter | any, input: StopPriceInput): PriceBreakdown {
         const {
             distanceKm,
             weightKg,
@@ -460,6 +485,7 @@ class PricingFilterService {
             proximityDiscount,
             heavyLoadSurcharge,
             lightLoadDiscount,
+            durationFee,
             calculatedAmount,
             finalAmount,
             isPriceOverridden,
@@ -471,7 +497,7 @@ class PricingFilterService {
         }
     }
 
-    calculateOrderPrice(filter: PricingFilter, stops: StopPriceInput[]): { calculatedAmount: number; finalAmount: number; stopBreakdowns: PriceBreakdown[] } {
+    calculateOrderPrice(filter: PricingFilter | any, stops: StopPriceInput[]): { calculatedAmount: number; finalAmount: number; stopBreakdowns: PriceBreakdown[] } {
         const stopBreakdowns: PriceBreakdown[] = []
         let calculatedAmount = 0
         let finalAmount = 0
@@ -524,6 +550,7 @@ class PricingFilterService {
                 proximityDiscount: stopBreakdowns.reduce((s, b) => s + b.proximityDiscount, 0),
                 heavyLoadSurcharge: stopBreakdowns.reduce((s, b) => s + b.heavyLoadSurcharge, 0),
                 lightLoadDiscount: stopBreakdowns.reduce((s, b) => s + b.lightLoadDiscount, 0),
+                durationFee: stopBreakdowns.reduce((s, b) => s + b.durationFee, 0),
                 calculatedAmount,
                 finalAmount,
                 isPriceOverridden: stopBreakdowns.some(b => b.isPriceOverridden)

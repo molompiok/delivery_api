@@ -10,14 +10,20 @@ export default class StepService {
     /**
      * Adds a step to an order.
      */
-    async addStep(orderId: string, clientId: string, data: any = {}, trx?: TransactionClientContract): Promise<LogisticsOperationResult<Step>> {
+    async addStep(orderId: string, clientId: string, data: any = {}, trx?: TransactionClientContract, targetCompanyId?: string): Promise<LogisticsOperationResult<Step>> {
         const validatedData = await vine.validate({ schema: addStepSchema, data })
         const effectiveTrx = trx || await db.transaction()
 
         try {
-            const order = await Order.query({ client: effectiveTrx }).where('id', orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) {
-                throw new Error(`Order not found [ID: ${orderId}] for client [ID: ${clientId}] while adding step`)
+                throw new Error(`Order not found [ID: ${orderId}] for requester [ID: ${clientId}] or targeted company [ID: ${targetCompanyId}] while adding step`)
             }
 
             // Get last sequence
@@ -60,7 +66,7 @@ export default class StepService {
     /**
      * Updates a step.
      */
-    async updateStep(stepId: string, clientId: string, data: any, trx?: TransactionClientContract): Promise<LogisticsOperationResult<Step>> {
+    async updateStep(stepId: string, clientId: string, data: any, trx?: TransactionClientContract, targetCompanyId?: string): Promise<LogisticsOperationResult<Step>> {
         const validatedData = await vine.validate({ schema: updateStepSchema, data })
         const effectiveTrx = trx || await db.transaction()
 
@@ -68,9 +74,15 @@ export default class StepService {
             const step = await Step.query({ client: effectiveTrx }).where('id', stepId).first()
             if (!step) throw new Error('Step not found')
 
-            const order = await Order.query({ client: effectiveTrx }).where('id', step.orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', step.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) {
-                throw new Error(`Order not found [ID: ${step.orderId}] for client [ID: ${clientId}] while updating step [ID: ${stepId}]`)
+                throw new Error(`Order not found [ID: ${step.orderId}] for requester [ID: ${clientId}] or targeted company [ID: ${targetCompanyId}] while updating step [ID: ${stepId}]`)
             }
             const isDraft = order.status === 'DRAFT'
 
@@ -125,16 +137,22 @@ export default class StepService {
     /**
      * Removes a step.
      */
-    async removeStep(stepId: string, clientId: string, trx?: TransactionClientContract) {
+    async removeStep(stepId: string, clientId: string, trx?: TransactionClientContract, targetCompanyId?: string) {
         const effectiveTrx = trx || await db.transaction()
 
         try {
             const step = await Step.query({ client: effectiveTrx }).where('id', stepId).first()
             if (!step) throw new Error('Step not found')
 
-            const order = await Order.query({ client: effectiveTrx }).where('id', step.orderId).where('clientId', clientId).first()
+            const order = await Order.query({ client: effectiveTrx })
+                .where('id', step.orderId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
+                .first()
             if (!order) {
-                throw new Error(`Order not found [ID: ${step.orderId}] for client [ID: ${clientId}] while removing step [ID: ${stepId}]`)
+                throw new Error(`Order not found [ID: ${step.orderId}] for requester [ID: ${clientId}] or targeted company [ID: ${targetCompanyId}] while removing step [ID: ${stepId}]`)
             }
             const isDraft = order.status === 'DRAFT'
 

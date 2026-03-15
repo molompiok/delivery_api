@@ -10,7 +10,7 @@ export default class StepsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.addStep(params.orderId, user.id, payload)
+            const result = await this.orderService.addStep(params.orderId, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.created({
                 step: result.entity,
                 validationErrors: result.validationErrors
@@ -24,7 +24,7 @@ export default class StepsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.updateStep(params.id, user.id, payload)
+            const result = await this.orderService.updateStep(params.id, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok({
                 step: result.entity,
                 validationErrors: result.validationErrors
@@ -40,7 +40,7 @@ export default class StepsController {
     async destroy({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const result = await this.orderService.removeStep(params.id, user.id)
+            const result = await this.orderService.removeStep(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(result)
         } catch (error: any) {
             if (error.message.includes('not found')) {

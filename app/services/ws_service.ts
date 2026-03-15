@@ -129,6 +129,19 @@ class WsService {
             this.emitToRoom(`fleet:${companyId}`, 'fleet_driver_relation_updated', data)
         }
     }
+
+    /**
+     * Notify that a driver's debt status has changed (deferred or settled).
+     */
+    public notifyDebtUpdate(driverId: string, payload: Record<string, any> = {}) {
+        const data = {
+            ...payload,
+            timestamp: new Date().toISOString(),
+        }
+
+        this.emitToRoom(`driver:${driverId}`, 'debt:update', data)
+        this.emitToRoom(`drivers:${driverId}`, 'debt:update', data)
+    }
 }
 
 export default new WsService()

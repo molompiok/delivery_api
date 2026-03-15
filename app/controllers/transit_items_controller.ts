@@ -13,7 +13,7 @@ export default class TransitItemsController {
         try {
             const user = auth.getUserOrFail()
             const payload = request.all()
-            const result = await this.orderService.updateTransitItem(params.id, user.id, payload)
+            const result = await this.orderService.updateTransitItem(params.id, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
             return response.ok(result)
         } catch (error: any) {
             return response.badRequest({ message: error.message })

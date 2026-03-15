@@ -9,58 +9,58 @@ import PaymentIntent from '#models/payment_intent'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 
 export default class Booking extends BaseModel {
-    @column({ isPrimary: true })
-    declare id: string
+  @column({ isPrimary: true })
+  declare id: string
 
-    @beforeCreate()
-    static assignId(booking: Booking) {
-        if (!booking.id) {
-            booking.id = generateId('bk')
-        }
+  @beforeCreate()
+  static assignId(booking: Booking) {
+    if (!booking.id) {
+      booking.id = generateId('bk')
     }
+  }
 
-    @column()
-    declare orderId: string
+  @column()
+  declare orderId: string
 
-    @belongsTo(() => Order)
-    declare order: BelongsTo<typeof Order>
+  @belongsTo(() => Order)
+  declare order: BelongsTo<typeof Order>
 
-    @column()
-    declare clientId: string
+  @column()
+  declare clientId: string
 
-    @belongsTo(() => User, { foreignKey: 'clientId' })
-    declare client: BelongsTo<typeof User>
+  @belongsTo(() => User, { foreignKey: 'clientId' })
+  declare client: BelongsTo<typeof User>
 
-    @column()
-    declare pickupStopId: string | null
+  @column()
+  declare pickupStopId: string | null
 
-    @belongsTo(() => Stop, { foreignKey: 'pickupStopId' })
-    declare pickupStop: BelongsTo<typeof Stop>
+  @belongsTo(() => Stop, { foreignKey: 'pickupStopId' })
+  declare pickupStop: BelongsTo<typeof Stop>
 
-    @column()
-    declare dropoffStopId: string | null
+  @column()
+  declare dropoffStopId: string | null
 
-    @belongsTo(() => Stop, { foreignKey: 'dropoffStopId' })
-    declare dropoffStop: BelongsTo<typeof Stop>
+  @belongsTo(() => Stop, { foreignKey: 'dropoffStopId' })
+  declare dropoffStop: BelongsTo<typeof Stop>
 
-    @column({
-        prepare: (value: any) => JSON.stringify(value),
-        consume: (value: any) => (typeof value === 'string' ? JSON.parse(value) : value),
-    })
-    declare seatsReserved: string[] | null
+  @column({
+    prepare: (value: any) => JSON.stringify(value),
+    consume: (value: any) => (typeof value === 'string' ? JSON.parse(value) : value),
+  })
+  declare seatsReserved: string[] | null
 
-    @column()
-    declare status: 'PENDING' | 'CONFIRMED' | 'CANCELLED'
+  @column()
+  declare status: 'PENDING' | 'CONFIRMED' | 'EXPIRED' | 'CANCELLED'
 
-    @hasMany(() => TransitItem)
-    declare transitItems: HasMany<typeof TransitItem>
+  @hasMany(() => TransitItem)
+  declare transitItems: HasMany<typeof TransitItem>
 
-    @hasMany(() => PaymentIntent)
-    declare paymentIntents: HasMany<typeof PaymentIntent>
+  @hasMany(() => PaymentIntent)
+  declare paymentIntents: HasMany<typeof PaymentIntent>
 
-    @column.dateTime({ autoCreate: true })
-    declare createdAt: DateTime
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
 
-    @column.dateTime({ autoCreate: true, autoUpdate: true })
-    declare updatedAt: DateTime | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
 }

@@ -38,10 +38,7 @@ export default class extends BaseSchema {
             table.jsonb('status_history').nullable().defaultTo('[]')
             table.jsonb('metadata').nullable().defaultTo('{}')
 
-            table.timestamp('eta_pickup').nullable()
-            table.timestamp('eta_delivery').nullable()
-
-            table.timestamp('delivered_at').nullable()
+            table.timestamp('completed_at').nullable()
 
             table.timestamp('created_at').notNullable()
             table.timestamp('updated_at').nullable()
