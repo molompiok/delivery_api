@@ -3,6 +3,7 @@ import vine from '@vinejs/vine'
 import AuthService from '#services/auth_service'
 import NotificationService from '#services/notification_service'
 import { inject } from '@adonisjs/core'
+import app from '@adonisjs/core/services/app'
 
 const sendPhoneOtpValidator = vine.compile(
     vine.object({
@@ -84,7 +85,12 @@ export default class AuthController {
         try {
             const { phone } = await request.validateUsing(sendPhoneOtpValidator)
             const result = await this.authService.sendPhoneOtp(phone)
-            return response.ok({ message: 'SMS OTP sent', otp: result.otp })
+
+            if (app.inProduction) {
+                return response.ok({ message: result.message })
+            }
+
+            return response.ok({ message: result.message, otp: result.otp })
         } catch (error: any) {
             if (error.message.includes('Too many attempts') || error.message.includes('wait 30 seconds')) {
                 return response.tooManyRequests({ message: error.message })

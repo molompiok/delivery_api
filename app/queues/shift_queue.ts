@@ -31,42 +31,47 @@ export const shiftQueue = new Queue('shift-checks', {
     },
 })
 
-/**
- * Worker qui traite les vérifications de shifts
- */
-export const shiftWorker = new Worker(
-    'shift-checks',
-    async (job: Job) => {
-        console.log(`[SHIFT WORKER] Processing job ${job.id}`)
+let shiftWorker: Worker | null = null
 
-        try {
-            await ShiftService.checkAndSwitchAllDrivers()
-            return { success: true, timestamp: new Date().toISOString() }
-        } catch (error: any) {
-            console.error('[SHIFT WORKER] Error:', error)
-            throw error
+export function startShiftWorker(): Worker {
+    if (shiftWorker) return shiftWorker
+
+    shiftWorker = new Worker(
+        'shift-checks',
+        async (job: Job) => {
+            console.log(`[SHIFT WORKER] Processing job ${job.id}`)
+
+            try {
+                await ShiftService.checkAndSwitchAllDrivers()
+                return { success: true, timestamp: new Date().toISOString() }
+            } catch (error: any) {
+                console.error('[SHIFT WORKER] Error:', error)
+                throw error
+            }
+        },
+        {
+            connection: redisConnection,
+            concurrency: 1, // Traiter un seul job à la fois pour éviter les conflits
         }
-    },
-    {
-        connection: redisConnection,
-        concurrency: 1, // Traiter un seul job à la fois pour éviter les conflits
-    }
-)
+    )
 
-/**
- * Event handlers pour monitoring
- */
-shiftWorker.on('completed', (job) => {
-    console.log(`[SHIFT WORKER] Job ${job.id} completed successfully`)
-})
+    /**
+     * Event handlers pour monitoring
+     */
+    shiftWorker.on('completed', (job) => {
+        console.log(`[SHIFT WORKER] Job ${job.id} completed successfully`)
+    })
 
-shiftWorker.on('failed', (job, error) => {
-    console.error(`[SHIFT WORKER] Job ${job?.id} failed:`, error)
-})
+    shiftWorker.on('failed', (job, error) => {
+        console.error(`[SHIFT WORKER] Job ${job?.id} failed:`, error)
+    })
 
-shiftWorker.on('error', (error) => {
-    console.error('[SHIFT WORKER] Worker error:', error)
-})
+    shiftWorker.on('error', (error) => {
+        console.error('[SHIFT WORKER] Worker error:', error)
+    })
+
+    return shiftWorker
+}
 
 /**
  * Ajoute un job de vérification dans la queue
@@ -93,5 +98,8 @@ export async function enqueueShiftCheck(): Promise<void> {
  */
 export async function closeShiftQueue(): Promise<void> {
     await shiftQueue.close()
-    await shiftWorker.close()
+    if (shiftWorker) {
+        await shiftWorker.close()
+        shiftWorker = null
+    }
 }

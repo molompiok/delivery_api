@@ -93,6 +93,19 @@ class WsService {
         }
     }
 
+    public notifyDriverPositionUpdate(orderId: string, lat: number, lng: number, heading?: number) {
+        const payload = {
+            orderId,
+            lat,
+            lng,
+            heading,
+            timestamp: new Date().toISOString()
+        }
+
+        this.emitToRoom(`order:${orderId}`, 'driver_position_updated', payload)
+        this.emitToRoom(`orders:${orderId}`, 'driver_position_updated', payload)
+    }
+
     /**
      * Notify that the order structure (steps, stops, actions, items) has changed.
      */

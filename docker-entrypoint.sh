@@ -27,6 +27,10 @@ echo "[delivery_api Entrypoint] Redis: ${REDIS_HOST}:${REDIS_PORT:-6379}"
 echo "[delivery_api Entrypoint] Exécution des migrations..."
 node ace migration:run --force || echo "[delivery_api Entrypoint] WARN: Migration partielle (tables existantes). Démarrage quand même..."
 
+# Exécuter les seeders essentiels au démarrage (Admin, Zones, Plans)
+echo "[delivery_api Entrypoint] Exécution des seeders essentiels..."
+node ace db:seed --files database/seeders/system_core_seeder.ts
+
 # Lancer la commande principale (CMD du Dockerfile ou override Swarm)
 echo "[delivery_api Entrypoint] Démarrage: $@"
 exec "$@"

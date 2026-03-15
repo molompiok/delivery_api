@@ -29,6 +29,7 @@ export default class extends BaseSchema {
 
             table.boolean('is_online').defaultTo(false)
             table.jsonb('last_location').nullable()
+            table.string('wallet_id').nullable()
 
             table.timestamp('created_at').notNullable()
             table.timestamp('updated_at').nullable()

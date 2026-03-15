@@ -86,3 +86,6 @@ router.group(() => {
     }).prefix('/payments')
 
 }).prefix('/v1/driver').use(middleware.auth())
+
+// ── Webhooks (Public with signature check) ──
+router.post('/webhooks/wave', [() => import('#controllers/wave_webhooks_controller'), 'handle'])

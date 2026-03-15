@@ -251,7 +251,7 @@ export default class AuthService {
             })
 
             await trx.commit()
-            await WalletProvisioningService.syncUserWalletOwnerName(user)
+            await WalletProvisioningService.ensureUserWallet(user)
             await user.loadFiles()
             return user
         } catch (error) {

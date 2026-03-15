@@ -80,10 +80,6 @@ export default defineConfig({
       environment: ['web']
     },
     {
-      file: () => import('./start/wave_transmit_bridge.js'),
-      environment: ['web']
-    },
-    {
       file: () => import('./start/ws.js'),
       environment: ['web']
     },

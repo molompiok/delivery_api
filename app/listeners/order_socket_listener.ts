@@ -37,18 +37,28 @@ export default class OrderSocketListener {
                 // If it's an internal or target order, notify the client's company
                 const User = (await import('#models/user')).default
                 const client = await User.find(order.clientId)
+                const fleetCompanyId = client?.effectiveCompanyId || order.companyId || null
 
-                if (client?.effectiveCompanyId) {
-                    WsService.emitToRoom(`fleet:${client.effectiveCompanyId}`, 'order_status_updated', {
+                if (fleetCompanyId) {
+                    const fleetPayload = {
                         ...payload,
                         assignmentMode: order.assignmentMode
-                    })
+                    }
+
+                    WsService.emitToRoom(`fleet:${fleetCompanyId}`, 'order_status_updated', fleetPayload)
+
+                    if (payload.status === 'PENDING') {
+                        WsService.emitToRoom(`fleet:${fleetCompanyId}`, 'orders:new', {
+                            ...fleetPayload,
+                            id: payload.orderId,
+                        })
+                    }
                 }
 
                 // If a driver is assigned, also notify the driver's company (if different)
                 if (order.driverId) {
                     const driver = await User.find(order.driverId)
-                    if (driver?.companyId && driver.companyId !== client?.effectiveCompanyId) {
+                    if (driver?.companyId && driver.companyId !== fleetCompanyId) {
                         WsService.emitToRoom(`fleet:${driver.companyId}`, 'order_status_updated', payload)
                     }
 

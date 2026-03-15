@@ -2,6 +2,7 @@ import redis from '@adonisjs/redis/services/main'
 import RedisService from '#services/redis_service'
 import { DateTime } from 'luxon'
 import DriverLocationHistory from '#models/driver_location_history'
+import wsService from '#services/ws_service'
 
 /**
  * TrackingService
@@ -36,6 +37,8 @@ export class TrackingService {
         if (state && state.current_orders && state.current_orders.length > 0) {
             for (const orderId of state.current_orders) {
                 await RedisService.pushOrderTracePoint(orderId, lng, lat, timestamp!)
+                // 3.1 Notify the client and dashboard room for real-time visualization
+                wsService.notifyDriverPositionUpdate(orderId, lat, lng, heading)
             }
         }
 

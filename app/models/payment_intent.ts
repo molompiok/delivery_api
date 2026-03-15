@@ -13,9 +13,12 @@ export default class PaymentIntent extends BaseModel {
     declare id: string
 
     @beforeCreate()
-    static assignId(intent: PaymentIntent) {
+    static assignDefaults(intent: PaymentIntent) {
         if (!intent.id) {
             intent.id = generateId('pi')
+        }
+        if (!intent.expiresAt) {
+            intent.expiresAt = DateTime.now().plus({ hours: 48 })
         }
     }
 
@@ -72,6 +75,39 @@ export default class PaymentIntent extends BaseModel {
 
     @column()
     declare driverAmount: number
+
+    @column({
+        prepare: (value: any) => JSON.stringify(value),
+        consume: (value: any) => {
+            if (typeof value === 'string') {
+                try {
+                    return JSON.parse(value)
+                } catch {
+                    return []
+                }
+            }
+            return value || []
+        },
+    })
+    declare externalIdHistory: string[]
+
+    @column({
+        prepare: (value: any) => JSON.stringify(value),
+        consume: (value: any) => {
+            if (typeof value === 'string') {
+                try {
+                    return JSON.parse(value)
+                } catch {
+                    return []
+                }
+            }
+            return value || []
+        },
+    })
+    declare doublePaymentsLog: any[]
+
+    @column.dateTime()
+    declare expiresAt: DateTime
 
     @column.dateTime({ autoCreate: true })
     declare createdAt: DateTime

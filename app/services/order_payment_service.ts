@@ -313,26 +313,29 @@ class OrderPaymentService {
         effectiveTrx
       )
       const subscriptionRates = await subscriptionService.resolveRatesForOrder(order, effectiveTrx)
-
       const intents: PaymentIntent[] = []
+
+      // 1. Fetching existing usable intents to ensure idempotence
+      const existingIntents = await PaymentIntent.query({ client: effectiveTrx })
+        .where('orderId', order.id)
+        .whereIn('status', ['PENDING', 'COMPLETED'])
+
+      const existingByBooking = new Map<string, PaymentIntent>()
+      const existingByStop = new Map<string, PaymentIntent>()
+      let existingOrderWideIntent: PaymentIntent | null = null
+
+      for (const ei of existingIntents) {
+        if (ei.bookingId) existingByBooking.set(String(ei.bookingId), ei)
+        else if (ei.stopId) existingByStop.set(String(ei.stopId), ei)
+        else existingOrderWideIntent = ei
+      }
 
       if (order.template === 'VOYAGE') {
         // Pour VOYAGE: un intent par réservation (idempotent par booking_id)
-        const bookingIds = (order.bookings || []).map((b: any) => b.id).filter(Boolean)
-        const existingRows = bookingIds.length
-          ? await PaymentIntent.query({ client: effectiveTrx })
-            .where('orderId', order.id)
-            .whereIn('bookingId', bookingIds)
-            .whereNotNull('bookingId')
-            .select('bookingId')
-          : []
-
-        const existingBookingIntentIds = new Set<string>(
-          existingRows.map((row: any) => String(row.bookingId))
-        )
-
         for (const booking of order.bookings) {
-          if (existingBookingIntentIds.has(String(booking.id))) {
+          const existing = existingByBooking.get(String(booking.id))
+          if (existing) {
+            intents.push(existing)
             continue
           }
 
@@ -374,7 +377,6 @@ class OrderPaymentService {
             { client: effectiveTrx }
           )
           intents.push(intent)
-          existingBookingIntentIds.add(String(booking.id))
         }
       } else {
         // Pour COMMANDE: Payeur = Client
@@ -418,6 +420,13 @@ class OrderPaymentService {
             const remainder = totalAmount - amountPerStop * targetStops.length
 
             for (let i = 0; i < targetStops.length; i++) {
+              const stopId = targetStops[i].id
+              const existing = existingByStop.get(String(stopId))
+              if (existing) {
+                intents.push(existing)
+                continue
+              }
+
               const amnt = i === targetStops.length - 1 ? amountPerStop + remainder : amountPerStop
               const calcAmnt =
                 i === targetStops.length - 1
@@ -461,37 +470,41 @@ class OrderPaymentService {
           }
         } else {
           // Paiement unique pour toute la commande
-          const waveFeeEstimate = await this.estimateWaveFeeForAmount(totalAmount)
-          const splits = this.calculateSplits(
-            { amount: totalAmount, calculatedAmount },
-            policy,
-            order.companyId,
-            {
-              template: order.template,
-              commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
-              ticketFeePercent: subscriptionRates.ticketFeePercent,
-              waveEstimatedFee: waveFeeEstimate.estimatedFee,
-              waveFeeBps: waveFeeEstimate.feeBps,
-            }
-          )
+          if (existingOrderWideIntent) {
+            intents.push(existingOrderWideIntent)
+          } else {
+            const waveFeeEstimate = await this.estimateWaveFeeForAmount(totalAmount)
+            const splits = this.calculateSplits(
+              { amount: totalAmount, calculatedAmount },
+              policy,
+              order.companyId,
+              {
+                template: order.template,
+                commandeCommissionPercent: subscriptionRates.commandeCommissionPercent,
+                ticketFeePercent: subscriptionRates.ticketFeePercent,
+                waveEstimatedFee: waveFeeEstimate.estimatedFee,
+                waveFeeBps: waveFeeEstimate.feeBps,
+              }
+            )
 
-          const intent = await PaymentIntent.create(
-            {
-              orderId: order.id,
-              payerId: order.clientId,
-              amount: totalAmount,
-              calculatedAmount,
-              isPriceOverridden,
-              paymentMethod: 'WAVE',
-              status: 'PENDING',
-              platformFee: splits.platformAmount,
-              waveFee: splits.waveFee,
-              companyAmount: splits.companyAmount,
-              driverAmount: splits.driverAmount,
-            },
-            { client: effectiveTrx }
-          )
-          intents.push(intent)
+            const intent = await PaymentIntent.create(
+              {
+                orderId: order.id,
+                payerId: order.clientId,
+                amount: totalAmount,
+                calculatedAmount,
+                isPriceOverridden,
+                paymentMethod: 'WAVE',
+                status: 'PENDING',
+                platformFee: splits.platformAmount,
+                waveFee: splits.waveFee,
+                companyAmount: splits.companyAmount,
+                driverAmount: splits.driverAmount,
+              },
+              { client: effectiveTrx }
+            )
+            intents.push(intent)
+          }
         }
       }
 
@@ -540,6 +553,12 @@ class OrderPaymentService {
 
       if (intent.status !== 'PENDING') {
         throw new Error(`Payment intent ${intent.id} is not payable anymore (status=${intent.status})`)
+      }
+
+      if (intent.expiresAt && intent.expiresAt < DateTime.now()) {
+        intent.status = 'FAILED'
+        await intent.useTransaction(effectiveTrx).save()
+        throw new Error(`Payment intent ${intent.id} has expired`)
       }
 
       const cachedCheckout = await paymentCheckoutCacheService.get(intent.id)
@@ -621,6 +640,15 @@ class OrderPaymentService {
         errorUrl,
         splits,
       })
+
+      // Traceability: Store previous attempt in the history
+      if (intent.externalId && intent.externalId !== waveIntent.payment_intent_id) {
+        const history = intent.externalIdHistory || []
+        if (!history.includes(intent.externalId)) {
+          history.push(intent.externalId)
+          intent.externalIdHistory = [...history] // Ensure Reactivity/Dirty state
+        }
+      }
 
       intent.externalId = waveIntent.payment_intent_id
       await intent.useTransaction(effectiveTrx).save()
@@ -815,6 +843,21 @@ class OrderPaymentService {
       await intent.useTransaction(effectiveTrx).save()
       await paymentCheckoutCacheService.clear(intent.id)
 
+      // Emit socket events for real-time visibility
+      WsService.emitToRoom(`order:${intent.orderId}`, 'payment_status_updated', {
+        intentId: intent.id,
+        orderId: intent.orderId,
+        status: intent.status,
+        timestamp: DateTime.now().toISO(),
+      })
+
+      if (intent.payerId) {
+        WsService.emitToRoom(`wallet:${intent.payerId}`, 'wallet_update', {
+          message: 'Transaction completed',
+          intentId: intent.id,
+        })
+      }
+
       if (status === 'COMPLETED') {
         // Bonus actions specifically for Bookings
         if (intent.bookingId) {
@@ -852,8 +895,7 @@ class OrderPaymentService {
                 '[PaymentIntent] Booking confirmed after successful payment'
               )
 
-              // Emit event for real-time UI/Notifications
-              // TODO: Event.emit('payment:received', { bookingId: booking.id, amount: intent.amount })
+              // Notify via Socket.io handled in syncIntentStatus
             })
           }
         }
@@ -868,14 +910,138 @@ class OrderPaymentService {
   }
 
   /**
-   * Récupère les intents en attente qui ont été initiés auprès de Wave.
+   * Récupère les intents en attente qui ont été initiés auprès de Wave dans les dernières 24 heures.
+   * On évite de remonter des vieux intents "zombies" qui ne seront jamais complétés.
    */
-  async getPendingExternalIntents(limit = 20): Promise<PaymentIntent[]> {
+  /**
+   * Récupère les intents en attente qui n'ont pas encore expiré.
+   */
+  async getPendingExternalIntents(): Promise<PaymentIntent[]> {
     return PaymentIntent.query()
       .where('status', 'PENDING')
       .whereNotNull('externalId')
-      .orderBy('created_at', 'asc')
-      .limit(limit)
+      .where('expires_at', '>', DateTime.now().toSQL())
+      .orderBy('expires_at', 'asc')
+  }
+
+  /**
+   * Marque comme FAILED les intents qui ont expiré.
+   */
+  async cleanupAbandonedIntents(): Promise<number> {
+    const intents = await PaymentIntent.query()
+      .where('status', 'PENDING')
+      .where('expires_at', '<', DateTime.now().toSQL())
+
+    for (const intent of intents) {
+      intent.status = 'FAILED'
+      await intent.save()
+    }
+    return intents.length
+  }
+
+  async handleExternalWebhook(waveIntent: any) {
+    const internalIntentId = waveIntent.externalReference
+    if (!internalIntentId) {
+      logger.warn('[OrderPaymentService] Webhook ignored: no externalReference')
+      return
+    }
+
+    const intent = await PaymentIntent.find(internalIntentId)
+    if (!intent) {
+      logger.warn(`[OrderPaymentService] Webhook ignored: intent ${internalIntentId} not found`)
+      return
+    }
+
+    // 1. Double Payment Detection & Logging
+    if (intent.status === 'COMPLETED') {
+      logger.warn(
+        { intentId: intent.id, externalId: waveIntent.id, amount: waveIntent.amount },
+        '[OrderPaymentService] DOUBLE PAYMENT DETECTED - Webhook received for an already completed intent'
+      )
+
+      // Store details in dedicated log for manual audit
+      const logs = intent.doublePaymentsLog || []
+      logs.push({
+        wave_external_id: waveIntent.id,
+        amount: waveIntent.amount,
+        received_at: DateTime.now().toISO()
+      })
+      intent.doublePaymentsLog = [...logs]
+      await intent.save()
+
+      // Notify admin room via socket
+      const wsService = (await import('#services/ws_service')).default
+      wsService.emitToRoom('admin', 'payment_warning', {
+        type: 'DOUBLE_PAYMENT',
+        orderId: intent.orderId,
+        intentId: intent.id,
+        amount: waveIntent.amount,
+      })
+
+      return
+    }
+
+    // 2. Amount Validation
+    if (Math.abs(waveIntent.amount - intent.amount) > 1) { // 1 unit tolerance for rounding
+      logger.error(
+        {
+          intentId: intent.id,
+          expected: intent.amount,
+          received: waveIntent.amount
+        },
+        '[OrderPaymentService] PAYMENT AMOUNT MISMATCH - Payment rejected'
+      )
+
+      const wsService = (await import('#services/ws_service')).default
+      wsService.emitToRoom('admin', 'payment_warning', {
+        type: 'AMOUNT_MISMATCH',
+        orderId: intent.orderId,
+        intentId: intent.id,
+        expected: intent.amount,
+        received: waveIntent.amount,
+      })
+
+      // We don't mark as COMPLETED, it stays PENDING (or we could add a SUSPECTED status)
+      return
+    }
+
+    logger.info(
+      `[OrderPaymentService] Processing webhook for intent ${intent.id} (status=${waveIntent.status})`
+    )
+
+    if (waveIntent.status === 'COMPLETED') {
+      await this.syncIntentStatus(intent.id, 'COMPLETED')
+    } else if (waveIntent.status === 'FAILED') {
+      await this.syncIntentStatus(intent.id, 'FAILED')
+    }
+  }
+
+  /**
+   * Traite un webhook global de ledger (dépôts, transferts, payouts, etc.)
+   */
+  async handleLedgerWebhook(waveLedger: any) {
+    const walletId = waveLedger.walletId
+    if (!walletId) return
+
+    logger.info(
+      { walletId, category: waveLedger.category, amount: waveLedger.amount },
+      '[OrderPaymentService] Processing ledger webhook'
+    )
+
+    // Notify the specific wallet room (Drivers, Clients, Dashboard)
+    WsService.emitToRoom(`wallet:${walletId}`, 'wallet_update', {
+      message: waveLedger.label || 'Transaction processed',
+      amount: waveLedger.amount,
+      direction: waveLedger.direction,
+      category: waveLedger.category,
+      fundsStatus: waveLedger.fundsStatus,
+      timestamp: DateTime.now().toISO(),
+    })
+
+    // If it's a TRANSFER, and we have the transactionGroupId,
+    // we could potentially notify the other wallet if we had its ID.
+    // However, wave-api sends one webhook per LedgerEntry (one for DEBIT, one for CREDIT).
+    // So both will be handled independently.
   }
 
   // ── Order delivered ──

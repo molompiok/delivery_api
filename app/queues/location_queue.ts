@@ -31,31 +31,39 @@ locationQueue.add('periodic-flush', {}, {
     }
 })
 
-/**
- * Worker qui vide le buffer Redis vers SQL
- */
-export const locationWorker = new Worker(
-    'location-flush',
-    async (job: Job) => {
-        console.log(`[LOCATION WORKER] Flushing batch... ${job.id}`)
-        try {
-            const count = await TrackingService.flushBufferToSQL()
-            return { flushed: count }
-        } catch (error) {
-            console.error('[LOCATION WORKER] Flush error:', error)
-            throw error
+let locationWorker: Worker | null = null
+
+export function startLocationWorker(): Worker {
+    if (locationWorker) return locationWorker
+
+    locationWorker = new Worker(
+        'location-flush',
+        async (job: Job) => {
+            console.log(`[LOCATION WORKER] Flushing batch... ${job.id}`)
+            try {
+                const count = await TrackingService.flushBufferToSQL()
+                return { flushed: count }
+            } catch (error) {
+                console.error('[LOCATION WORKER] Flush error:', error)
+                throw error
+            }
+        },
+        {
+            connection: redisConnection,
+            concurrency: 1, // Un seul flush à la fois
         }
-    },
-    {
-        connection: redisConnection,
-        concurrency: 1, // Un seul flush à la fois
-    }
-)
+    )
+
+    return locationWorker
+}
 
 /**
  * Graceful shutdown
  */
 export async function closeLocationQueue(): Promise<void> {
     await locationQueue.close()
-    await locationWorker.close()
+    if (locationWorker) {
+        await locationWorker.close()
+        locationWorker = null
+    }
 }

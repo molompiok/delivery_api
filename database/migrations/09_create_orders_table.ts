@@ -37,6 +37,7 @@ export default class extends BaseSchema {
             table.jsonb('route_geometry').nullable()
             table.jsonb('status_history').nullable().defaultTo('[]')
             table.jsonb('metadata').nullable().defaultTo('{}')
+            table.string('payment_trigger').nullable()
 
             table.timestamp('completed_at').nullable()
 

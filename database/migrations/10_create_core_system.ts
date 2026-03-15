@@ -34,6 +34,12 @@ export default class extends BaseSchema {
             table.string('original_id').nullable().references('id').inTable('stops').onDelete('SET NULL')
             table.boolean('is_pending_change').defaultTo(false)
             table.boolean('is_delete_required').defaultTo(false)
+
+            // Reversal and Fees
+            table.decimal('reversal_amount', 12, 2).defaultTo(0).notNullable()
+            table.boolean('include_withdrawal_fees').defaultTo(true).notNullable()
+            table.decimal('delivery_fee', 12, 2).nullable()
+
             table.timestamp('created_at').notNullable()
             table.timestamp('updated_at').nullable()
         })
