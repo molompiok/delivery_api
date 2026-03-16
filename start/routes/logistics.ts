@@ -19,6 +19,8 @@ const CompanyController = () => import('#controllers/company_controller')
 router
   .group(() => {
     router.get('/companies/search', [CompanyController, 'searchPublic'])
+    router.get('/geo/search', [GeoController, 'searchPlaces'])
+    router.get('/geo/reverse', [GeoController, 'reverseGeocode'])
   })
   .prefix('/v1')
 
@@ -34,10 +36,6 @@ router
 // --- AUTH PROTECTED ROUTES ---
 router
   .group(() => {
-    // Geo / Places
-    router.get('/geo/search', [GeoController, 'searchPlaces'])
-    router.get('/geo/reverse', [GeoController, 'reverseGeocode'])
-
     // Orders
     router.get('/orders', [OrdersController, 'index'])
     router.get('/orders/stats', [OrdersController, 'stats'])
