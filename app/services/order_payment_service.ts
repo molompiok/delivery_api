@@ -7,6 +7,8 @@ import PaymentIntent from '#models/payment_intent'
 import PaymentPolicy from '#models/payment_policy'
 import CodCollection from '#models/cod_collection'
 import User from '#models/user'
+import Company from '#models/company'
+import CompanyDriverSetting from '#models/company_driver_setting'
 import paymentPolicyService from '#services/payment_policy_service'
 import subscriptionService from '#services/subscription_service'
 import walletBridge from '#services/wallet_bridge_service'
@@ -1032,14 +1034,38 @@ class OrderPaymentService {
     )
 
     // Notify the specific wallet room (Drivers, Clients, Dashboard)
-    WsService.emitToRoom(`wallet:${walletId}`, 'wallet_update', {
+    const data = {
       message: waveLedger.label || 'Transaction processed',
       amount: waveLedger.amount,
       direction: waveLedger.direction,
       category: waveLedger.category,
       fundsStatus: waveLedger.fundsStatus,
       timestamp: DateTime.now().toISO(),
-    })
+    }
+
+    WsService.emitToRoom(`wallet:${walletId}`, 'wallet_update', data)
+
+    // Notify the owner room if it's different from the walletId (compatibility for mobile apps)
+    // Mobile apps currently join 'wallet:$userId' or 'wallet:$driverId'.
+    try {
+      const user = await User.findBy('walletId', walletId)
+      if (user) {
+        WsService.emitToRoom(`wallet:${user.id}`, 'wallet_update', data)
+      } else {
+        const company = await Company.findBy('walletId', walletId)
+        if (company) {
+          WsService.emitToRoom(`wallet:${company.id}`, 'wallet_update', data)
+        } else {
+          const cds = await CompanyDriverSetting.findBy('walletId', walletId)
+          if (cds) {
+            // Force notify the driver user room for professional wallet updates
+            WsService.emitToRoom(`wallet:${cds.driverId}`, 'wallet_update', data)
+          }
+        }
+      }
+    } catch (err) {
+      logger.error({ err, walletId }, '[OrderPaymentService] Failed to notify owner room')
+    }
 
     // If it's a TRANSFER, and we have the transactionGroupId,
     // we could potentially notify the other wallet if we had its ID.
