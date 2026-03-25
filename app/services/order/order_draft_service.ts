@@ -30,6 +30,7 @@ import Company from '#models/company'
 import OrToolsService, { OrToolsStop, OrToolsAction } from '../optimizer/or_tools_service.js'
 import redis from '@adonisjs/redis/services/main'
 import wsService from '#services/ws_service'
+import { OrderAccessContext, applyOrderReadScope, toOrderAccessContext } from '#utils/order_access'
 
 
 const COCODY = [-3.989, 5.348] as [number, number]
@@ -57,6 +58,13 @@ export default class OrderDraftService {
         protected actionService: ActionService,
         protected orToolsService: OrToolsService
     ) { }
+
+    private normalizeOrderAccess(
+        requester: string | OrderAccessContext,
+        options: { targetCompanyId?: string; targetDriverId?: string } = {}
+    ) {
+        return toOrderAccessContext(requester, options)
+    }
 
     private assertTemplateAllowedForCompanyActivity(company: Company, template: string, context: 'INTERNAL' | 'TARGET') {
         const activityType = String(company.activityType || '').toUpperCase()
@@ -97,7 +105,7 @@ export default class OrderDraftService {
     }
 
     /**
-     * Reconstructs the VROOM-like route object from DB Legs + Stops.
+     * Reconstructs the frontend route object from DB legs + stops.
      * Used for LIVE route fetching without recalculation.
      */
     private async buildLiveRouteFromDB(order: Order, trx?: TransactionClientContract): Promise<any> {
@@ -663,8 +671,26 @@ export default class OrderDraftService {
     /**
      * Fetches detailed order with all relations preloaded.
      */
-    async getOrderDetails(orderId: string, clientId?: string, options: { trx?: TransactionClientContract, withRoute?: boolean, json?: boolean, include?: string[], targetCompanyId?: string } = { withRoute: false, json: true }) {
-        logger.debug({ orderId, clientId, options }, '[ORDER_DRAFT] Fetching order details')
+    async getOrderDetails(
+        orderId: string,
+        requester?: string | OrderAccessContext,
+        options: {
+            trx?: TransactionClientContract
+            withRoute?: boolean
+            json?: boolean
+            include?: string[]
+            targetCompanyId?: string
+            targetDriverId?: string
+        } = { withRoute: false, json: true }
+    ) {
+        const access = requester
+            ? this.normalizeOrderAccess(requester, {
+                targetCompanyId: options.targetCompanyId,
+                targetDriverId: options.targetDriverId,
+            })
+            : undefined
+
+        logger.debug({ orderId, requester: access || requester, options }, '[ORDER_DRAFT] Fetching order details')
         const query = Order.query({ client: options.trx })
             .preload('vehicle')
             .preload('driver', (q) => q.preload('driverSetting'))
@@ -684,25 +710,20 @@ export default class OrderDraftService {
         }
 
         if (orderId === 'latest') {
-            if (!clientId && !options.targetCompanyId) throw new Error('clientId or targetCompanyId is required for latest order retrieval')
-            query.where((q) => {
-                if (clientId) q.where('clientId', clientId)
-                if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
-            }).orderBy('createdAt', 'desc')
+            if (!access) throw new Error('Access context is required for latest order retrieval')
+            applyOrderReadScope(query, access)
+            query.orderBy('createdAt', 'desc')
         } else {
             query.where('id', orderId)
-            if (clientId || options.targetCompanyId) {
-                query.where((q) => {
-                    if (clientId) q.where('clientId', clientId)
-                    if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
-                })
+            if (access) {
+                applyOrderReadScope(query, access)
             }
         }
 
         const order = await query.first()
 
         if (!order) {
-            logger.error({ orderId, clientId }, 'Order not found during getOrderDetails')
+            logger.error({ orderId, requester: access || requester }, 'Order not found during getOrderDetails')
             throw new Error('Order not found')
         }
 
@@ -781,7 +802,7 @@ export default class OrderDraftService {
 
             // In DRAFT or when viewing modifications, we always want the "virtual" optimized state
             const optimizedResult = await this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
-            const formattedRoute = await this.mapOrToolsToVroomFormat(optimizedResult, order, startLocation)
+            const formattedRoute = await this.mapOrToolsToRouteFormat(optimizedResult, order, startLocation)
 
             liveRoute = formattedRoute
             pendingRoute = formattedRoute // In this context (getOrderDetails), they represent the same "next potential state"
@@ -807,16 +828,32 @@ export default class OrderDraftService {
     /**
      * Gets only the route (live and pending) for an order.
      */
-    async getRoute(orderId: string, clientId?: string, options: { live?: boolean, pending?: boolean, force?: boolean, simplify?: boolean, no_geo?: boolean, targetCompanyId?: string } = { live: true, pending: true, force: false }, trx?: TransactionClientContract) {
+    async getRoute(
+        orderId: string,
+        requester?: string | OrderAccessContext,
+        options: {
+            live?: boolean
+            pending?: boolean
+            force?: boolean
+            simplify?: boolean
+            no_geo?: boolean
+            targetCompanyId?: string
+            targetDriverId?: string
+        } = { live: true, pending: true, force: false },
+        trx?: TransactionClientContract
+    ) {
         // If nothing requested (edge case), return empty
         if (!options.live && !options.pending) return {}
 
+        const access = requester
+            ? this.normalizeOrderAccess(requester, {
+                targetCompanyId: options.targetCompanyId,
+                targetDriverId: options.targetDriverId,
+            })
+            : undefined
+
         const query = Order.query({ client: trx })
             .where('id', orderId)
-            .where((q) => {
-                if (clientId) q.where('clientId', clientId)
-                if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
-            })
             .preload('vehicle')
             .preload('leg')
             .preload('steps', (q) => q.orderBy('sequence', 'asc')
@@ -827,11 +864,8 @@ export default class OrderDraftService {
             )
             .preload('transitItems')
 
-        if (clientId || options.targetCompanyId) {
-            query.where((q) => {
-                if (clientId) q.where('clientId', clientId)
-                if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
-            })
+        if (access) {
+            applyOrderReadScope(query, access)
         }
 
         const order = await query.first()
@@ -854,7 +888,7 @@ export default class OrderDraftService {
 
                 if (startLocation) {
                     const projectedPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
-                        .then(async res => await this.mapOrToolsToVroomFormat(res, order))
+                        .then(async res => await this.mapOrToolsToRouteFormat(res, order))
 
                     promises.push(Promise.all([liveDbPromise, projectedPromise]).then(([db, proj]) => ({
                         ...db,
@@ -883,9 +917,9 @@ export default class OrderDraftService {
                     const calcPromise = GeoService.calculateOptimizedRoute(waypoints)
                     promises.push(calcPromise)
                 } else {
-                    // Helper to format as VROOM-like response for frontend compatibility
+                    // Helper to format as frontend-compatible route payload
                     const calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
-                        .then(async res => await this.mapOrToolsToVroomFormat(res, order, startLocation))
+                        .then(async res => await this.mapOrToolsToRouteFormat(res, order, startLocation))
                     promises.push(calcPromise)
                 }
                 sources.live = 'ortools'
@@ -925,7 +959,7 @@ export default class OrderDraftService {
                 } else {
                     calcPromise = this.optimizeViaOrTools(order, { startLocation, visitedIds, useVirtualState: true })
                         .then(async (res) => {
-                            const formatted = await this.mapOrToolsToVroomFormat(res, order, startLocation)
+                            const formatted = await this.mapOrToolsToRouteFormat(res, order, startLocation)
                             if (formatted) {
                                 // Cache for 1h
                                 await redis.set(cacheKey, JSON.stringify(formatted), 'EX', 3600)
@@ -1194,18 +1228,39 @@ export default class OrderDraftService {
     /**
      * Submits a draft order for final validation and transition to PENDING.
      */
-    async submitOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
+    async submitOrder(
+        orderId: string,
+        clientId: string,
+        trxOrOptions?: TransactionClientContract | { trx?: TransactionClientContract; targetCompanyId?: string }
+    ) {
+        const isTransaction =
+            !!trxOrOptions &&
+            typeof (trxOrOptions as TransactionClientContract).commit === 'function' &&
+            typeof (trxOrOptions as TransactionClientContract).rollback === 'function'
+
+        const options = !isTransaction
+            ? trxOrOptions as { trx?: TransactionClientContract; targetCompanyId?: string } | undefined
+            : undefined
+        const trx = isTransaction
+            ? trxOrOptions as TransactionClientContract
+            : options?.trx
+        const targetCompanyId = isTransaction
+            ? undefined
+            : options?.targetCompanyId
         const effectiveTrx = trx || await db.transaction()
         try {
             const order = await Order.query({ client: effectiveTrx })
                 .where('id', orderId)
-                .where('clientId', clientId)
+                .where((q) => {
+                    q.where('clientId', clientId)
+                    if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
+                })
                 .preload('steps', (q) => q.orderBy('sequence', 'asc').preload('stops', (sq) => sq.orderBy('display_order', 'asc').preload('address').preload('actions', (aq) => aq.preload('transitItem'))))
                 .preload('transitItems')
                 .first()
 
             if (!order) {
-                throw new Error(`Order not found [ID: ${orderId}] for client [ID: ${clientId}]`)
+                throw new Error(`Order not found [ID: ${orderId}] for requester [ID: ${clientId}]`)
             }
 
             await this.assertSubscriptionAccessForCompany(
@@ -1233,7 +1288,10 @@ export default class OrderDraftService {
 
             // Re-fetch or update virtualState to reflect the cleanup
             // In DRAFT mode, it's safer to reload or just build state from re-fetched order
-            const orderForValidation = await this.getOrderDetails(order.id, clientId, { trx: effectiveTrx })
+            const orderForValidation = await this.getOrderDetails(order.id, clientId, {
+                trx: effectiveTrx,
+                targetCompanyId,
+            })
             const virtualStateForValidation = this.buildVirtualState(orderForValidation, { view: 'CLIENT' })
 
             const validation = LogisticsService.validateOrderConsistency(virtualStateForValidation, 'SUBMIT')
@@ -1594,7 +1652,7 @@ export default class OrderDraftService {
         const execution = order.metadata?.route_execution || { visited: [], remaining: [] }
         const visitedIds = new Set(execution.visited || [])
 
-        // 1. Get optimal sequence for REMAINING stops from VROOM (Skips for VOYAGE and MISSION)
+        // 1. Get the optimal sequence for remaining stops (skips for VOYAGE and MISSION)
         let routeResult: any = null
 
         if (order.template !== 'VOYAGE' && order.template !== 'MISSION') {
@@ -2043,9 +2101,9 @@ export default class OrderDraftService {
     }
 
     /**
-     * Maps OR-Tools optimization result to VROOM-like format for frontend compatibility.
+     * Maps OR-Tools optimization result to the route payload expected by the frontend.
      */
-    private async mapOrToolsToVroomFormat(result: any, order: Order, startLocation?: [number, number]): Promise<any> {
+    private async mapOrToolsToRouteFormat(result: any, order: Order, startLocation?: [number, number]): Promise<any> {
         if (!result || result.status !== 'success') return null
         const allStopsInOrder = order.steps.flatMap(s => s.stops || [])
 

@@ -916,12 +916,15 @@ class OrderPaymentService {
   /**
    * Récupère les intents en attente qui n'ont pas encore expiré.
    */
-  async getPendingExternalIntents(): Promise<PaymentIntent[]> {
+  async getPendingExternalIntents(limit?: number): Promise<PaymentIntent[]> {
     return PaymentIntent.query()
       .where('status', 'PENDING')
       .whereNotNull('externalId')
       .where('expires_at', '>', DateTime.now().toSQL())
       .orderBy('expires_at', 'asc')
+      .if(limit && Number.isFinite(limit), (query) => {
+        query.limit(limit!)
+      })
   }
 
   /**

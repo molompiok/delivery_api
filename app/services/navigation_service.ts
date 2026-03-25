@@ -14,7 +14,7 @@ export class NavigationService {
         lng: number,
         forceCalculate: boolean = false
     ): Promise<any | null> {
-        // logger.info({ orderId, lat, lng, forceCalculate }, '[NAV_SERVICE] getNavTrace called')
+        logger.info({ orderId, lat, lng, forceCalculate }, '[NAV_SERVICE] getNavTrace called')
         try {
             // 1. Vérifier le cache si pas forcé
             if (!forceCalculate) {
@@ -27,7 +27,7 @@ export class NavigationService {
             const remainingStops = order.metadata?.route_execution?.remaining as string[] | undefined
             const visitedStops = order.metadata?.route_execution?.visited as string[] | undefined
 
-            // logger.info({ orderId, remainingCount: remainingStops?.length, visitedCount: visitedStops?.length }, '[NAV_SERVICE] Checking stops for target selection')
+            logger.info({ orderId, remainingCount: remainingStops?.length, visitedCount: visitedStops?.length }, '[NAV_SERVICE] Checking stops for target selection')
 
             let nextStopId: string | null = null
 
@@ -39,7 +39,7 @@ export class NavigationService {
                 const lastStop = await Stop.find(lastVisitedId)
 
                 if (lastStop && lastStop.status === 'ARRIVED') {
-                    // logger.info({ orderId, lastVisitedId }, '[NAV_SERVICE] Last visited stop is still ARRIVED, using it as target')
+                    logger.info({ orderId, lastVisitedId }, '[NAV_SERVICE] Last visited stop is still ARRIVED, using it as target')
                     nextStopId = lastVisitedId
                 }
             }
@@ -47,11 +47,26 @@ export class NavigationService {
             // 2. Sinon, on prend le premier des arrêts restants
             if (!nextStopId && remainingStops && remainingStops.length > 0) {
                 nextStopId = remainingStops[0]
-                // logger.info({ orderId, nextStopId }, '[NAV_SERVICE] Using first remaining stop as target')
+                logger.info({ orderId, nextStopId }, '[NAV_SERVICE] Using first remaining stop as target')
+            }
+
+            // 3. FALLBACK : Si pas de metadata route_execution, chercher le premier stop non complété
+            if (!nextStopId) {
+                const Stop = (await import('#models/stop')).default
+                const firstPendingStop = await Stop.query()
+                    .where('orderId', orderId)
+                    .whereNotIn('status', ['COMPLETED', 'FAILED', 'CANCELLED'])
+                    .orderBy('execution_order', 'asc')
+                    .orderBy('display_order', 'asc')
+                    .first()
+                if (firstPendingStop) {
+                    nextStopId = firstPendingStop.id
+                    logger.info({ orderId, nextStopId }, '[NAV_SERVICE] Fallback: Using first pending stop from DB as target')
+                }
             }
 
             if (!nextStopId) {
-                // logger.warn({ orderId, metadata: order.metadata }, '[NAV_SERVICE] No target stop found (all done or empty)')
+                logger.warn({ orderId, metadata: order.metadata }, '[NAV_SERVICE] No target stop found (all done or empty)')
                 return null
             }
 
@@ -67,7 +82,7 @@ export class NavigationService {
             }
 
             // 3. Calculer via Valhalla (GeoService)
-            // logger.info({ orderId, nextStopId, lat, lng, destLat: nextStop.address.lat, destLng: nextStop.address.lng }, '[NAV_SERVICE] Calculating via Valhalla')
+            logger.info({ orderId, nextStopId, lat, lng, destLat: nextStop.address.lat, destLng: nextStop.address.lng }, '[NAV_SERVICE] Calculating via Valhalla')
             const routeInfo = await GeoService.getDirectRouteInfo(
                 [lng, lat],
                 [nextStop.address.lng, nextStop.address.lat]

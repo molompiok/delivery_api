@@ -16,11 +16,13 @@ import OrderDraftService from './order_draft_service.js'
 import LogisticsService from '../logistics_service.js'
 import GeoService from '../geo_service.js'
 import subscriptionService from '#services/subscription_service'
+import FavoritesService from '#services/favorites_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import PayloadMapper from './payload_mapper.js'
 import OrderStructureChanged from '#events/order_structure_changed'
 import vine from '@vinejs/vine'
 import { createOrderSchema } from '#validators/order_validator'
+import { OrderAccessContext, applyOrderReadScope, toOrderAccessContext } from '#utils/order_access'
 
 @inject()
 export default class OrderService {
@@ -29,22 +31,32 @@ export default class OrderService {
     protected stopService: StopService,
     protected actionService: ActionService,
     protected transitItemService: TransitItemService,
-    protected orderDraftService: OrderDraftService
+    protected orderDraftService: OrderDraftService,
+    protected favoritesService: FavoritesService
   ) { }
+
+  private normalizeOrderAccess(
+    requester: string | OrderAccessContext,
+    options: { targetCompanyId?: string; targetDriverId?: string } = {}
+  ) {
+    return toOrderAccessContext(requester, options)
+  }
 
   /**
    * Lists orders for a client.
    */
-  async listOrders(clientId: string, targetCompanyId?: string) {
-    return Order.query()
-      .where((q) => {
-        q.where('clientId', clientId)
-        if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
-      })
+  async listOrders(requester: string | OrderAccessContext, targetCompanyId?: string) {
+    const access = this.normalizeOrderAccess(requester, { targetCompanyId })
+
+    const query = Order.query()
       .where('isDeleted', false)
       .preload('driver')
       .preload('vehicle')
       .orderBy('createdAt', 'desc')
+
+    applyOrderReadScope(query, access)
+
+    return query
   }
 
   /**
@@ -52,23 +64,24 @@ export default class OrderService {
    * Supports server-side pagination, search, and status filtering.
    */
   async listOrdersSummary(
-    clientId: string,
+    requester: string | OrderAccessContext,
     options: {
       page?: number
       perPage?: number
       search?: string
       status?: string
       targetCompanyId?: string
+      targetDriverId?: string
     } = {}
   ) {
+    const access = this.normalizeOrderAccess(requester, {
+      targetCompanyId: options.targetCompanyId,
+      targetDriverId: options.targetDriverId,
+    })
     const page = options.page || 1
     const perPage = options.perPage || 12
 
     let query = Order.query()
-      .where((q) => {
-        q.where('clientId', clientId)
-        if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
-      })
       .where('isDeleted', false)
       .preload('driver', (q) => q.preload('driverSetting', (sq) => sq.preload('activeVehicle')))
       .preload('vehicle')
@@ -80,6 +93,8 @@ export default class OrderService {
             .preload('actions', (aq) => aq.preload('transitItem'))
         )
       )
+
+    applyOrderReadScope(query, access)
 
     // Status filter
     if (options.status && options.status !== 'ALL') {
@@ -127,12 +142,8 @@ export default class OrderService {
     // --- Global Status Counts (for filter badges) ---
     // Base query for counts (respects client and search, but NOT status filter)
     const baseCountQuery = () => {
-      let q = Order.query()
-        .where((sq) => {
-          sq.where('clientId', clientId)
-          if (options.targetCompanyId) sq.orWhere('companyId', options.targetCompanyId)
-        })
-        .where('isDeleted', false)
+      let q = Order.query().where('isDeleted', false)
+      applyOrderReadScope(q, access)
       if (options.search) {
         const term = `%${options.search}%`
         q = q.where((builder) => {
@@ -371,22 +382,26 @@ export default class OrderService {
   /**
    * Submits a draft order to PENDING status.
    */
-  async submitOrder(orderId: string, clientId: string, trx?: TransactionClientContract) {
-    return this.orderDraftService.submitOrder(orderId, clientId, trx)
+  async submitOrder(
+    orderId: string,
+    clientId: string,
+    options: TransactionClientContract | { trx?: TransactionClientContract; targetCompanyId?: string } = {}
+  ) {
+    return this.orderDraftService.submitOrder(orderId, clientId, options)
   }
 
   /**
    * Gets full order details with all sub-components and applied shadows.
    */
-  async getOrderDetails(orderId: string, clientId: string, options: any = {}) {
-    return this.orderDraftService.getOrderDetails(orderId, clientId, options)
+  async getOrderDetails(orderId: string, requester: string | OrderAccessContext, options: any = {}) {
+    return this.orderDraftService.getOrderDetails(orderId, requester, options)
   }
 
   /**
    * Gets order route (geometry + waypoints).
    */
-  async getRoute(orderId: string, clientId: string, options: any) {
-    return this.orderDraftService.getRoute(orderId, clientId, options)
+  async getRoute(orderId: string, requester: string | OrderAccessContext, options: any) {
+    return this.orderDraftService.getRoute(orderId, requester, options)
   }
 
   /**
@@ -1197,17 +1212,17 @@ export default class OrderService {
    */
   async recalculateRoute(
     orderId: string,
-    clientId: string,
-    options: { gps?: { lat: number; lng: number }; targetCompanyId?: string } = {}
+    requester: string | OrderAccessContext,
+    options: { gps?: { lat: number; lng: number }; targetCompanyId?: string; targetDriverId?: string } = {}
   ) {
+    const access = this.normalizeOrderAccess(requester, {
+      targetCompanyId: options.targetCompanyId,
+      targetDriverId: options.targetDriverId,
+    })
     const trx = await db.transaction()
     try {
-      const order = await Order.query({ client: trx })
+      const query = Order.query({ client: trx })
         .where('id', orderId)
-        .where((q) => {
-          q.where('clientId', clientId)
-          if (options.targetCompanyId) q.orWhere('companyId', options.targetCompanyId)
-        })
         .preload('steps', (q) =>
           q.orderBy('sequence', 'asc').preload('stops', (sq) =>
             sq
@@ -1218,7 +1233,10 @@ export default class OrderService {
         )
         .preload('transitItems')
         .preload('leg')
-        .firstOrFail()
+
+      applyOrderReadScope(query, access)
+
+      const order = await query.firstOrFail()
 
       const forcedStartLocation: [number, number] | undefined = options.gps
         ? [options.gps.lng, options.gps.lat]
@@ -1229,10 +1247,9 @@ export default class OrderService {
 
       await trx.commit()
 
-      return this.orderDraftService.getRoute(orderId, clientId, {
+      return this.orderDraftService.getRoute(orderId, access, {
         live: true,
         pending: false,
-        targetCompanyId: options.targetCompanyId,
       })
     } catch (error) {
       await trx.rollback()
@@ -1244,7 +1261,12 @@ export default class OrderService {
    * Get order statistics for a client over the last 7 days.
    * Respects requestedFields to only perform necessary queries.
    */
-  async getOrderStats(clientId: string, requestedFields: string[] = [], targetCompanyId?: string) {
+  async getOrderStats(
+    requester: string | OrderAccessContext,
+    requestedFields: string[] = [],
+    targetCompanyId?: string
+  ) {
+    const access = this.normalizeOrderAccess(requester, { targetCompanyId })
     const now = DateTime.local()
     const sevenDaysAgo = now.minus({ days: 6 }).startOf('day')
 
@@ -1253,12 +1275,14 @@ export default class OrderService {
     // Helper for base query within 7 days
     const base7dQuery = () =>
       Order.query()
-        .where((q) => {
-          q.where('clientId', clientId)
-          if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
-        })
         .where('isDeleted', false)
         .where('createdAt', '>=', sevenDaysAgo.toSQL()!)
+
+    const scopedBase7dQuery = () => {
+      const query = base7dQuery()
+      applyOrderReadScope(query, access)
+      return query
+    }
 
     // 1. Daily Counts (for chart)
     if (requestedFields.includes('dailyCounts')) {
@@ -1268,11 +1292,7 @@ export default class OrderService {
         const startOfDay = date.startOf('day').toSQL()
         const endOfDay = date.endOf('day').toSQL()
 
-        const count = await Order.query()
-          .where((q) => {
-            q.where('clientId', clientId)
-            if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
-          })
+        const count = await scopedBase7dQuery()
           .where('isDeleted', false)
           .whereBetween('createdAt', [startOfDay!, endOfDay!])
           .count('* as total')
@@ -1289,8 +1309,8 @@ export default class OrderService {
     // 2. Completion Rate
     if (requestedFields.includes('completionRate')) {
       const [total, completed] = await Promise.all([
-        base7dQuery().whereNot('status', 'CANCELLED').count('* as total'),
-        base7dQuery().whereIn('status', ['DELIVERED', 'COMPLETED']).count('* as total'),
+        scopedBase7dQuery().whereNot('status', 'CANCELLED').count('* as total'),
+        scopedBase7dQuery().whereIn('status', ['DELIVERED', 'COMPLETED']).count('* as total'),
       ])
 
       const totalCount = Number(total[0].$extras.total || 0)
@@ -1302,7 +1322,7 @@ export default class OrderService {
 
     // 3. Templates Distribution
     if (requestedFields.includes('templates')) {
-      const templateCounts = await base7dQuery()
+      const templateCounts = await scopedBase7dQuery()
         .select('template')
         .count('* as total')
         .groupBy('template')
@@ -1315,11 +1335,7 @@ export default class OrderService {
 
     // 4. In Progress Count (Live active orders)
     if (requestedFields.includes('inProgress')) {
-      const inProgress = await Order.query()
-        .where((q) => {
-          q.where('clientId', clientId)
-          if (targetCompanyId) q.orWhere('companyId', targetCompanyId)
-        })
+      const inProgress = await scopedBase7dQuery()
         .where('isDeleted', false)
         .whereIn('status', [
           'ACCEPTED',
@@ -1490,6 +1506,20 @@ export default class OrderService {
     try {
       const order = await this.initiateOrder(clientId, validatedPayload, effectiveTrx)
       await this.updateOrder(order.id, clientId, validatedPayload, effectiveTrx)
+
+      try {
+        await this.favoritesService.syncImplicitFromOrder(
+          order.id,
+          { ownerType: 'User', ownerId: clientId },
+          effectiveTrx
+        )
+      } catch (favoriteError) {
+        logger.warn(
+          { orderId: order.id, clientId, err: favoriteError },
+          '[ORDER_SERVICE] Failed to sync implicit favorites after order creation'
+        )
+      }
+
       if (!trx) await effectiveTrx.commit()
       return order
     } catch (error) {

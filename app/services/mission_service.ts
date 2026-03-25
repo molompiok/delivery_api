@@ -900,37 +900,9 @@ export default class MissionService {
     async listMissions(driverId: string, filter?: string, page?: number, limit?: number) {
         const DriverSetting = (await import('#models/driver_setting')).default
         const ds = await DriverSetting.findBy('userId', driverId)
+        const normalizedFilter = String(filter || '').toLowerCase()
 
         const query = Order.query()
-            .where((q) => {
-                // FILTER: PENDING (Offers)
-                if (!filter || filter === 'pending') {
-                    if (ds?.currentCompanyId) {
-                        q.orWhere((pendingQ) => {
-                            pendingQ.where('status', 'PENDING')
-                            pendingQ.where('companyId', ds.currentCompanyId!)
-                            pendingQ.whereNull('driverId')
-                        })
-                    }
-                }
-
-
-                // FILTER: ACTIVE (My current missions)
-                if (!filter || filter === 'active') {
-                    q.orWhere((activeQ) => {
-                        activeQ.where('driverId', driverId)
-                        activeQ.whereIn('status', ['ACCEPTED', 'IN_PROGRESS', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
-                    })
-                }
-
-                // FILTER: HISTORY (My past missions)
-                if (!filter || filter === 'history') {
-                    q.orWhere((historyQ) => {
-                        historyQ.where('driverId', driverId)
-                        historyQ.whereIn('status', ['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED'])
-                    })
-                }
-            })
             .preload('client', (q) => q.preload('company'))
             .preload('transitItems')
             .preload('steps', (stepsQuery) => {
@@ -947,6 +919,46 @@ export default class MissionService {
                 })
             })
             .orderBy('createdAt', 'desc')
+
+        if (normalizedFilter == 'pending') {
+            if (ds?.currentCompanyId) {
+                query
+                    .where('status', 'PENDING')
+                    .where('companyId', ds.currentCompanyId)
+                    .whereNull('driverId')
+            } else {
+                // No active fleet context => no available missions to propose.
+                query.whereRaw('1 = 0')
+            }
+        } else if (normalizedFilter == 'active') {
+            query
+                .where('driverId', driverId)
+                .whereIn('status', ['ACCEPTED', 'IN_PROGRESS', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+        } else if (normalizedFilter == 'history') {
+            query
+                .where('driverId', driverId)
+                .whereIn('status', ['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED'])
+        } else {
+            query.where((q) => {
+                if (ds?.currentCompanyId) {
+                    q.orWhere((pendingQ) => {
+                        pendingQ.where('status', 'PENDING')
+                        pendingQ.where('companyId', ds.currentCompanyId!)
+                        pendingQ.whereNull('driverId')
+                    })
+                }
+
+                q.orWhere((activeQ) => {
+                    activeQ.where('driverId', driverId)
+                    activeQ.whereIn('status', ['ACCEPTED', 'IN_PROGRESS', 'AT_PICKUP', 'COLLECTED', 'AT_DELIVERY'])
+                })
+
+                q.orWhere((historyQ) => {
+                    historyQ.where('driverId', driverId)
+                    historyQ.whereIn('status', ['DELIVERED', 'COMPLETED', 'CANCELLED', 'FAILED'])
+                })
+            })
+        }
 
         // Executing query
         let orders: Order[]

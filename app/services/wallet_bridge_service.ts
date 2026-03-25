@@ -253,6 +253,24 @@ class WalletBridgeService {
 
     /**
      * Récupérer un wallet par ID
+     *
+     * Point important pour les écrans finance:
+     * - Cette lecture vient directement de wave-api, donc c'est la source de vérité
+     *   des soldes (`balanceAvailable`, `balanceAccounting`).
+     * - Le endpoint delivery `/driver/payments/wallets` n'a pas de snapshot persistant:
+     *   il reconstruit la liste en appelant `getWallet()` pour chaque wallet accessible.
+     *
+     * Noms d'événements à connaître pour comprendre le refresh:
+     * - wave-api envoie principalement les webhooks manager `ledger.updated`,
+     *   `payment.completed` et `payment.failed`.
+     * - delivery-api transforme ensuite ces webhooks en sockets métier:
+     *   - `ledger.updated` -> `wallet_update` dans la room `wallet:{walletId}`
+     *   - `payment.completed` -> `payment_status_updated` pour les flows checkout
+     *     orientés commande, avec parfois aussi `wallet_update` selon le métier
+     *
+     * Conséquence côté front: après un `wallet_update`, il faut recharger la liste
+     * des wallets, pas seulement les stats/transactions. Sinon le wallet sélectionné
+     * dans l'UI garde un ancien objet et le solde affiché peut rester figé.
      */
     async getWallet(walletId: string): Promise<WalletResponse> {
         return this.request<WalletResponse>('GET', `/wallets/${walletId}`)
@@ -488,6 +506,14 @@ class WalletBridgeService {
 
     /**
      * Récupérer les stats d'un wallet
+     *
+     * À noter: ces stats servent aux graphes et agrégats.
+     * Elles ne remplacent pas un refetch de `getWallet()` quand on veut
+     * rafraîchir le solde courant affiché dans les cartes principales du dash.
+     *
+     * En bref:
+     * - `wallet_update` => refetch wallet
+     * - `getWalletStats()` => refresh des courbes, KPI et historiques agrégés
      */
     async getWalletStats(walletId: string, params: { startDate?: string, endDate?: string }): Promise<StatsResponse> {
         const qs = new URLSearchParams()
@@ -512,6 +538,16 @@ class WalletBridgeService {
 
     /**
      * Recharger un wallet via Wave checkout
+     *
+     * Cet appel n'émet aucun socket directement.
+     * Il ne fait qu'initialiser le checkout chez wave-api.
+     *
+     * La chaîne temps réel complète est:
+     * 1. `deposit()` crée le checkout
+     * 2. Wave confirme le paiement à wave-api
+     * 3. wave-api crée/met à jour le ledger puis envoie `ledger.updated`
+     * 4. delivery-api reçoit le webhook et émet `wallet_update`
+     *    dans la room `wallet:{walletId}`
      */
     async deposit(params: {
         walletId: string

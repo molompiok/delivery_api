@@ -9,8 +9,10 @@ import OrderPaymentService from '#services/order_payment_service'
 import PricingFilterService from '#services/pricing_filter_service'
 import PaymentPolicyService from '#services/payment_policy_service'
 import VoyageService from '#services/voyage_service'
+import FavoritesService from '#services/favorites_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import vine from '@vinejs/vine'
+import { inject } from '@adonisjs/core'
 
 const createBookingSchema = vine.object({
   seats: vine.array(vine.string()).minLength(1),
@@ -27,10 +29,14 @@ const createBookingSchema = vine.object({
     .optional(),
 })
 
+@inject()
 export default class BookingService {
   private static readonly pendingHoldMinutes = 5
 
-  constructor(protected voyageService: VoyageService = new VoyageService()) {}
+  constructor(
+    protected voyageService: VoyageService = new VoyageService(),
+    protected favoritesService: FavoritesService = new FavoritesService()
+  ) {}
 
   private getPendingHoldAnchor(booking: Booking) {
     return booking.updatedAt || booking.createdAt
@@ -529,6 +535,31 @@ export default class BookingService {
 
       // 3. Generate Payment Intents
       await OrderPaymentService.generateIntentsForOrder(order, effectiveTrx)
+
+      if (order.companyId) {
+        await order.load('company')
+        await this.favoritesService.recordUsage(
+          {
+            ownerType: 'User',
+            ownerId: clientId,
+            tableName: 'Company',
+            tableId: order.companyId,
+            context: 'voyage_booking',
+            kind: 'company',
+            source: 'implicit',
+            snapshot: {
+              name: order.company?.name || '',
+              activityType: order.company?.activityType || '',
+              logo: null,
+            },
+            metadata: {
+              lastBookingId: booking.id,
+              lastVoyageId: order.id,
+            },
+          },
+          effectiveTrx
+        )
+      }
 
       if (!trx) await effectiveTrx.commit()
 

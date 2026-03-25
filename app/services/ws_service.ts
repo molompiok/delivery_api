@@ -6,6 +6,14 @@ import LocationSearchService from '#services/location_search_service'
 class WsService {
     public io: Server | undefined
     private booted = false
+    private tracedEvents = new Set([
+        'wallet_update',
+        'payment_status_updated',
+        'order_status_updated',
+        'order_updated',
+        'route_updated',
+        'orders:new',
+    ])
 
     public boot(server: HttpServer) {
         if (this.booted) {
@@ -35,6 +43,11 @@ class WsService {
                 socket.join(room)
             })
 
+            socket.on('leave', (room: string) => {
+                logger.info({ socketId: socket.id, room }, 'Client leaving room')
+                socket.leave(room)
+            })
+
             socket.on('disconnect', (reason) => {
                 logger.info({ socketId: socket.id, reason }, 'Client disconnected from WebSocket')
             })
@@ -50,6 +63,18 @@ class WsService {
         if (this.io) {
             if (event === 'search_result') {
                 logger.info({ room, resultCount: data.results?.length }, 'Emitting search results to room')
+            } else if (this.tracedEvents.has(event)) {
+                logger.info(
+                    {
+                        room,
+                        event,
+                        orderId: data?.orderId,
+                        intentId: data?.intentId,
+                        walletId: data?.walletId,
+                        status: data?.status,
+                    },
+                    '[WebSocket] Emitting traced event to room'
+                )
             }
             this.io.to(room).emit(event, data)
         }

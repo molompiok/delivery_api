@@ -12,7 +12,7 @@ export default class DriverPaymentsController {
 
     /**
      * Liste tous les wallets accessibles par le driver (Personnel + Entreprises)
-     */
+      */
     public async listWallets({ auth, response }: HttpContext) {
         try {
             const user = auth.user as User
@@ -24,6 +24,7 @@ export default class DriverPaymentsController {
             await user.loadFiles()
 
             // 1. Wallet personnel
+            // On relit le wallet côté wave-api pour récupérer le solde courant, pas un snapshot local.
             if (user.walletId) {
                 try {
                     console.log(`[DriverPayments] Fetching personal wallet ${user.walletId} for user ${user.id}`)
@@ -54,6 +55,7 @@ export default class DriverPaymentsController {
             }
 
             // 2. Wallet Driver Indépendant (Pro)
+            // Même logique: les montants normalisés ci-dessous servent directement au dash finance.
             if (driverProfile && driverProfile.walletId) {
                 try {
                     console.log(`[DriverPayments] Fetching independent wallet ${driverProfile.walletId} for driver ${user.id}`)
@@ -83,6 +85,8 @@ export default class DriverPaymentsController {
             }
 
             // 3. Wallets liés aux entreprises (ETP)
+            // Ce sont souvent ces wallets qui sont sélectionnés dans le dash entreprise.
+            // Si un checkout Wave crédite l'un d'eux, le front doit recharger cette liste.
             const relations = await CompanyDriverSetting.query()
                 .where('driverId', user.id)
                 .whereIn('status', ['ACCEPTED', 'ACCESS_ACCEPTED'])
@@ -119,7 +123,7 @@ export default class DriverPaymentsController {
                 }
             }
 
-            // 3. Wallet de l'entreprise gérée (si l'utilisateur est un manager)
+            // 4. Wallet de l'entreprise gérée (si l'utilisateur est un manager)
             const activeCompanyId = user.currentCompanyManaged || user.companyId
             if (activeCompanyId) {
                 // Vérifier si ce wallet n'est pas déjà dans la liste (si le manager est aussi driver)

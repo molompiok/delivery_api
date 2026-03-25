@@ -127,7 +127,7 @@ export default class StopService {
                 stepId: targetStepId,
                 addressId: address.id,
                 displayOrder,
-                executionOrder: null, // Set by VROOM later
+                executionOrder: null, // Filled by route optimization later
                 status: 'PENDING',
                 isPendingChange: !isDraft,
                 client: validatedData.client || null,

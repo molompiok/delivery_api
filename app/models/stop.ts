@@ -30,14 +30,14 @@ export default class Stop extends BaseModel {
 
     /**
      * Ordre d'affichage défini par le client dans le dashboard.
-     * Ne change JAMAIS par VROOM — uniquement par le client.
+     * Ne change jamais via le moteur d'optimisation, uniquement par le client.
      */
     @column()
     declare displayOrder: number
 
     /**
-     * Ordre d'exécution optimisé par VROOM pour la route réelle.
-     * null jusqu'au premier calcul VROOM.
+     * Ordre d'exécution optimisé pour la route réelle.
+     * null jusqu'au premier calcul de route.
      * Quand Step.linked === true, doit refléter displayOrder.
      */
     @column()

@@ -3,6 +3,7 @@ import { middleware } from '#start/kernel'
 
 const ScheduleController = () => import('#controllers/schedule_controller')
 const AddressController = () => import('#controllers/address_controller')
+const FavoritesController = () => import('#controllers/favorites_controller')
 const VehicleController = () => import('#controllers/vehicle_controller')
 const VehicleDocumentController = () => import('#controllers/vehicle_document_controller')
 const StorageController = () => import('#controllers/storage_controller')
@@ -33,6 +34,11 @@ router.group(() => {
     router.put('/addresses/:id', [AddressController, 'update'])
     router.delete('/addresses/:id', [AddressController, 'destroy'])
     router.post('/addresses/:id/set-default', [AddressController, 'setDefault'])
+
+    // Favorites (Polymorphic)
+    router.get('/favorites', [FavoritesController, 'index'])
+    router.patch('/favorites/:id', [FavoritesController, 'update'])
+    router.delete('/favorites/:id', [FavoritesController, 'destroy'])
 
     // Vehicles (Polymorphic)
     router.get('/vehicles', [VehicleController, 'index'])

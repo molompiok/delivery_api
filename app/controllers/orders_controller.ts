@@ -2,6 +2,12 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import OrderService from '#services/order/index'
 import logger from '@adonisjs/core/services/logger'
+import {
+    assertAllowedOrderAccessScope,
+    getRequestedOrderAccessScope,
+    getWriteTargetCompanyId,
+    resolveOrderAccessContext,
+} from '#utils/order_access'
 
 @inject()
 export default class OrdersController {
@@ -39,17 +45,24 @@ export default class OrdersController {
     /**
      * Submit a DRAFT order to make it PENDING.
      */
-    async submit({ params, response, auth }: HttpContext) {
+    async submit({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
             logger.info({ orderId: params.id, userId: user.id }, '[ORDERS_CONTROLLER] Submitting order')
-            const order = await this.orderService.submitOrder(params.id, user.id)
+            const order = await this.orderService.submitOrder(params.id, user.id, {
+                targetCompanyId: getWriteTargetCompanyId(access),
+            })
             logger.info({ orderId: params.id }, '[ORDERS_CONTROLLER] Order submitted successfully')
             return response.ok({
                 message: 'Order submitted successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             logger.error({ orderId: params.id, error: error.message }, '[ORDERS_CONTROLLER] Failed to submit order')
             return response.badRequest({ message: error.message })
         }
@@ -61,12 +74,17 @@ export default class OrdersController {
     async publish({ params, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.publishOrder(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
+            const access = resolveOrderAccessContext(user, 'company')
+            assertAllowedOrderAccessScope(access, ['company'])
+            const order = await this.orderService.publishOrder(params.id, user.id, { targetCompanyId: getWriteTargetCompanyId(access) })
             return response.ok({
                 message: 'Order published successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -74,15 +92,20 @@ export default class OrdersController {
     /**
      * Pushes pending shadow updates to the stable order view.
      */
-    async pushUpdates({ params, response, auth }: HttpContext) {
+    async pushUpdates({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.pushUpdates(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
+            const order = await this.orderService.pushUpdates(params.id, user.id, { targetCompanyId: getWriteTargetCompanyId(access) })
             return response.ok({
                 message: 'Order updates pushed successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -90,15 +113,20 @@ export default class OrdersController {
     /**
      * Reverts pending shadow updates.
      */
-    async revertChanges({ params, response, auth }: HttpContext) {
+    async revertChanges({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const order = await this.orderService.revertPendingChanges(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
+            const order = await this.orderService.revertPendingChanges(params.id, user.id, { targetCompanyId: getWriteTargetCompanyId(access) })
             return response.ok({
                 message: 'Order changes reverted successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -129,20 +157,32 @@ export default class OrdersController {
     async addItem({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
             const payload = request.all()
-            const result = await this.orderService.addTransitItem(params.id, user.id, payload, { targetCompanyId: user.effectiveCompanyId || undefined })
+            const result = await this.orderService.addTransitItem(params.id, user.id, payload, {
+                targetCompanyId: getWriteTargetCompanyId(access),
+            })
             return response.created(result)
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
 
-    async estimateDraft({ params, response, auth }: HttpContext) {
+    async estimateDraft({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
-            const estimation = await this.orderService.estimateDraft(params.id, user.id, { targetCompanyId: user.effectiveCompanyId || undefined })
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
+            const estimation = await this.orderService.estimateDraft(params.id, user.id, { targetCompanyId: getWriteTargetCompanyId(access) })
             return response.ok(estimation)
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -153,6 +193,8 @@ export default class OrdersController {
     async stats({ request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company', 'driver', 'admin'])
             const {
                 withDailyCounts,
                 withCompletionRate,
@@ -166,9 +208,12 @@ export default class OrdersController {
             if (withTemplates === 'true') requestedFields.push('templates')
             if (withInProgress === 'true') requestedFields.push('inProgress')
 
-            const stats = await this.orderService.getOrderStats(user.id, requestedFields, user.effectiveCompanyId || undefined)
+            const stats = await this.orderService.getOrderStats(access, requestedFields)
             return response.ok(stats)
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -179,22 +224,26 @@ export default class OrdersController {
     async index({ request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company', 'driver', 'admin'])
             const { view, page, perPage, search, status } = request.qs()
 
             if (view === 'summary') {
-                const result = await this.orderService.listOrdersSummary(user.id, {
+                const result = await this.orderService.listOrdersSummary(access, {
                     page: page ? Number(page) : undefined,
                     perPage: perPage ? Number(perPage) : undefined,
                     search: search || undefined,
                     status: status || undefined,
-                    targetCompanyId: user.effectiveCompanyId || undefined
                 })
                 return response.ok(result)
             }
 
-            const orders = await this.orderService.listOrders(user.id, user.effectiveCompanyId || undefined)
+            const orders = await this.orderService.listOrders(access)
             return response.ok(orders.map(o => o.serialize()))
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -205,6 +254,8 @@ export default class OrdersController {
     async show({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company', 'driver', 'admin'])
             const includeArg = request.input('include')
             let includeArray: string[] = []
             if (Array.isArray(includeArg)) {
@@ -215,12 +266,14 @@ export default class OrdersController {
 
             logger.info({ orderId: params.id, userId: user.id, include: includeArray }, '[ORDERS_CONTROLLER] Show order')
 
-            const order = await this.orderService.getOrderDetails(params.id, user.id, {
+            const order = await this.orderService.getOrderDetails(params.id, access, {
                 include: includeArray,
-                targetCompanyId: user.effectiveCompanyId || undefined
             })
             return response.ok(order)
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             logger.error({ orderId: params.id, err: error.message }, '[ORDERS_CONTROLLER] Order not found')
             return response.notFound({ message: error.message })
         }
@@ -232,6 +285,8 @@ export default class OrdersController {
     async route({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company', 'driver', 'admin'])
             const { include, force, simplify, no_geo } = request.qs() // e.g., ?include=live,pending,trace&force=true&simplify=true
 
             const options = {
@@ -243,10 +298,7 @@ export default class OrdersController {
                 no_geo: no_geo === 'true' || no_geo === '1',
             }
 
-            const route = await this.orderService.getRoute(params.id, user.id, {
-                ...options,
-                targetCompanyId: user.effectiveCompanyId || undefined
-            })
+            const route = await this.orderService.getRoute(params.id, access, options)
 
             let actualTrace = null
             if (options.trace) {
@@ -264,10 +316,22 @@ export default class OrdersController {
             if (include && include.includes('nav_trace')) {
                 const NavigationService = (await import('#services/navigation_service')).default
                 const { lat: latRaw, lng: lngRaw, calculate_nav } = request.qs()
-                const lat = latRaw ? Number(latRaw) : NaN
-                const lng = lngRaw ? Number(lngRaw) : NaN
+                let lat = latRaw ? Number(latRaw) : NaN
+                let lng = lngRaw ? Number(lngRaw) : NaN
 
-                // logger.info({ orderId: params.id, lat, lng, calculate_nav }, '[ORDERS_CONTROLLER] Requesting nav_trace')
+                // If coordinates are missing, try to get them from the active driver's state in Redis
+                if (isNaN(lat) || isNaN(lng)) {
+                    const order = await this.orderService.getOrderDetails(params.id, access)
+                    if (order && order.driverId) {
+                        const RedisService = (await import('#services/redis_service')).default
+                        const driverState = await RedisService.getDriverState(order.driverId)
+                        if (driverState && driverState.last_lat && driverState.last_lng) {
+                            lat = driverState.last_lat
+                            lng = driverState.last_lng
+                            // logger.info({ orderId: params.id, driverId: order.driverId }, '[ORDERS_CONTROLLER] Using driver location from Redis for nav_trace')
+                        }
+                    }
+                }
 
                 if (!isNaN(lat) && !isNaN(lng)) {
                     const navData = await NavigationService.getNavTrace(
@@ -302,6 +366,9 @@ export default class OrdersController {
                 nav_trace: navTrace
             })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.notFound({ message: error.message })
         }
     }
@@ -312,10 +379,17 @@ export default class OrdersController {
     async cancel({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
             const { reason } = request.all()
-            const order = await this.orderService.cancelOrder(params.id, user.id, reason, { targetCompanyId: user.effectiveCompanyId || undefined })
+            const order = await this.orderService.cancelOrder(params.id, user.id, reason, {
+                targetCompanyId: getWriteTargetCompanyId(access),
+            })
             return response.ok({ message: 'Order cancelled successfully', order: order.serialize() })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -326,13 +400,24 @@ export default class OrdersController {
     async update({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
             const payload = request.all()
-            const order = await this.orderService.updateOrder(params.id, user.id, payload, undefined, user.effectiveCompanyId || undefined)
+            const order = await this.orderService.updateOrder(
+                params.id,
+                user.id,
+                payload,
+                undefined,
+                getWriteTargetCompanyId(access)
+            )
             return response.ok({
                 message: 'Order updated successfully',
                 order: order.serialize()
             })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -343,10 +428,17 @@ export default class OrdersController {
     async setNextStop({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company'])
             const { stop_id } = request.all()
-            await this.orderService.setNextStop(params.id, user.id, stop_id, { targetCompanyId: user.effectiveCompanyId || undefined })
+            await this.orderService.setNextStop(params.id, user.id, stop_id, {
+                targetCompanyId: getWriteTargetCompanyId(access),
+            })
             return response.ok({ message: 'Next stop updated successfully' })
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }
@@ -357,12 +449,17 @@ export default class OrdersController {
     async recalculate({ params, request, response, auth }: HttpContext) {
         try {
             const user = auth.getUserOrFail()
+            const access = resolveOrderAccessContext(user, getRequestedOrderAccessScope(request))
+            assertAllowedOrderAccessScope(access, ['self', 'company', 'driver', 'admin'])
             const { lat, lng } = request.all()
             const gps = (lat && lng) ? { lat: Number(lat), lng: Number(lng) } : undefined
 
-            const route = await this.orderService.recalculateRoute(params.id, user.id, { gps, targetCompanyId: user.effectiveCompanyId || undefined })
+            const route = await this.orderService.recalculateRoute(params.id, access, { gps })
             return response.ok(route)
         } catch (error: any) {
+            if (error.message?.startsWith('FORBIDDEN:')) {
+                return response.forbidden({ message: error.message.replace('FORBIDDEN: ', '') })
+            }
             return response.badRequest({ message: error.message })
         }
     }

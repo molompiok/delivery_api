@@ -53,8 +53,9 @@ export default await Env.create(new URL('../', import.meta.url), {
   SMS_API_URL: Env.schema.string(),
   SMS_API_KEY: Env.schema.string(),
 
+  NOMINATIM_URL: Env.schema.string.optional(),
   VALHALLA_URL: Env.schema.string.optional(),
-  VROOM_URL: Env.schema.string.optional(),
+  OR_TOOLS_URL: Env.schema.string.optional(),
 
   /*
   |----------------------------------------------------------
@@ -98,6 +99,7 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   WAVE_API_URL: Env.schema.string.optional(),
   WAVE_API_KEY: Env.schema.string.optional(),
+  WAVE_WEBHOOK_SECRET: Env.schema.string.optional(),
   WAVE_MANAGER_ID: Env.schema.string.optional(),
   WAVE_TRANSMIT_ENABLED: Env.schema.boolean.optional(),
   WAVE_TRANSMIT_BASE_URL: Env.schema.string.optional(),
