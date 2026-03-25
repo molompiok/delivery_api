@@ -158,22 +158,29 @@ class WalletBridgeService {
         const normalized = category.toUpperCase()
 
         const aliases: Record<string, WaveLedgerCategory> = {
-            ORDER_PAYMENT: 'ORDER_PAYMENT',
-            SERVICE_PAYMENT: 'SERVICE_PAYMENT',
-            COMMISSION: 'COMMISSION',
+            // Entrées / Revenus
+            ORDER_PAYMENT: 'PAYMENT',
+            SERVICE_PAYMENT: 'PAYMENT',
+            COD_SETTLEMENT: 'PAYMENT',
             DEPOSIT: 'DEPOSIT',
+
+            // Sorties / Gains
             PAYOUT: 'PAYOUT',
+            SALARY: 'REWARD',
+            DRIVER_PAYMENT: 'REWARD',
             REFUND: 'REFUND',
-            ADJUSTMENT: 'ADJUSTMENT',
+
+            // Frais & Commissions
+            COMMISSION: 'COMMISSION',
+            COMPANY_COMMISSION: 'COMMISSION',
+            PLATFORM_COMMISSION: 'COMMISSION',
             SUBSCRIPTION: 'SUBSCRIPTION',
+            SUBSCRIPTION_FEE: 'FEE',
+
+            // Mouvements Internes
             TRANSFER: 'TRANSFER',
-            SALARY: 'SALARY',
-            DRIVER_PAYMENT: 'DRIVER_PAYMENT',
-            COMPANY_COMMISSION: 'COMPANY_COMMISSION',
-            PLATFORM_COMMISSION: 'PLATFORM_COMMISSION',
-            COD_SETTLEMENT: 'COD_SETTLEMENT',
             RELEASE: 'RELEASE',
-            SUBSCRIPTION_FEE: 'SUBSCRIPTION_FEE',
+            ADJUSTMENT: 'ADJUSTMENT',
         }
 
         const mapped = aliases[normalized] || normalized
@@ -181,7 +188,7 @@ class WalletBridgeService {
             return mapped
         }
 
-        logger.warn({ category }, '[WalletBridge] Unknown category mapped to ADJUSTMENT')
+        logger.warn({ category, mapped }, '[WalletBridge] Unknown category mapped to ADJUSTMENT')
         return 'ADJUSTMENT'
     }
 
